@@ -4,42 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
 <title>Moto Infinite</title>
+<meta name="description" content="Endless low-poly motorbike game in your browser: stunts, weapons, circuit races, split screen and online rooms.">
+<meta name="theme-color" content="#0c101c">
+<meta property="og:title" content="Moto Infinite">
+<meta property="og:description" content="Ride, flip and race with friends. Free in the browser, no install.">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
 </head>
 <body>
-<div id="loading">Generating world…</div>
-<canvas id="fxCanvas"></canvas>
-<div id="vignette"></div><div id="hurt"></div><div id="flash"></div>
-<div id="floaters"></div><div id="reticle"></div>
-<div id="hud" class="panel">
-  <div class="row"><span><span class="big" id="speed">0</span> km/h</span><span id="mode">On foot</span></div>
-  <div class="row" style="margin-top:6px"><span>Health</span><span id="hpTxt">100</span></div><div class="bar"><i id="hpBar"></i></div>
-  <div class="row"><span>Nitro</span><span id="nTxt">100</span></div><div class="bar"><i id="nBar"></i></div>
-  <div class="row"><span>Level <b id="lvl">1</b></span><span id="xpTxt"></span></div><div class="bar"><i id="xpBar"></i></div>
-  <div class="row"><span>Score <b id="score">0</b></span><span>Gems <b id="gems">0</b></span></div>
-  <div class="row"><span>Weapon</span><span id="weapon">Blaster</span></div>
-  <div class="row"><span>Distance</span><span id="dist">0 m</span></div>
-</div>
-<div id="challenge" class="panel"><div style="opacity:.7;font-size:11px;letter-spacing:.1em">CHALLENGE</div><b id="cTxt"></b><div class="bar" style="margin-top:6px"><i id="cBar"></i></div><div id="cTime" style="opacity:.8"></div></div>
-<div id="mapWrap" class="panel"><canvas id="minimap" width="160" height="160"></canvas></div>
-<div id="help" class="panel">
-  <kbd>↑</kbd><kbd>↓</kbd> move · throttle / brake<br>
-  <kbd>←</kbd><kbd>→</kbd> turn · steer<br>
-  <kbd>E</kbd> get on / off the bike<br>
-  <kbd>Shift</kbd>/<kbd>Space</kbd> nitro (riding) · <kbd>Space</kbd> jump<br>
-  <kbd>F</kbd> or <b>click</b> fire · <kbd>Q</kbd>/<kbd>1-3</kbd> weapon<br>
-  In the air: <kbd>↑</kbd><kbd>↓</kbd> flip · <kbd>←</kbd><kbd>→</kbd> spin<br>
-  Land straight or you crash!<br>
-  <b>Right-drag</b> look · <b>scroll</b> zoom<br>
-  <kbd>R</kbd> respawn · <kbd>M</kbd> mute · <kbd>H</kbd> hide help
-</div>
-<div id="prompt" class="panel">Press E to ride</div>
-<div id="banner"></div>
-<div id="levelup"><h2>LEVEL UP!</h2><div style="opacity:.8">Choose a skill</div><div id="cards"></div></div>
-<div id="touch">
-  <div class="grp"><button data-k="ArrowLeft">◀</button><button data-k="ArrowRight">▶</button></div>
-  <div class="grp"><button data-k="KeyE">E</button><button data-k="KeyQ">GUN</button><button data-k="Space">JUMP</button><button data-k="ShiftLeft">NOS</button><button data-k="KeyF">FIRE</button><button data-k="ArrowDown">▼</button><button data-k="ArrowUp">▲</button></div>
-</div>
-
+<noscript>Moto Infinite needs JavaScript and WebGL.</noscript>
 <script type="module" src="/src/main.ts"></script>
 </body>
 </html>

@@ -19,6 +19,7 @@
     "@cloudflare/vite-plugin": "^1.66.0",
     "@eslint/js": "^10.0.1",
     "@types/node": "^26.6.6",
+    "@types/three": "^0.128.0",
     "eslint": "^10.13.0",
     "globals": "^17.13.0",
     "typescript": "^6.0.3",

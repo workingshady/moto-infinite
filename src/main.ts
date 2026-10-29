@@ -1,2 +1,4 @@
 import './styles/main.css';
-import './legacy/game.js';
+import { App } from './App';
+
+new App();
