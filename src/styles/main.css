@@ -67,6 +67,22 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .reticle::before { left: 50%; top: -6px; width: 2px; height: 44px; margin-left: -1px; }
 .reticle::after { top: 50%; left: -6px; height: 2px; width: 44px; margin-top: -1px; }
 @keyframes spin { to { rotate: 360deg; } }
+.reticle i { position: absolute; left: 0; bottom: -12px; height: 4px; width: 100%; background: #ff5a6a; border-radius: 2px; rotate: none; }
+.cross { position: absolute; left: 0; top: 0; width: 18px; height: 18px; display: none; opacity: 0.55;
+  background: radial-gradient(circle, #fff 2px, transparent 3px), linear-gradient(#fff, #fff) center/2px 100% no-repeat, linear-gradient(#fff, #fff) center/100% 2px no-repeat; }
+.hitmark { position: absolute; left: 50%; top: 45%; transform: translate(-50%, -50%); font-size: 28px; font-weight: 900; color: #fff; opacity: 0;
+  text-shadow: 0 0 6px rgba(0, 0, 0, 0.7); pointer-events: none; }
+.hitmark.kill { color: #ff5a6a; font-size: 38px; }
+.hitmark.show { animation: hitm 0.25s ease-out; }
+@keyframes hitm { 0% { opacity: 1; transform: translate(-50%, -50%) scale(1.5); } 100% { opacity: 0; transform: translate(-50%, -50%) scale(1); } }
+.story { position: absolute; left: 50%; bottom: 18%; transform: translateX(-50%); max-width: min(520px, 90%); text-align: center; opacity: 0;
+  background: linear-gradient(90deg, transparent, rgba(12, 16, 28, 0.85) 15%, rgba(12, 16, 28, 0.85) 85%, transparent); padding: 14px 40px; pointer-events: none; }
+.story b { display: block; color: var(--accent); letter-spacing: 0.15em; font-size: 14px; margin-bottom: 4px; }
+.story span { font-size: 15px; }
+.story.show { animation: storyIn 6s ease-out forwards; }
+@keyframes storyIn { 0% { opacity: 0; transform: translate(-50%, 20px); } 8% { opacity: 1; transform: translate(-50%, 0); } 85% { opacity: 1; } 100% { opacity: 0; } }
+.objective { position: absolute; left: 16px; top: 262px; max-width: 230px; font-size: 12px; color: var(--accent); text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8); }
+.split .objective { top: 230px; }
 .levelup { position: absolute; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; background: rgba(8, 10, 20, 0.45); pointer-events: auto; }
 .levelup h2 { margin: 0 0 4px; font-size: 40px; color: var(--accent); text-shadow: 0 4px 18px rgba(0, 0, 0, 0.5); }
 .cards { display: flex; gap: 14px; margin-top: 18px; flex-wrap: wrap; justify-content: center; }
@@ -143,4 +159,36 @@ input:focus { border-color: var(--accent2); }
   .mapwrap { transform: scale(0.7); transform-origin: top right; }
   .banner { font-size: 26px; }
   .modes { grid-template-columns: 1fr; }
+}
+
+/* ---------------------------------------------------------------- landing hero, setup panel, previews */
+.card-wrap.wide { width: min(980px, 100%); }
+.hero { display: grid; grid-template-columns: 1.1fr 1fr; gap: 26px; align-items: center; }
+.hero .logo { text-align: left; }
+.story-intro { color: var(--dim); font-size: 14px; line-height: 1.55; margin: 12px 0 16px; }
+.story-intro b { color: var(--accent2); }
+.char-host { width: 100%; aspect-ratio: 4 / 3.2; border-radius: 18px; overflow: hidden;
+  background: radial-gradient(ellipse at 50% 30%, rgba(60, 200, 255, 0.25), transparent 65%), linear-gradient(180deg, #24304a, #0e1320); }
+.char-preview { width: 100%; height: 100%; display: block; cursor: grab; touch-action: none; }
+.char-preview:active { cursor: grabbing; }
+.features { list-style: none; padding: 0; margin: 12px 0 0; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 13px; }
+.features li { background: rgba(255, 255, 255, 0.06); border-radius: 10px; padding: 7px 10px; }
+.small { font-size: 12px; }
+.center { text-align: center; margin-top: 6px; }
+.setup { display: grid; grid-template-columns: 1fr 280px; gap: 20px; align-items: start; }
+.setup-opts.disabled { pointer-events: none; opacity: 0.75; }
+.setup-map canvas { width: 280px; height: 280px; border-radius: 16px; display: block; box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4); background: #1b2233; }
+.setup-map .small { margin-top: 6px; text-align: center; }
+.custom { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; padding: 2px 4px 2px 10px; border-radius: 999px; border: 1px solid rgba(255, 255, 255, 0.18); }
+.custom.on { border-color: var(--accent2); color: var(--accent2); }
+.custom input { width: 54px; padding: 4px 6px; }
+.lobby-head { display: grid; grid-template-columns: auto 1fr; gap: 24px; align-items: start; }
+.lobby-head .roomcode { text-align: left; font-size: 40px; }
+.spinner { width: 34px; height: 34px; margin: 10px auto 0; border-radius: 50%; border: 4px solid rgba(255, 255, 255, 0.15); border-top-color: var(--accent); animation: spin 0.8s linear infinite; }
+.opt > span { width: 70px; flex-shrink: 0; }
+@media (max-width: 820px) {
+  .hero, .setup, .lobby-head { grid-template-columns: 1fr; }
+  .setup-map canvas { width: 100%; height: auto; aspect-ratio: 1; }
+  .hero-right { order: -1; }
+  .char-host { aspect-ratio: 16 / 9; }
 }

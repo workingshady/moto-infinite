@@ -3,7 +3,7 @@
 export type SfxName =
   | 'gem' | 'blaster' | 'scatter' | 'rocket' | 'rail' | 'swarm' | 'mine' | 'boom' | 'hit' | 'hurt' | 'crash'
   | 'nitro' | 'pad' | 'level' | 'trick' | 'challenge' | 'fail' | 'orb' | 'power' | 'count' | 'go' | 'select'
-  | 'unlock' | 'lap' | 'weapon' | 'mount' | 'jump' | 'thud' | 'cone' | 'crate';
+  | 'unlock' | 'lap' | 'weapon' | 'mount' | 'jump' | 'thud' | 'cone' | 'crate' | 'thunder' | 'hitmark' | 'story';
 
 export interface Engine {
   set(freq: number, filter: number, gain: number): void;
@@ -117,6 +117,9 @@ export class Audio {
       case 'thud': T(90, 0.15, 'square', 0.08, 0.6); break;
       case 'cone': T(500, 0.06, 'square', 0.05); break;
       case 'crate': T(140, 0.15, 'square', 0.08, 0.5); break;
+      case 'thunder': N(2.8, 0.5, 260); T(45, 2, 'sine', 0.25, 0.6); break;
+      case 'hitmark': T(1600, 0.04, 'square', 0.04, 0.8); break;
+      case 'story': [392, 494, 587].forEach((f, i) => T(f, 0.5, 'sine', 0.08, 1, i * 0.18)); break;
     }
   }
 

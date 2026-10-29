@@ -1,15 +1,18 @@
-// Landing page, mode select, online lobby, settings, pause and results screens (plain DOM, no framework).
-import { PLAYER_COLORS, QUALITY, TRACKS, type QualityName } from '../config';
-import type { GameMode, LobbySettings, PlayerInfo } from '../../shared/protocol';
+// Landing page, game setup (shared by solo, split screen and online lobby), settings, pause and results.
+// Plain DOM: each screen is a template string; clicks are handled by data-attributes in one place.
+import { PLAYER_COLORS, QUALITY, THEME_DEFS, TRACKS, WEATHER_DEFS, type QualityName } from '../config';
+import { THEMES, TIMES, WEATHERS, type GameMode, type LobbySettings, type PlayerInfo, type TimeOfDay, type Weather, type WorldTheme } from '../../shared/protocol';
 import type { Standing } from '../systems/Race';
 import { fmt } from '../systems/Race';
 import { escapeHtml, hex } from '../utils/math';
+import { STORY } from '../data/story';
+import { CharacterPreview, drawMapPreview } from './Preview';
 
 export interface Profile { name: string; color: number; name2: string; color2: number }
-export interface LocalSetup { split: boolean; mode: GameMode; trackId: string; laps: number; pvp: boolean }
+export type Setup = LobbySettings & { split: boolean };
 
 export interface MenuActions {
-  startLocal(setup: LocalSetup): void;
+  startLocal(setup: Setup): void;
   createRoom(): void;
   joinRoom(code: string): void;
   leaveRoom(): void;
@@ -24,16 +27,25 @@ export interface MenuActions {
 }
 
 type Screen = 'home' | 'mode' | 'online' | 'lobby' | 'settings' | 'howto' | 'pause' | 'results' | 'loading';
+interface LobbyView { code: string; link: string; players: PlayerInfo[]; settings: LobbySettings; host: boolean; you: string }
 
-const trackOptions = (sel: string) => TRACKS.map((t) => `<button class="chip ${t.id === sel ? 'on' : ''}" data-track="${t.id}">${t.name}</button>`).join('');
-const lapOptions = (sel: number) => [1, 3, 5].map((n) => `<button class="chip ${n === sel ? 'on' : ''}" data-laps="${n}">${n} lap${n > 1 ? 's' : ''}</button>`).join('');
-const colorDots = (sel: number, attr: string) => PLAYER_COLORS.map((c) => `<button class="dot ${c === sel ? 'on' : ''}" style="background:${hex(c)}" data-${attr}="${c}" aria-label="colour"></button>`).join('');
+const TIME_LABEL: Record<TimeOfDay, string> = { day: '☀️ Day', dawn: '🌅 Dawn', sunset: '🌇 Sunset', night: '🌙 Night', cycle: '🔄 Live cycle' };
+const WEATHER_ICON: Record<Weather, string> = { clear: '☀️', cloudy: '☁️', rain: '🌧️', fog: '🌫️', snow: '❄️', storm: '⛈️', dynamic: '🎲' };
+const LAPS = [1, 3, 5, 10];
+const newSeed = () => Math.floor(Math.random() * 1e9);
+
+const chips = <T extends string | number>(key: string, list: readonly T[], sel: T, label: (v: T) => string) =>
+  list.map((v) => `<button class="chip ${v === sel ? 'on' : ''}" data-opt="${key}" data-val="${v}">${label(v)}</button>`).join('');
+const colorDots = (sel: number, attr: string) =>
+  PLAYER_COLORS.map((c) => `<button class="dot ${c === sel ? 'on' : ''}" style="background:${hex(c)}" data-${attr}="${c}" aria-label="colour"></button>`).join('');
 
 export class Menu {
   readonly root: HTMLDivElement;
   private screen: Screen = 'home';
   private back: Screen = 'home';
-  private setup: LocalSetup = { split: false, mode: 'open', trackId: 'coast', laps: 3, pvp: false };
+  private setup: Setup = { split: false, mode: 'open', trackId: 'coast', laps: 3, pvp: false, seed: newSeed(), time: 'day', weather: 'clear', theme: 'mixed' };
+  private lobby: LobbyView | null = null;
+  private preview = new CharacterPreview();
   inGame = false;
 
   constructor(private a: MenuActions, public profile: Profile, public quality: QualityName, private muted: () => boolean) {
@@ -41,10 +53,15 @@ export class Menu {
     this.root.id = 'menu';
     document.body.appendChild(this.root);
     this.root.addEventListener('click', (e) => this.click(e));
+    this.root.addEventListener('change', (e) => this.change(e));
   }
 
   get visible() {
     return this.root.style.display !== 'none';
+  }
+
+  get current() {
+    return this.screen;
   }
 
   hide() {
@@ -55,8 +72,70 @@ export class Menu {
     this.root.style.display = '';
     this.screen = s;
     this.root.className = s === 'pause' || s === 'results' ? 'overlay dim' : 'overlay';
-    this.root.innerHTML = `<div class="card-wrap">${this.render(s, data)}</div>`;
-    this.root.querySelector<HTMLInputElement>('input[autofocus]')?.focus();
+    const wide = s === 'home' || s === 'mode' || s === 'lobby';
+    this.root.innerHTML = `<div class="card-wrap ${wide ? 'wide' : ''}">${this.render(s, data)}</div>`;
+    this.afterRender();
+  }
+
+  showLobby(v: LobbyView) {
+    this.lobby = v;
+    if (this.screen === 'lobby' && this.visible) this.refreshLobby();
+    else this.show('lobby');
+  }
+
+  /** Re-render the lobby in place when players or settings change. */
+  private refreshLobby() {
+    this.root.querySelector('.card-wrap')!.innerHTML = this.render('lobby');
+    this.afterRender();
+  }
+
+  private afterRender() {
+    const host = this.root.querySelector<HTMLElement>('#charHost');
+    if (host) {
+      this.preview.setColor(this.profile.color);
+      this.preview.mount(host);
+    }
+    const map = this.root.querySelector<HTMLCanvasElement>('#mapCanvas');
+    if (map) {
+      const s = this.screen === 'lobby' && this.lobby ? this.lobby.settings : this.setup;
+      // let the screen paint first, the map takes a few dozen ms to compute
+      requestAnimationFrame(() => {
+        const info = drawMapPreview(map, s);
+        const el = this.root.querySelector('#mapInfo');
+        if (el) el.textContent = (info.lengthKm ? `${info.lengthKm.toFixed(2)} km lap · ` : 'Endless roads · ') + `${info.climb} m climb · seed ${info.seed}`;
+      });
+    }
+  }
+
+  // ---------------------------------------------------------------- templates
+  private optionsPanel(s: LobbySettings, editable: boolean, showPvp: boolean) {
+    const dis = editable ? '' : 'disabled';
+    const track = TRACKS.find((t) => t.id === s.trackId) ?? TRACKS[0];
+    const customLaps = !LAPS.includes(s.laps);
+    return `
+    <div class="setup">
+      <div class="setup-opts ${dis}">
+        <div class="modes">
+          <button class="mode ${s.mode === 'open' ? 'on' : ''}" data-opt="mode" data-val="open"><b>🌄 Open world</b><span>Endless roads, story chapters, drones, challenges, level-ups</span></button>
+          <button class="mode ${s.mode === 'race' ? 'on' : ''}" data-opt="mode" data-val="race"><b>🏁 Circuit race</b><span>Closed loop, checkpoint gates, laps, positions, best-lap ghost</span></button>
+        </div>
+        ${s.mode === 'open' ? `
+        <div class="opt"><span>World</span><div class="chips">${chips('theme', THEMES, s.theme, (t) => THEME_DEFS[t].label)}</div></div>
+        <p class="hint">${THEME_DEFS[s.theme].blurb}</p>
+        <div class="opt"><span>Map</span><div class="chips"><button class="chip" data-opt="seed" data-val="new">🎲 New random world</button></div></div>` : `
+        <div class="opt"><span>Track</span><div class="chips">${chips('trackId', TRACKS.map((t) => t.id), s.trackId, (id) => TRACKS.find((t) => t.id === id)!.name)}</div></div>
+        <p class="hint">${track.blurb}${s.trackId === 'random' ? ' <button class="chip" data-opt="seed" data-val="new">🎲 Reroll</button>' : ''}</p>
+        <div class="opt"><span>Laps</span><div class="chips">${chips('laps', LAPS, customLaps ? -1 : s.laps, (n) => `${n}`)}
+          <label class="custom ${customLaps ? 'on' : ''}">Custom <input type="number" min="1" max="50" value="${s.laps}" data-opt="lapsCustom" ${dis}></label></div></div>`}
+        <div class="opt"><span>Time</span><div class="chips">${chips('time', TIMES, s.time, (t) => TIME_LABEL[t])}</div></div>
+        <div class="opt"><span>Weather</span><div class="chips">${chips('weather', WEATHERS, s.weather, (w) => `${WEATHER_ICON[w]} ${w === 'dynamic' ? 'Changing' : WEATHER_DEFS[w].label}`)}</div></div>
+        ${showPvp ? `<label class="check"><input type="checkbox" data-opt="pvp" ${s.pvp ? 'checked' : ''} ${dis}> Riders can shoot each other</label>` : ''}
+      </div>
+      <div class="setup-map">
+        <canvas id="mapCanvas" width="280" height="280"></canvas>
+        <div class="dim small" id="mapInfo">Drawing map…</div>
+      </div>
+    </div>`;
   }
 
   private render(s: Screen, data?: unknown): string {
@@ -64,64 +143,60 @@ export class Menu {
     switch (s) {
       case 'home':
         return `
-        <div class="logo">MOTO<span>INFINITE</span></div>
-        <p class="tag">Endless open world · stunts · weapons · races · split screen · online rooms</p>
-        <div class="profile">
-          <label>Rider name <input id="pname" maxlength="16" value="${escapeHtml(P.name)}"></label>
-          <div class="dots">${colorDots(P.color, 'color')}</div>
-        </div>
-        <div class="big-buttons">
-          <button class="btn primary" data-go="solo">▶ Play solo</button>
-          <button class="btn" data-go="split">👥 2 players · split screen</button>
-          <button class="btn" data-go="online">🌐 Online room</button>
-        </div>
-        <div class="row-buttons">
-          <button class="btn ghost" data-go="howto">How to play</button>
-          <button class="btn ghost" data-go="settings">Settings</button>
+        <div class="hero">
+          <div class="hero-left">
+            <div class="logo">MOTO<span>INFINITE</span></div>
+            <p class="story-intro"><b>${STORY.title}.</b> ${escapeHtml(STORY.intro)}</p>
+            <div class="profile">
+              <label>Rider name <input id="pname" maxlength="16" value="${escapeHtml(P.name)}"></label>
+              <div class="dots">${colorDots(P.color, 'color')}</div>
+            </div>
+            <div class="big-buttons">
+              <button class="btn primary" data-go="solo">▶ Play solo</button>
+              <button class="btn" data-go="split">👥 2 players · split screen</button>
+              <button class="btn" data-go="online">🌐 Online room · invite friends</button>
+            </div>
+            <div class="row-buttons"><button class="btn ghost" data-go="howto">How to play</button><button class="btn ghost" data-go="settings">Settings</button></div>
+          </div>
+          <div class="hero-right">
+            <div id="charHost" class="char-host"></div>
+            <div class="dim small center">Drag to spin · pick a colour on the left</div>
+            <ul class="features"><li>🌦 Live weather & day/night</li><li>🏁 5 circuits + random tracks</li><li>🗺 5 world themes, endless map</li><li>🔫 6 weapons, 3 drone types</li></ul>
+          </div>
         </div>`;
       case 'mode': {
         const st = this.setup;
         return `
-        <h2>${st.split ? '2 players · split screen' : 'Solo'}</h2>
+        <h2>${st.split ? '👥 2 players · split screen' : '▶ Solo'}</h2>
         ${st.split ? `<div class="profile"><label>Player 2 <input id="pname2" maxlength="16" value="${escapeHtml(P.name2)}"></label><div class="dots">${colorDots(P.color2, 'color2')}</div></div>` : ''}
-        <div class="modes">
-          <button class="mode ${st.mode === 'open' ? 'on' : ''}" data-mode="open"><b>🌄 Open world</b><span>Endless roads, ramps, drones, challenges and level-ups</span></button>
-          <button class="mode ${st.mode === 'race' ? 'on' : ''}" data-mode="race"><b>🏁 Circuit race</b><span>Closed loop, checkpoints, laps, best-lap ghost</span></button>
-        </div>
-        ${st.mode === 'race' ? `<div class="opt"><span>Track</span><div class="chips">${trackOptions(st.trackId)}</div></div><div class="opt"><span>Laps</span><div class="chips">${lapOptions(st.laps)}</div></div>` : ''}
-        ${st.split ? `<label class="check"><input type="checkbox" id="pvp" ${st.pvp ? 'checked' : ''}> Players can shoot each other</label>` : ''}
-        ${st.split ? `<p class="hint">P1: WASD · Space/Shift nitro · F fire · E ride · Q weapon<br>P2: Arrows · Right Shift nitro · / fire · Enter ride · . weapon<br>Gamepads work too (one per player).</p>` : ''}
-        <div class="row-buttons"><button class="btn ghost" data-go="home">← Back</button><button class="btn primary" data-go="start">Start</button></div>`;
+        ${this.optionsPanel(st, true, st.split)}
+        ${st.split ? `<p class="hint">P1: WASD · Space/Shift nitro · F fire · E ride · Q weapon &nbsp;|&nbsp; P2: Arrows · Right Shift nitro · / fire · Enter ride · . weapon · Gamepads work too.</p>` : ''}
+        <div class="row-buttons"><button class="btn ghost" data-go="home">← Back</button><button class="btn primary" data-go="start">Ride →</button></div>`;
       }
       case 'online':
         return `
-        <h2>Online room</h2>
-        <p class="hint">Create a room and send the link to friends. Up to 8 riders.</p>
+        <h2>🌐 Online room</h2>
+        <p class="hint">Create a room, pick the world, then send the link. Friends join from their browser, no install. Up to 8 riders.</p>
         <div class="big-buttons"><button class="btn primary" data-go="create">Create room</button></div>
         <div class="join"><input id="code" maxlength="8" placeholder="Room code" autocomplete="off" autofocus><button class="btn" data-go="join">Join</button></div>
         <p class="err">${escapeHtml(String(data ?? ''))}</p>
         <div class="row-buttons"><button class="btn ghost" data-go="home">← Back</button></div>`;
       case 'lobby': {
-        const { code, link, players, settings, host, you } = data as { code: string; link: string; players: PlayerInfo[]; settings: LobbySettings; host: boolean; you: string };
-        const dis = host ? '' : 'disabled';
+        const v = this.lobby!;
         return `
-        <h2>Lobby</h2>
-        <div class="roomcode">${escapeHtml(code)}</div>
-        <div class="share"><input readonly value="${escapeHtml(link)}" id="link"><button class="btn" data-go="copy">Copy link</button>${'share' in navigator ? '<button class="btn" data-go="share">Share</button>' : ''}</div>
-        <ul class="players">${players.map((p) => `<li><i style="background:${hex(p.color)}"></i>${escapeHtml(p.name)}${p.host ? ' 👑' : ''}${p.id === you ? ' <em>(you)</em>' : ''}</li>`).join('')}</ul>
-        <div class="modes small">
-          <button class="mode ${settings.mode === 'open' ? 'on' : ''}" data-lmode="open" ${dis}><b>🌄 Open world</b></button>
-          <button class="mode ${settings.mode === 'race' ? 'on' : ''}" data-lmode="race" ${dis}><b>🏁 Circuit race</b></button>
+        <div class="lobby-head">
+          <div><h2>Lobby</h2><div class="dim small">Room code</div><div class="roomcode">${escapeHtml(v.code)}</div></div>
+          <ul class="players">${v.players.map((p) => `<li><i style="background:${hex(p.color)}"></i>${escapeHtml(p.name)}${p.host ? ' 👑' : ''}${p.id === v.you ? ' <em>(you)</em>' : ''}</li>`).join('')}</ul>
         </div>
-        ${settings.mode === 'race' ? `<div class="opt"><span>Track</span><div class="chips ${dis}">${trackOptions(settings.trackId)}</div></div><div class="opt"><span>Laps</span><div class="chips ${dis}">${lapOptions(settings.laps)}</div></div>` : ''}
-        <label class="check"><input type="checkbox" id="lpvp" ${settings.pvp ? 'checked' : ''} ${dis}> Players can shoot each other</label>
-        <div class="row-buttons"><button class="btn ghost" data-go="leave">Leave</button>${host ? `<button class="btn primary" data-go="lstart">Start (${players.length})</button>` : '<span class="wait">Waiting for the host to start…</span>'}</div>`;
+        <div class="share"><input readonly value="${escapeHtml(v.link)}" id="link"><button class="btn" data-go="copy">Copy link</button>${'share' in navigator ? '<button class="btn" data-go="share">Share</button>' : ''}</div>
+        ${this.optionsPanel(v.settings, v.host, true)}
+        <div class="row-buttons"><button class="btn ghost" data-go="leave">Leave</button>${v.host ? `<button class="btn primary" data-go="lstart">Start for everyone (${v.players.length})</button>` : '<span class="wait">⏳ Waiting for the host to start…</span>'}</div>`;
       }
       case 'settings':
         return `
         <h2>Settings</h2>
         <div class="opt"><span>Graphics</span><div class="chips">${(Object.keys(QUALITY) as QualityName[]).map((q) => `<button class="chip ${q === this.quality ? 'on' : ''}" data-quality="${q}">${QUALITY[q].label}</button>`).join('')}</div></div>
-        <p class="hint">Low turns off shadows and shortens view distance: use it on laptops and phones or in split screen if it stutters.</p>
+        <p class="hint">Low turns off shadows and shortens view distance. Use it on laptops, phones and in split screen if it stutters.</p>
         <div class="opt"><span>Sound</span><div class="chips"><button class="chip" data-go="mute">${this.muted() ? '🔇 Off' : '🔊 On'}</button></div></div>
         <div class="row-buttons"><button class="btn ghost" data-go="back">← Back</button></div>`;
       case 'howto':
@@ -129,18 +204,20 @@ export class Menu {
         <h2>How to play</h2>
         <table class="keys">
           <tr><td>↑ ↓ / W S</td><td>Throttle · brake/reverse · walk</td></tr>
-          <tr><td>← → / A D</td><td>Steer</td></tr>
+          <tr><td>← → / A D</td><td>Steer (wet and snowy roads have less grip)</td></tr>
           <tr><td>Shift / Space</td><td>Nitro (riding) · Space = jump (walking)</td></tr>
-          <tr><td>F / left click</td><td>Fire (auto-aims at drones, crates, barrels)</td></tr>
-          <tr><td>Q / 1-3</td><td>Next weapon / pick level-up card</td></tr>
+          <tr><td>F / left click</td><td>Fire. Auto-aims and leads moving targets; ✕ = hit, red ✕ = kill</td></tr>
+          <tr><td>Q / 1-3</td><td>Next weapon / pick a level-up card</td></tr>
           <tr><td>E</td><td>Get on / off the bike</td></tr>
-          <tr><td>In the air</td><td>Let go, then press ↑↓ to flip and ←→ to spin. With no keys the bike levels itself.</td></tr>
+          <tr><td>In the air</td><td>Release, then ↑↓ to flip and ←→ to spin. Hands off = bike levels itself</td></tr>
           <tr><td>R</td><td>Respawn on the nearest road</td></tr>
           <tr><td>Right drag · wheel</td><td>Look around · zoom</td></tr>
           <tr><td>Esc / Start</td><td>Pause menu</td></tr>
           <tr><td>M · H</td><td>Mute · hide help</td></tr>
         </table>
-        <p class="hint">Weapons unlock as you level: Rocket (2), Railgun (3), Swarm (4), Mine (5). Power-ups: green repair, blue shield, yellow magnet, pink double XP.</p>
+        <p class="hint"><b>Open world:</b> ride anywhere, follow the story chapters, finish timed challenges, level up and unlock weapons (Rocket 2, Railgun 3, Swarm 4, Mine 5). Scouts are fast, gunners shoot, bombers drop bombs.<br>
+        <b>Race:</b> pass every blue gate in order, the yellow gate is start/finish. Your best lap is saved as a ghost.<br>
+        <b>Power-ups:</b> green repair · blue shield · yellow magnet · pink double XP.</p>
         <div class="row-buttons"><button class="btn ghost" data-go="back">← Back</button></div>`;
       case 'pause':
         return `
@@ -154,41 +231,71 @@ export class Menu {
       case 'results': {
         const rows = data as Standing[];
         return `
-        <h2>Race results</h2>
-        <table class="results">${rows.map((r, i) => `<tr><td>${i + 1}</td><td><i style="background:${hex(r.color)}"></i>${escapeHtml(r.name)}</td><td>${r.time !== null ? fmt(r.time) : 'racing…'}</td></tr>`).join('')}</table>
+        <h2>🏁 Race results</h2>
+        <table class="results">${rows.map((r, i) => `<tr><td>${['🥇', '🥈', '🥉'][i] ?? i + 1}</td><td><i style="background:${hex(r.color)}"></i>${escapeHtml(r.name)}</td><td>${r.time !== null ? fmt(r.time) : 'racing…'}</td></tr>`).join('')}</table>
         <div class="row-buttons"><button class="btn ghost" data-go="quit">Menu</button><button class="btn primary" data-go="again">Race again</button></div>`;
       }
       case 'loading':
-        return `<div class="logo small">MOTO<span>INFINITE</span></div><p class="loading">${escapeHtml(String(data ?? 'Generating world…'))}</p>`;
+        return `<div class="logo small">MOTO<span>INFINITE</span></div><p class="loading">${escapeHtml(String(data ?? 'Generating world…'))}</p><div class="spinner"></div>`;
     }
   }
 
+  // ---------------------------------------------------------------- input
+  private readNames() {
+    const P = this.profile;
+    const n1 = this.root.querySelector<HTMLInputElement>('#pname'), n2 = this.root.querySelector<HTMLInputElement>('#pname2');
+    if (n1) P.name = n1.value.trim().slice(0, 16) || 'Rider';
+    if (n2) P.name2 = n2.value.trim().slice(0, 16) || 'Player 2';
+    this.a.saveProfile(P);
+  }
+
+  private setOpt(key: string, val: string | boolean) {
+    const editingLobby = this.screen === 'lobby' && this.lobby;
+    if (editingLobby && !this.lobby!.host) return;
+    const s: LobbySettings = editingLobby ? { ...this.lobby!.settings } : this.setup;
+    switch (key) {
+      case 'mode': s.mode = val as GameMode; break;
+      case 'theme': s.theme = val as WorldTheme; break;
+      case 'trackId': {
+        s.trackId = String(val);
+        const t = TRACKS.find((x) => x.id === s.trackId);
+        if (t && t.id !== 'random') { s.time = t.time; s.weather = t.weather; s.theme = t.theme; }
+        if (t?.id === 'random') s.seed = newSeed();
+        break;
+      }
+      case 'laps': s.laps = +val; break;
+      case 'lapsCustom': s.laps = Math.max(1, Math.min(50, Math.round(+val) || 1)); break;
+      case 'time': s.time = val as TimeOfDay; break;
+      case 'weather': s.weather = val as Weather; break;
+      case 'pvp': s.pvp = !!val; break;
+      case 'seed': s.seed = newSeed(); break;
+    }
+    if (editingLobby) this.a.lobbySettings(s);
+    else this.show('mode');
+  }
+
+  private change(e: Event) {
+    const t = e.target as HTMLInputElement;
+    if (t.dataset.opt === 'lapsCustom') this.setOpt('lapsCustom', t.value);
+    else if (t.dataset.opt === 'pvp') this.setOpt('pvp', t.checked);
+  }
+
   private click(e: MouseEvent) {
-    const t = (e.target as HTMLElement).closest<HTMLElement>('button, input[type=checkbox]');
-    if (!t || (t as HTMLButtonElement).disabled || t.closest('.chips.disabled')) return;
+    const t = (e.target as HTMLElement).closest<HTMLElement>('button');
+    if (!t || (t as HTMLButtonElement).disabled || t.closest('.disabled')) return;
     const d = t.dataset, P = this.profile, st = this.setup;
-    const readNames = () => {
-      const n1 = this.root.querySelector<HTMLInputElement>('#pname'), n2 = this.root.querySelector<HTMLInputElement>('#pname2');
-      if (n1) P.name = n1.value.trim().slice(0, 16) || 'Rider';
-      if (n2) P.name2 = n2.value.trim().slice(0, 16) || 'Player 2';
-      this.a.saveProfile(P);
-    };
-    if (d.color) { readNames(); P.color = +d.color; this.a.saveProfile(P); return this.show(this.screen); }
-    if (d.color2) { readNames(); P.color2 = +d.color2; this.a.saveProfile(P); return this.show(this.screen); }
-    if (d.mode) { readNames(); st.mode = d.mode as GameMode; return this.show('mode'); }
-    if (d.track && this.screen === 'mode') { st.trackId = d.track; return this.show('mode'); }
-    if (d.laps && this.screen === 'mode') { st.laps = +d.laps; return this.show('mode'); }
+    if (d.opt) return this.setOpt(d.opt, d.val ?? '');
+    if (d.color) { this.readNames(); P.color = +d.color; this.a.saveProfile(P); return this.show(this.screen); }
+    if (d.color2) { this.readNames(); P.color2 = +d.color2; this.a.saveProfile(P); return this.show(this.screen); }
     if (d.quality) { this.quality = d.quality as QualityName; this.a.setQuality(this.quality); return this.show('settings'); }
-    if (t.id === 'pvp') { st.pvp = (t as HTMLInputElement).checked; return; }
-    if (this.screen === 'lobby' && (d.lmode || d.track || d.laps || t.id === 'lpvp')) return this.lobbyChange(d, t);
     switch (d.go) {
-      case 'solo': readNames(); st.split = false; return this.show('mode');
-      case 'split': readNames(); st.split = true; return this.show('mode');
-      case 'online': readNames(); return this.show('online');
+      case 'solo': this.readNames(); st.split = false; return this.show('mode');
+      case 'split': this.readNames(); st.split = true; return this.show('mode');
+      case 'online': this.readNames(); return this.show('online');
       case 'howto': case 'settings': this.back = this.screen === 'pause' ? 'pause' : 'home'; return this.show(d.go);
       case 'back': return this.show(this.back);
-      case 'home': readNames(); return this.show('home');
-      case 'start': readNames(); return this.a.startLocal({ ...st });
+      case 'home': this.readNames(); return this.show('home');
+      case 'start': this.readNames(); return this.a.startLocal({ ...st });
       case 'create': return this.a.createRoom();
       case 'join': {
         const code = this.root.querySelector<HTMLInputElement>('#code')!.value.trim().toUpperCase();
@@ -211,25 +318,5 @@ export class Menu {
       case 'quit': return this.a.quit();
       case 'again': return this.a.raceAgain();
     }
-  }
-
-  private lobbyData: { settings: LobbySettings } | null = null;
-  showLobby(data: { code: string; link: string; players: PlayerInfo[]; settings: LobbySettings; host: boolean; you: string }) {
-    this.lobbyData = data;
-    this.show('lobby', data);
-  }
-
-  private lobbyChange(d: DOMStringMap, t: HTMLElement) {
-    if (!this.lobbyData) return;
-    const s = { ...this.lobbyData.settings };
-    if (d.lmode) s.mode = d.lmode as GameMode;
-    if (d.track) s.trackId = d.track;
-    if (d.laps) s.laps = +d.laps;
-    if (t.id === 'lpvp') s.pvp = (t as HTMLInputElement).checked;
-    this.a.lobbySettings(s);
-  }
-
-  get current() {
-    return this.screen;
   }
 }

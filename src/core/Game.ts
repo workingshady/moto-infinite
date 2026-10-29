@@ -4,7 +4,7 @@ import { Renderer } from './Renderer';
 import { Events } from './Events';
 import type { Audio } from './Audio';
 import type { Controller, Input } from './Input';
-import type { GameMode } from '../../shared/protocol';
+import type { GameMode, TimeOfDay, Weather, WorldTheme } from '../../shared/protocol';
 import type { NetClient } from '../net/NetClient';
 import type { ChallengeId } from '../data/challenges';
 import { Noise } from '../utils/noise';
@@ -19,7 +19,8 @@ import { Effects } from '../systems/Effects';
 import { Combat } from '../systems/Combat';
 import { Race, type Standing } from '../systems/Race';
 import { RemotePlayers } from '../net/RemotePlayers';
-import { NET, PHYS, QUALITY, WORLD, type QualityName } from '../config';
+import { NET, PHYS, QUALITY, TRACKS, WORLD, type QualityName } from '../config';
+import { STORY } from '../data/story';
 
 export interface LocalPlayerSpec { name: string; color: number; controller: Controller }
 
@@ -29,6 +30,9 @@ export interface SessionOptions {
   trackId: string;
   laps: number;
   pvp: boolean;
+  time: TimeOfDay;
+  weather: Weather;
+  theme: WorldTheme;
   quality: QualityName;
   locals: LocalPlayerSpec[];
   net: NetClient | null;
@@ -76,13 +80,14 @@ export class Game {
     this.net = opts.net;
     const noise = new Noise(opts.seed);
     this.layout = opts.mode === 'race' ? new Circuit(noise, opts.seed) : new GridRoads(noise);
-    this.terrain = new Terrain(noise, this.layout);
+    this.terrain = new Terrain(noise, this.layout, opts.theme);
     this.renderer = new Renderer(opts.quality, document.body);
     input.attachCanvas(this.renderer.gl.domElement);
     this.hudLayer = document.createElement('div');
     this.hudLayer.id = 'hud-layer';
     document.body.appendChild(this.hudLayer);
-    this.env = new Environment(this.scene, opts.quality);
+    this.env = new Environment(this.scene, opts.quality, opts.time, opts.weather);
+    this.env.onThunder = () => audio.play('thunder');
     this.fx = new Particles(this.scene);
     this.fx.amount = QUALITY[opts.quality].particles;
     this.effects = new Effects(this.scene, this.terrain);
@@ -131,6 +136,10 @@ export class Game {
   start() {
     this.last = performance.now();
     this.raf = requestAnimationFrame(this.loop);
+    if (this.opts.attract) return;
+    const track = TRACKS.find((t) => t.id === this.opts.trackId);
+    const beat = this.opts.mode === 'open' ? STORY.spawn : { title: `${STORY.race.title} · ${(track?.name ?? 'RANDOM').toUpperCase()}`, text: `${this.opts.laps} lap${this.opts.laps > 1 ? 's' : ''}. ${STORY.race.text}` };
+    setTimeout(() => this.players.forEach((p) => p.storyBeat(beat.title, beat.text)), 700);
   }
 
   /** Solo games freeze while a level-up card is open; split screen and online keep running. */
@@ -226,7 +235,7 @@ export class Game {
       cam.lookAt(f.x, gy + 4, f.z);
       cam.aspect = vp.w / vp.h;
       cam.updateProjectionMatrix();
-      this.env.aimSun(f.x, gy, f.z);
+      this.env.beforeRender(f.x, gy, f.z, cam, r.pixelHeight(vp));
       this.fx.setScale(r.pixelHeight(vp));
       r.render(this.scene, cam, vp, false);
       return;
@@ -235,7 +244,7 @@ export class Game {
     this.players.forEach((p, i) => {
       const vp = r.viewports[i];
       p.updateCamera(dt, vp.w / vp.h);
-      this.env.aimSun(p.P.x, p.P.y, p.P.z);
+      this.env.beforeRender(p.P.x, p.P.y, p.P.z, p.camera, r.pixelHeight(vp));
       this.fx.setScale(r.pixelHeight(vp));
       r.render(this.scene, p.camera, vp, split);
       p.hud.update(dt, this.frame);

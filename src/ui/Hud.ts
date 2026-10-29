@@ -12,7 +12,7 @@ import { fmt } from '../systems/Race';
 const TEMPLATE = `
 <canvas class="lines"></canvas>
 <div class="vignette" data-k="vig"></div><div class="hurtfx" data-k="hurtfx"></div><div class="flashfx" data-k="flashfx"></div>
-<div class="floaters" data-k="floaters"></div><div class="reticle" data-k="reticle"></div>
+<div class="floaters" data-k="floaters"></div><div class="reticle" data-k="reticle"><i data-k="tbar"></i></div><div class="cross" data-k="cross"></div><div class="hitmark" data-k="hitmark">✕</div>
 <div class="panel stats">
   <div class="row"><span><span class="big" data-k="speed">0</span> km/h</span><span data-k="mode">On foot</span></div>
   <div class="row mt"><span>Health</span><span data-k="hpTxt"></span></div><div class="bar"><i class="hp" data-k="hpBar"></i></div>
@@ -21,6 +21,7 @@ const TEMPLATE = `
   <div class="row"><span>Score <b data-k="score">0</b></span><span>Gems <b data-k="gems">0</b></span></div>
   <div class="row"><span>Weapon</span><span class="weapon" data-k="weapon"></span></div>
   <div class="row"><span>Distance</span><span data-k="dist"></span></div>
+  <div class="row"><span>World</span><span data-k="clock"></span></div>
   <div class="buffs" data-k="buffs"></div>
 </div>
 <div class="panel challenge" data-k="ch"><div class="label">CHALLENGE</div><b data-k="cTxt"></b><div class="bar"><i class="cbar" data-k="cBar"></i></div><div data-k="cTime" class="dim"></div></div>
@@ -28,6 +29,8 @@ const TEMPLATE = `
 <div class="panel mapwrap"><canvas class="minimap" width="160" height="160"></canvas></div>
 <div class="panel prompt" data-k="prompt">Press <b data-k="rideKey">E</b> to ride</div>
 <div class="banner" data-k="banner"></div>
+<div class="story" data-k="story"><b data-k="storyT"></b><span data-k="storyX"></span></div>
+<div class="objective" data-k="objective"></div>
 <div class="countdown" data-k="countdown"></div>
 <div class="levelup" data-k="levelup"><h2>LEVEL UP!</h2><div class="dim">Choose a skill</div><div class="cards" data-k="cards"></div></div>
 <div class="ptag" data-k="tag"></div>
@@ -105,6 +108,26 @@ export class Hud {
     this.flashA = a;
   }
 
+  /** Chapter card that slides in, then stays as a one-line objective. */
+  story(title: string, text: string) {
+    const e = this.els;
+    e.storyT.textContent = title;
+    e.storyX.textContent = text;
+    e.story.classList.remove('show');
+    void e.story.offsetWidth;
+    e.story.classList.add('show');
+    e.objective.textContent = '▸ ' + text;
+  }
+
+  hitMarker(kill: boolean) {
+    const h = this.els.hitmark;
+    h.classList.toggle('kill', kill);
+    h.classList.remove('show');
+    void h.offsetWidth;
+    h.classList.add('show');
+    this.game.audio.play('hitmark');
+  }
+
   hurt() {
     this.hurtA = Math.min(0.9, this.hurtA + 0.5);
   }
@@ -151,7 +174,16 @@ export class Hud {
       const q = this.project(t.x, t.y + (t.type === 'drone' ? 0 : 0.8), t.z);
       ret.style.display = q.visible ? 'block' : 'none';
       ret.style.transform = `translate(${q.x}px,${q.y}px) translate(-50%,-50%)`;
-    } else ret.style.display = 'none';
+      e.tbar.style.width = Math.max(0, (t.hp / t.maxHp) * 100) + '%';
+      e.tbar.style.display = t.maxHp > 1 ? '' : 'none';
+      e.cross.style.display = 'none';
+    } else {
+      ret.style.display = 'none';
+      // free-aim crosshair where shots go when nothing is locked
+      const P = p.P, q = this.project(P.x + Math.sin(P.h) * 40, P.y + (p.riding ? 2.1 : 1.6), P.z + Math.cos(P.h) * 40);
+      e.cross.style.display = q.visible && !s.dead ? 'block' : 'none';
+      e.cross.style.transform = `translate(${q.x}px,${q.y}px) translate(-50%,-50%)`;
+    }
 
     if (frame % 3) return;
     // text (every 3rd frame)
@@ -168,6 +200,7 @@ export class Hud {
     e.gems.textContent = String(s.gems);
     e.weapon.textContent = WEAPONS[s.weapon].name;
     e.dist.textContent = (s.dist / 1000).toFixed(2) + ' km';
+    e.clock.textContent = g.env.label;
     e.buffs.innerHTML = (Object.keys(p.buffs) as PowerupKind[])
       .filter((k) => p.buffs[k] > 0)
       .map((k) => `<span style="background:${hex(POWERUPS[k].color)}">${POWERUPS[k].label} ${Math.ceil(p.buffs[k])}s</span>`)

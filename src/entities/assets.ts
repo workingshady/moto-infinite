@@ -51,6 +51,7 @@ export const G = {
   beam: new THREE.BoxGeometry(0.12, 0.12, 1).translate(0, 0, 0.5),
   torus: new THREE.TorusGeometry(0.9, 0.08, 6, 24),
   post: new THREE.BoxGeometry(0.6, 6, 0.6),
+  dash: new THREE.PlaneGeometry(1, 1).rotateX(-PI / 2),
 };
 
 export const MAT = {
@@ -93,6 +94,7 @@ export const MAT = {
   droneGlow: Basic(0xff2a3a),
   orb: Basic(0xff3355, { transparent: true, blending: THREE.AdditiveBlending }),
   terrain: new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 0.95 }),
+  dash: M(0xf2f2e6, { roughness: 0.6, emissive: 0x222222 }),
   gate: M(0x2b2f38, { metalness: 0.4, roughness: 0.4 }),
   checker: new THREE.MeshBasicMaterial({
     side: THREE.DoubleSide,

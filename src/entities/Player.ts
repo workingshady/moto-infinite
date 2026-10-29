@@ -14,6 +14,7 @@ import { WEAPONS } from '../data/weapons';
 import { UPGRADES, type Upgrade } from '../data/upgrades';
 import { Hud } from '../ui/Hud';
 import { PlayerChallenges } from '../systems/Challenges';
+import { STORY } from '../data/story';
 
 const xpNeed = (level: number) => 350 + level * 250;
 
@@ -144,12 +145,13 @@ export class Player {
         if (down) B.v -= (B.v > 0 ? BIKE.brake : BIKE.reverse) * dt;
         if (!up && !down && !boosting) B.v *= 1 - BIKE.coastDrag * dt;
         if (!onRoad) B.v *= 1 - BIKE.offroadDrag * dt;
+        if (g.env.grip < 1 && Math.abs(B.steer) > 0.6 && Math.abs(B.v) > 20) B.v *= 1 - (1 - g.env.grip) * dt; // wet roads scrub speed in corners
         if (B.v > top) B.v -= Math.min(B.v - top, 30 * dt);
         B.v = Math.max(B.v, -BIKE.maxReverse);
         // steering eases in and re-centres smoothly instead of snapping
         const want = (left ? 1 : 0) - (right ? 1 : 0);
         B.steer = lerp(B.steer, want, damp(dt, want ? CONTROL.steerIn : CONTROL.steerOut));
-        B.h += B.steer * st.grip * clamp(Math.abs(B.v) / 6, 0, 1) * Math.sign(B.v) * dt * (1 - clamp((Math.abs(B.v) - 35) / 60, 0, 0.4));
+        B.h += B.steer * st.grip * g.env.grip * clamp(Math.abs(B.v) / 6, 0, 1) * Math.sign(B.v) * dt * (1 - clamp((Math.abs(B.v) - 35) / 60, 0, 0.4));
         B.moveH = B.h;
         B.lean = lerp(B.lean, -B.steer * clamp(Math.abs(B.v) / 22, 0, 1) * 0.55, damp(dt, 6));
         // keys held while leaving the ground must be released before they do tricks
@@ -266,6 +268,7 @@ export class Player {
     const fx = Math.sin(B.h), fz = Math.cos(B.h), boost = this.cam.boost;
     this.bike.flame.scale.set(1, lerp(this.bike.flame.scale.y, boost > 0.1 ? 1.4 + Math.random() * 1.2 : 0.01, 0.5), 1);
     this.bike.flameMat.color.setHex(B.pad > 0 ? 0xff66ff : 0x66ccff);
+    this.bike.headlight.intensity = g.env.night * 2.4;
     if (boost > 0.1) {
       const ex = B.x - fx * 1.7 + Math.cos(B.h) * 0.33, ez = B.z - fz * 1.7 - Math.sin(B.h) * 0.33;
       for (const col of [0x66ccff, 0x8a7dff, 0xffffff]) g.fx.emit(ex, B.y + 0.65, ez, -fx * 10 + rnd(2), rnd(1.5) + 1, -fz * 10 + rnd(2), 0.35, 0.9, 0.1, col, 1, 0, 2);
@@ -482,6 +485,8 @@ export class Player {
       s.xp -= xpNeed(s.level);
       s.level++;
       s.pendingLevels++;
+      const chapter = STORY.chapters.find((c) => c.level === s.level);
+      if (chapter && this.game.opts.mode === 'open') this.storyBeat(chapter.title, chapter.text);
       const unlocked = WEAPONS.findIndex((w) => w.unlock === s.level);
       if (unlocked >= 0) {
         this.hud.banner('NEW WEAPON', WEAPONS[unlocked].name + ' unlocked', '#c77dff');
@@ -489,6 +494,12 @@ export class Player {
       }
     }
     if (s.pendingLevels && !this.cards.length && !this.game.opts.attract) this.showCards();
+  }
+
+  /** Story chapter reached: big banner + objective line in the HUD. */
+  storyBeat(title: string, text: string) {
+    this.hud.story(title, text);
+    this.game.audio.play('story');
   }
 
   xpNeed() {

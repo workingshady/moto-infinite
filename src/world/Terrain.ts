@@ -2,7 +2,8 @@ import * as THREE from 'three';
 import type { Noise } from '../utils/noise';
 import type { RoadLayout } from './layout';
 import { lerp, smooth } from '../utils/math';
-import { ROAD } from '../config';
+import { ROAD, THEME_DEFS } from '../config';
+import type { WorldTheme } from '../../shared/protocol';
 
 export const RAMP = { L: 10, W: 10, H: 3.2 };
 const [F0, F1] = ROAD.flatten;
@@ -22,16 +23,20 @@ export class Terrain {
   readonly ramps: Ramp[] = [];
   readonly pads: Pad[] = [];
 
-  constructor(readonly noise: Noise, readonly layout: RoadLayout) {}
+  private th: (typeof THEME_DEFS)['mixed'];
+
+  constructor(readonly noise: Noise, readonly layout: RoadLayout, theme: WorldTheme = 'mixed') {
+    this.th = THEME_DEFS[theme];
+  }
 
   biome(x: number, z: number) {
-    return this.noise.fbm(x / 420 + 300, z / 420 - 200, 3);
+    return this.noise.fbm(x / 420 + 300, z / 420 - 200, 3) + this.th.biomeShift;
   }
 
   rawHeight(x: number, z: number) {
     const n = this.noise, c = n.fbm(x / 200 + 11, z / 200 + 7, 4);
     const m = Math.pow(n.fbm(x / 90 + 3, z / 90 + 5, 4), 2.2) * 75 * smooth(0.5, 0.72, c);
-    return (c - 0.4) * 45 + n.fbm(x / 28, z / 28, 3) * 5 + m;
+    return ((c - 0.4) * 45 + n.fbm(x / 28, z / 28, 3) * 5 + m) * this.th.heightMul + this.th.heightAdd;
   }
 
   heightAt(x: number, z: number) {
@@ -50,6 +55,10 @@ export class Terrain {
         if (Math.abs(u) <= RAMP.L && Math.abs(v) <= RAMP.W / 2) g = Math.max(g, r.y + RAMP.H * (1 - Math.abs(u) / RAMP.L));
       }
     return g;
+  }
+
+  get snowLine() {
+    return this.th.snowLine;
   }
 
   onRoad(x: number, z: number) {
@@ -76,8 +85,9 @@ export class Terrain {
     _a.copy(C.g1).lerp(C.g2, n);
     _b.copy(C.f1).lerp(C.f2, n);
     col.copy(_d).lerp(_a, smooth(0.36, 0.42, b)).lerp(_b, smooth(0.58, 0.64, b));
-    if (y > 22) col.lerp(C.rock, smooth(22, 27, y));
-    if (y > 34) col.lerp(C.snow, smooth(34, 37, y));
+    const sl = this.th.snowLine;
+    if (y > sl - 12) col.lerp(C.rock, smooth(sl - 12, sl - 7, y));
+    if (y > sl) col.lerp(C.snow, smooth(sl, sl + 3, y));
     return col;
   }
 }

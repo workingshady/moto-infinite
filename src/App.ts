@@ -2,7 +2,7 @@
 import { Game, type SessionOptions } from './core/Game';
 import { Input } from './core/Input';
 import { Audio } from './core/Audio';
-import { Menu, type LocalSetup, type Profile } from './ui/Menu';
+import { Menu, type Profile, type Setup } from './ui/Menu';
 import { createTouch } from './ui/Touch';
 import { NetClient, newRoomCode } from './net/NetClient';
 import { PLAYER_COLORS, TRACKS, type QualityName } from './config';
@@ -35,7 +35,7 @@ export class App {
   private menu: Menu;
   private game: Game | null = null;
   private net: NetClient | null = null;
-  private lastLocal: LocalSetup | null = null;
+  private lastLocal: Setup | null = null;
   private touch: HTMLDivElement | null = null;
   private quality: QualityName = store.get<QualityName>('quality', isMobile ? 'low' : 'medium');
 
@@ -55,7 +55,7 @@ export class App {
 
   private actions() {
     return {
-      startLocal: (s: LocalSetup) => this.startLocal(s),
+      startLocal: (s: Setup) => this.startLocal(s),
       createRoom: () => void this.join(newRoomCode()),
       joinRoom: (code: string) => void this.join(code),
       leaveRoom: () => this.leaveRoom(),
@@ -83,11 +83,20 @@ export class App {
 
   private attract() {
     this.menu.inGame = false;
-    this.replaceGame({ mode: 'open', seed: Math.floor(Math.random() * 1e9), trackId: '', laps: 0, pvp: false, quality: this.quality, locals: [], net: null, attract: true });
+    const times = ['day', 'sunset', 'dawn'] as const;
+    this.replaceGame({
+      mode: 'open', seed: Math.floor(Math.random() * 1e9), trackId: '', laps: 0, pvp: false, quality: this.quality, locals: [], net: null, attract: true,
+      time: times[Math.floor(Math.random() * times.length)], weather: 'clear', theme: 'mixed',
+    });
   }
 
-  private seedFor(trackId: string) {
-    return TRACKS.find((t) => t.id === trackId)?.seed || Math.floor(Math.random() * 1e9);
+  /** Turn menu/lobby settings into a game session (named tracks bring their own seed and scenery). */
+  private session(s: LobbySettings, locals: SessionOptions['locals'], net: NetClient | null): SessionOptions {
+    const track = s.mode === 'race' && s.trackId !== 'random' ? TRACKS.find((t) => t.id === s.trackId) : undefined;
+    return {
+      mode: s.mode, seed: track?.seed ?? s.seed, trackId: s.trackId, laps: s.laps, pvp: s.pvp,
+      time: s.time, weather: s.weather, theme: track?.theme ?? s.theme, quality: this.quality, locals, net,
+    };
   }
 
   /** Show the loading card for a frame, then do the heavy world build. */
@@ -99,7 +108,7 @@ export class App {
     }));
   }
 
-  private startLocal(s: LocalSetup) {
+  private startLocal(s: Setup) {
     this.audio.init();
     this.lastLocal = s;
     const P = this.menu.profile, C = this.input.controllers;
@@ -108,7 +117,7 @@ export class App {
       ? [{ name: P.name, color: P.color, controller: C[0] }, { name: P.name2, color: P.color2 === P.color ? PLAYER_COLORS[(PLAYER_COLORS.indexOf(P.color) + 1) % PLAYER_COLORS.length] : P.color2, controller: C[1] }]
       : [{ name: P.name, color: P.color, controller: C[0] }];
     this.withLoading(() => {
-      this.replaceGame({ mode: s.mode, seed: s.mode === 'race' ? this.seedFor(s.trackId) : Math.floor(Math.random() * 1e9), trackId: s.trackId, laps: s.laps, pvp: s.pvp, quality: this.quality, locals, net: null });
+      this.replaceGame(this.session(s, locals, null));
       this.enterPlay(!s.split);
     });
   }
@@ -155,11 +164,7 @@ export class App {
     const n = this.net!, s = n.settings, P = this.menu.profile;
     this.input.setLayout(false);
     this.withLoading(() => {
-      this.replaceGame({
-        mode: s.mode, seed: s.mode === 'race' ? (s.trackId === 'random' ? s.seed : this.seedFor(s.trackId)) : s.seed,
-        trackId: s.trackId, laps: s.laps, pvp: s.pvp, quality: this.quality,
-        locals: [{ name: P.name, color: P.color, controller: this.input.controllers[0] }], net: n,
-      });
+      this.replaceGame(this.session(s, [{ name: P.name, color: P.color, controller: this.input.controllers[0] }], n));
       this.enterPlay(true);
     });
   }

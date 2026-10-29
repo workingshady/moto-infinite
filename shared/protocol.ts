@@ -2,6 +2,9 @@
 // Shared by both sides so a change here is type-checked everywhere.
 
 export type GameMode = 'open' | 'race';
+export type TimeOfDay = 'day' | 'dawn' | 'sunset' | 'night' | 'cycle';
+export type Weather = 'clear' | 'cloudy' | 'rain' | 'fog' | 'snow' | 'storm' | 'dynamic';
+export type WorldTheme = 'mixed' | 'desert' | 'forest' | 'alpine' | 'islands';
 export type Phase = 'lobby' | 'playing';
 export type Vec3 = [number, number, number];
 
@@ -11,6 +14,9 @@ export interface LobbySettings {
   laps: number;
   pvp: boolean;
   seed: number;
+  time: TimeOfDay;
+  weather: Weather;
+  theme: WorldTheme;
 }
 
 export interface PlayerInfo {
@@ -57,4 +63,7 @@ export type ServerMsg =
 
 export const MAX_PLAYERS = 8;
 export const ROOM_CODE_RE = /^[A-Z0-9]{4,8}$/;
-export const DEFAULT_SETTINGS: LobbySettings = { mode: 'open', trackId: 'coast', laps: 3, pvp: false, seed: 1 };
+export const DEFAULT_SETTINGS: LobbySettings = { mode: 'open', trackId: 'coast', laps: 3, pvp: false, seed: 1, time: 'day', weather: 'clear', theme: 'mixed' };
+export const TIMES: TimeOfDay[] = ['day', 'dawn', 'sunset', 'night', 'cycle'];
+export const WEATHERS: Weather[] = ['clear', 'cloudy', 'rain', 'fog', 'snow', 'storm', 'dynamic'];
+export const THEMES: WorldTheme[] = ['mixed', 'desert', 'forest', 'alpine', 'islands'];

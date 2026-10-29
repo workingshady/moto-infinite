@@ -6,7 +6,7 @@ import type { Entity } from '../entities/EntityManager';
 import type { Vec3 } from '../../shared/protocol';
 import { WEAPONS, type WeaponDef } from '../data/weapons';
 import { G, MAT } from '../entities/assets';
-import { AIM, DRONES } from '../config';
+import { AIM, DRONES, DRONE_TYPES } from '../config';
 import { clamp, rnd } from '../utils/math';
 
 interface Shot {
@@ -23,7 +23,7 @@ interface Shot {
   armed: number;
 }
 
-interface Orb { m: THREE.Mesh; p: THREE.Vector3; v: THREE.Vector3; life: number }
+interface Orb { m: THREE.Mesh; p: THREE.Vector3; v: THREE.Vector3; life: number; g: number; dmg: number; bomb: boolean }
 
 const _d = new THREE.Vector3(), _o = new THREE.Vector3(), _t = new THREE.Vector3(), _end = new THREE.Vector3();
 
@@ -139,7 +139,7 @@ export class Combat {
       g.entities.damage(e, dmg, owner);
       if (e.alive) owner?.hud.float(String(Math.round(dmg)), e.x, e.y + 2, e.z, '#fff', 13);
     }
-    if (hitSet.size) g.audio.play('hit');
+    if (hitSet.size) { g.audio.play('hit'); owner?.hud.hitMarker([...hitSet].some((e) => !e.alive)); }
     g.effects.beam(o, _end, w.color);
     g.fx.burst(_end.x, _end.y, _end.z, { n: 16, speed: 9, life: 0.4, size: [0.6, 0.05], colors: [w.color, 0xffffff], gravity: 6, drag: 2 });
   }
@@ -154,6 +154,8 @@ export class Combat {
   }
 
   droneShot(e: Entity, target: Player) {
+    const D = DRONE_TYPES[e.kind ?? 'gunner'];
+    if (D.bomb) return this.dropBomb(e, target, D.dmg);
     const P = target.P, d = Math.hypot(P.x - e.x, P.z - e.z), lead = d / 34;
     const vx = target.riding ? Math.sin(target.B.moveH) * target.B.v : 0, vz = target.riding ? Math.cos(target.B.moveH) * target.B.v : 0;
     const p = new THREE.Vector3(e.x, e.y, e.z);
@@ -162,8 +164,23 @@ export class Combat {
     m.scale.setScalar(2.6);
     m.position.copy(p);
     this.game.scene.add(m);
-    this.orbs.push({ m, p, v, life: 4 });
+    this.orbs.push({ m, p, v, life: 4, g: 0, dmg: D.dmg, bomb: false });
     this.game.audio.play('orb');
+  }
+
+  /** Bomber drones lob a bomb that lands where the target is heading. */
+  private dropBomb(e: Entity, target: Player, dmg: number) {
+    const P = target.P, t = 1.3, gr = 20;
+    const vx = target.riding ? Math.sin(target.B.moveH) * target.B.v : 0, vz = target.riding ? Math.cos(target.B.moveH) * target.B.v : 0;
+    const tx = P.x + vx * t, tz = P.z + vz * t, ty = this.game.terrain.groundAt(tx, tz);
+    const p = new THREE.Vector3(e.x, e.y - 1, e.z);
+    const v = new THREE.Vector3((tx - p.x) / t, (ty - p.y + 0.5 * gr * t * t) / t, (tz - p.z) / t);
+    const m = new THREE.Mesh(G.mine, MAT.orb);
+    m.scale.setScalar(1.3);
+    m.position.copy(p);
+    this.game.scene.add(m);
+    this.orbs.push({ m, p, v, life: 4, g: gr, dmg, bomb: true });
+    this.game.audio.play('mine');
   }
 
   explode(x: number, y: number, z: number, r: number, dmg: number, owner: Player | null, remote: string | null, scale = 1, src: Entity | null = null, broadcast = true) {
@@ -260,6 +277,7 @@ export class Combat {
           g.fx.burst(s.p.x, s.p.y, s.p.z, { n: 10, speed: 7, life: 0.3, size: [0.4, 0.05], colors: [s.w.color, 0xffffff], gravity: 8, drag: 2 });
           if (hitE) g.audio.play('hit');
         }
+        if (hitE) s.owner?.hud.hitMarker(!hitE.alive || hitE.hp <= s.dmg);
         if (hitE && !s.w.splash) {
           g.entities.damage(hitE, s.dmg, s.owner);
           if (hitE.alive) s.owner?.hud.float(String(Math.round(s.dmg)), hitE.x, hitE.y + 2, hitE.z, '#fff', 13);
@@ -271,14 +289,17 @@ export class Combat {
     for (let i = this.orbs.length - 1; i >= 0; i--) {
       const o = this.orbs[i];
       o.life -= dt;
+      o.v.y -= o.g * dt;
       o.p.addScaledVector(o.v, dt);
       o.m.position.copy(o.p);
+      if (o.bomb) o.m.rotation.x += dt * 6;
       g.fx.emit(o.p.x, o.p.y, o.p.z, rnd(0.5), rnd(0.5), rnd(0.5), 0.3, 1, 0.1, 0xff3355, 0.9);
       let victim: Player | null = null;
       for (const p of g.players) if (!p.s.dead && this.nearPlayer(o.p, p, 1.5)) victim = p;
       if (victim || o.life <= 0 || o.p.y < g.terrain.groundAt(o.p.x, o.p.z)) {
-        if (victim) {
-          victim.hurt(DRONES.orbDamage);
+        if (o.bomb) this.explode(o.p.x, o.p.y, o.p.z, 6, o.dmg * 2.2, null, null, 0.7, null, false);
+        else if (victim) {
+          victim.hurt(o.dmg || DRONES.orbDamage);
           g.fx.burst(o.p.x, o.p.y, o.p.z, { n: 20, speed: 8, life: 0.4, size: [0.6, 0.05], colors: [0xff3355, 0xffffff], gravity: 4, drag: 2 });
         }
         this.orbs.splice(i, 1);

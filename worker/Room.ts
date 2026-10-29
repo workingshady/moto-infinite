@@ -1,7 +1,7 @@
 // One Durable Object per room code. Relays rider snapshots/shots between players and owns the lobby state.
 // Uses the WebSocket Hibernation API so idle rooms cost nothing while players stay connected.
 import { DurableObject } from 'cloudflare:workers';
-import { DEFAULT_SETTINGS, MAX_PLAYERS, type ClientMsg, type LobbySettings, type Phase, type PlayerInfo, type ServerMsg } from '../shared/protocol';
+import { DEFAULT_SETTINGS, MAX_PLAYERS, THEMES, TIMES, WEATHERS, type ClientMsg, type LobbySettings, type Phase, type PlayerInfo, type ServerMsg } from '../shared/protocol';
 
 interface Attachment { id: string; name: string; color: number; joined: number; hello: boolean }
 
@@ -15,7 +15,7 @@ export class Room extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
     ctx.blockConcurrencyWhile(async () => {
-      this.settings = (await ctx.storage.get<LobbySettings>('settings')) ?? this.settings;
+      this.settings = { ...this.settings, ...(await ctx.storage.get<LobbySettings>('settings')) };
       this.phase = (await ctx.storage.get<Phase>('phase')) ?? 'lobby';
     });
   }
@@ -98,9 +98,12 @@ export class Room extends DurableObject<Env> {
         this.settings = {
           mode: s.mode === 'race' ? 'race' : 'open',
           trackId: clean(s.trackId).toLowerCase(),
-          laps: Math.max(1, Math.min(10, Math.round(Number(s.laps) || 3))),
+          laps: Math.max(1, Math.min(50, Math.round(Number(s.laps) || 3))),
           pvp: !!s.pvp,
           seed: Math.floor(Number(s.seed) || 1),
+          time: TIMES.includes(s.time) ? s.time : 'day',
+          weather: WEATHERS.includes(s.weather) ? s.weather : 'clear',
+          theme: THEMES.includes(s.theme) ? s.theme : 'mixed',
         };
         await this.ctx.storage.put('settings', this.settings);
         this.broadcast({ t: 'settings', settings: this.settings });

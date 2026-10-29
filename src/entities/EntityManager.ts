@@ -5,7 +5,7 @@ import type { Chunk } from '../world/Chunks';
 import type { Player } from './Player';
 import { G, MAT, mesh } from './assets';
 import { buildDrone } from './models';
-import { AIM, DRONES, POWERUPS, type PowerupKind } from '../config';
+import { AIM, DRONES, DRONE_TYPES, POWERUPS, type DroneKind, type PowerupKind } from '../config';
 import { clamp, lerp, TAU } from '../utils/math';
 
 export type EntityType = 'gem' | 'crate' | 'barrel' | 'cone' | 'drone' | 'powerup';
@@ -15,7 +15,8 @@ export interface Entity {
   mesh: THREE.Group;
   x: number; y: number; z: number;
   vx: number; vy: number; vz: number; // velocity, used to lead shots
-  hp: number; r: number;
+  hp: number; maxHp: number; r: number;
+  kind?: DroneKind;
   chunk: Chunk | null;
   alive: boolean;
   t: number; cool: number; ang: number; fuse: number; hitFlash: number;
@@ -36,7 +37,7 @@ export class EntityManager {
 
   constructor(private game: Game) {}
 
-  add(type: EntityType, x: number, z: number, o: { y?: number; chunk?: Chunk | null; power?: PowerupKind; force?: boolean } = {}): Entity | null {
+  add(type: EntityType, x: number, z: number, o: { y?: number; chunk?: Chunk | null; power?: PowerupKind; force?: boolean; kind?: DroneKind } = {}): Entity | null {
     const gy = this.game.terrain.groundAt(x, z);
     if (gy < 0.5 && type !== 'drone') return null;
     if (type === 'drone' && this.drones >= DRONES.maxAlive + (o.force ? 3 : 0)) return null;
@@ -75,12 +76,16 @@ export class EntityManager {
       r = 1.2;
       e.bob = inner;
     } else {
-      const d = buildDrone();
+      // further from spawn = tougher mix of drones
+      const far = Math.hypot(x - this.game.spawnPoints[0].x, z - this.game.spawnPoints[0].z), roll = Math.random();
+      const kind: DroneKind = o.kind ?? (roll < 0.35 - Math.min(0.2, far / 8000) ? 'scout' : roll < 0.85 - Math.min(0.3, far / 6000) ? 'gunner' : 'bomber');
+      const D = DRONE_TYPES[kind], d = buildDrone(D.color, D.scale, D.bomb);
       e.drone = d;
+      e.kind = kind;
       inner = d.root;
       y = gy + 7;
-      hp = DRONES.hp;
-      r = 1.4;
+      hp = D.hp;
+      r = 1.4 * D.scale;
       this.drones++;
     }
     const holder = new THREE.Group();
@@ -88,7 +93,7 @@ export class EntityManager {
     holder.position.set(x, y, z);
     holder.rotation.y = Math.random() * TAU;
     this.game.scene.add(holder);
-    Object.assign(e, { mesh: holder, y, hp, r });
+    Object.assign(e, { mesh: holder, y, hp, maxHp: hp, r });
     this.list.push(e);
     return e;
   }
@@ -147,7 +152,7 @@ export class EntityManager {
     } else if (e.type === 'drone') {
       g.combat.explode(x, y, z, 5, 20, by, null, 0.6, e);
       g.effects.debris(x, y, z, MAT.droneBody, 6, 0.45, 9);
-      who?.addXP(60, x, y + 2, z);
+      who?.addXP(DRONE_TYPES[e.kind ?? 'gunner'].xp, x, y + 2, z);
       if (who) { g.events.emit('progress', { player: who, id: 'drone', value: 1 }); who.s.kills++; }
       if (Math.random() < 0.6) this.add('gem', x, z, { chunk: e.chunk });
     }
@@ -213,7 +218,7 @@ export class EntityManager {
   }
 
   private updateDrone(e: Entity, dt: number, T: number) {
-    const g = this.game, u = e.drone!;
+    const g = this.game, u = e.drone!, D = DRONE_TYPES[e.kind ?? 'gunner'];
     u.rotors.forEach((r, j) => (r.rotation.y += dt * 40 * (j % 2 ? 1 : -1)));
     const target = g.nearestPlayer(e.x, e.z, true);
     let tx = e.x, tz = e.z, ty = g.terrain.groundAt(e.x, e.z) + 7 + Math.sin(e.t * 2) * 0.6;
@@ -223,19 +228,19 @@ export class EntityManager {
     if (!wantEngage && e.engaged) { e.engaged = false; this.attacking--; }
     if (e.engaged && target) {
       const P = target.P, diff = clamp(Math.hypot(P.x, P.z) / 2500, 0, 1);
-      e.ang += dt * 0.5;
-      tx = P.x + Math.sin(e.ang) * 18;
-      tz = P.z + Math.cos(e.ang) * 18;
-      ty = Math.max(g.terrain.groundAt(tx, tz), P.y) + 6 + Math.sin(e.t * 2) * 0.6;
+      e.ang += dt * 0.5 * D.speed;
+      tx = P.x + Math.sin(e.ang) * D.orbit;
+      tz = P.z + Math.cos(e.ang) * D.orbit;
+      ty = Math.max(g.terrain.groundAt(tx, tz), P.y) + (D.bomb ? 11 : 6) + Math.sin(e.t * 2) * 0.6;
       e.cool -= dt;
       u.eye.scale.setScalar(e.cool < 0.5 ? 1.6 + Math.sin(T * 40) * 0.3 : 1);
       if (e.cool <= 0 && d < DRONES.fireDist) {
-        e.cool = lerp(DRONES.cooldownEasy, DRONES.cooldownHard, diff) + Math.random() * 0.6;
+        e.cool = (lerp(DRONES.cooldownEasy, DRONES.cooldownHard, diff) + Math.random() * 0.6) * D.cool;
         g.combat.droneShot(e, target);
       }
       e.mesh.lookAt(P.x, e.y, P.z);
     }
-    const sp = Math.min(1, dt * 1.6), dx = (tx - e.x) * sp, dy = (ty - e.y) * sp, dz = (tz - e.z) * sp;
+    const sp = Math.min(1, dt * 1.6 * D.speed), dx = (tx - e.x) * sp, dy = (ty - e.y) * sp, dz = (tz - e.z) * sp;
     e.x += dx; e.y += dy; e.z += dz;
     e.vx = dx / dt; e.vy = dy / dt; e.vz = dz / dt;
     e.mesh.position.set(e.x, e.y, e.z);

@@ -17,6 +17,7 @@ const UP = new THREE.Vector3(0, 1, 0);
 const _m = new THREE.Matrix4(), _base = new THREE.Matrix4(), _t = new THREE.Matrix4(), _s = new THREE.Matrix4();
 const _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _sc = new THREE.Vector3(), _e = new THREE.Euler();
 const PINE_COLOR = new THREE.Color(0x2f6e43), SNOW_PINE = new THREE.Color(0xe8f0f4);
+const CURB_RED = new THREE.Color(0xd8322a), CURB_WHITE = new THREE.Color(0xf4f4f4);
 const LEAVES = [0x4caf50, 0x5dbb3f, 0x3e9a48, 0x7cc142, 0x8bc34a].map((c) => new THREE.Color(c));
 
 interface Part { g: THREE.BufferGeometry; m: THREE.Material; mats: number[]; cols: THREE.Color[] }
@@ -93,6 +94,7 @@ export class ChunkManager {
     const ch: Chunk = { cx, cz, obs: [], ramps: [], pads: [], meshes: [terrain], terrain };
 
     this.scenery(ch, rng, x0, z0);
+    this.markings(ch, x0, z0);
     const F = FEATURES[g.opts.mode];
     g.layout.forEachRoadPoint(x0, z0, CH, (x, z, tx, tz, along) => {
       if (along >= 0 && along < 60) return; // keep the race start straight clear
@@ -127,11 +129,11 @@ export class ChunkManager {
       const x = x0 + rng() * CH, z = z0 + rng() * CH, y = T.heightAt(x, z), rd = T.layout.roadDist(x, z);
       if (rd < ROAD.clear || y < 1.8) continue;
       const b = T.biome(x, z), roll = rng(), s = 0.8 + rng() * 0.6;
-      if (y > 30) {
+      if (y > T.snowLine - 4) {
         if (roll < 0.18) {
           base(x, y, z, s);
           add('trunk', G.trunk, MAT.trunk, child(0, 1.1, 0));
-          pine(y > 36);
+          pine(y > T.snowLine + 2);
           ch.obs.push({ x, z, r: 0.6 * s, top: y + 6 });
         } else if (roll < 0.3) {
           rock(x, y, z, s * 1.4, s, s * 1.2);
@@ -176,6 +178,39 @@ export class ChunkManager {
       this.game.scene.add(im);
       ch.meshes.push(im);
     }
+  }
+
+  /** Painted centre dashes on every road and red/white curbs on race circuits (instanced, 1-2 draw calls per chunk). */
+  private markings(ch: Chunk, x0: number, z0: number) {
+    const g = this.game, T = g.terrain, dashes: number[] = [], curbs: number[] = [], cols: THREE.Color[] = [];
+    const circuit = g.layout.kind === 'circuit';
+    let k = 0;
+    g.layout.forEachRoadPoint(x0, z0, CH, (x, z, tx, tz) => {
+      const h = Math.atan2(tx, tz);
+      _q.setFromAxisAngle(UP, h);
+      dashes.push(..._m.compose(_p.set(x, T.heightAt(x, z) + 0.07, z), _q, _sc.set(0.32, 1, 3.2)).elements);
+      if (!circuit) return;
+      for (const side of [-1, 1]) {
+        const cx = x + tz * side * ROAD.asphalt, cz = z - tx * side * ROAD.asphalt;
+        for (let j = -1; j <= 1; j++) {
+          const px = cx + tx * j * 2.7, pz = cz + tz * j * 2.7;
+          curbs.push(..._m.compose(_p.set(px, T.heightAt(px, pz) + 0.08, pz), _q, _sc.set(1.1, 0.22, 2.6)).elements);
+          cols.push((k + j) % 2 ? CURB_RED : CURB_WHITE);
+        }
+      }
+      k++;
+    });
+    const make = (geo: THREE.BufferGeometry, mat: THREE.Material, mats: number[], colors: THREE.Color[] | null) => {
+      if (!mats.length) return;
+      const im = new THREE.InstancedMesh(geo, mat, mats.length / 16);
+      (im.instanceMatrix.array as Float32Array).set(mats);
+      colors?.forEach((c, i) => im.setColorAt(i, c));
+      im.receiveShadow = true;
+      g.scene.add(im);
+      ch.meshes.push(im);
+    };
+    make(G.dash, MAT.dash, dashes, null);
+    make(G.box, MAT.white, curbs, cols);
   }
 
   private feature(ch: Chunk, rng: () => number, F: (typeof FEATURES)['open'], x: number, z: number, tx: number, tz: number) {

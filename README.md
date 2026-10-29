@@ -1,6 +1,11 @@
 # Moto Infinite
 
-Infinite open-world motorbike game in the browser: ride, jump, flip, shoot, level up.
+Low-poly motorbike game in the browser: endless open world with a story, circuit races, 2-player split screen and online rooms.
+
+- **Modes:** open world (story chapters, challenges, drones, level-ups) · circuit race (5 tracks + random, 1-50 laps, ghost)
+- **Players:** solo · 2 players split screen (keyboard or gamepads) · online rooms up to 8, joined by link
+- **World:** 5 themes, random seeds, day/dawn/sunset/night or live cycle, clear/cloudy/rain/fog/snow/storm or changing weather
+- **Combat:** 6 weapons with lead-aim assist, 3 drone types, power-ups, optional PvP
 
 **Stack:** Vite · TypeScript · Three.js · Cloudflare Workers (static assets, later Durable Objects for online rooms)
 
