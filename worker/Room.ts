@@ -25,10 +25,11 @@ export class Room extends DurableObject<Env> {
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
     this.ctx.acceptWebSocket(server);
-    const full = this.sockets().length > MAX_PLAYERS;
-    if (full) {
-      server.send(JSON.stringify({ t: 'error', msg: 'Room is full' } satisfies ServerMsg));
-      server.close(4000, 'Room is full');
+    const joined = this.players().length, max = Math.min(MAX_PLAYERS, this.settings.maxPlayers ?? MAX_PLAYERS);
+    const refuse = joined >= max ? `Room is full (${joined}/${max})` : this.settings.locked && joined > 0 ? 'The host locked this room' : '';
+    if (refuse) {
+      server.send(JSON.stringify({ t: 'error', msg: refuse } satisfies ServerMsg));
+      server.close(4000, 'Refused');
     } else {
       server.serializeAttachment({ id: crypto.randomUUID().slice(0, 8), name: 'Rider', color: 0xffffff, joined: Date.now(), hello: false } satisfies Attachment);
     }
@@ -68,6 +69,16 @@ export class Room extends DurableObject<Env> {
     }
   }
 
+  /** Trim the name and add a number if someone else in the room already uses it. */
+  private uniqueName(raw: unknown, self: WebSocket) {
+    const base = clean(raw), taken = new Set(this.sockets().filter((w) => w !== self).map((w) => this.att(w)?.name));
+    if (!taken.has(base)) return base;
+    for (let i = 2; ; i++) {
+      const n = `${base.slice(0, 13)} ${i}`;
+      if (!taken.has(n)) return n;
+    }
+  }
+
   private isHost(ws: WebSocket) {
     return this.players()[0]?.id === this.att(ws)?.id;
   }
@@ -84,12 +95,28 @@ export class Room extends DurableObject<Env> {
     if (!a) return;
     switch (msg.t) {
       case 'hello': {
-        a.name = clean(msg.name);
+        a.name = this.uniqueName(msg.name, ws);
         a.color = Number(msg.color) & 0xffffff;
         a.hello = true;
         ws.serializeAttachment(a);
         this.send(ws, { t: 'welcome', you: a.id, players: this.players(), settings: this.settings, phase: this.phase });
         this.broadcast({ t: 'players', players: this.players() }, ws);
+        return;
+      }
+      case 'profile': {
+        a.name = this.uniqueName(msg.name, ws);
+        a.color = Number(msg.color) & 0xffffff;
+        ws.serializeAttachment(a);
+        this.broadcast({ t: 'players', players: this.players() });
+        return;
+      }
+      case 'kick': {
+        if (!this.isHost(ws) || msg.id === a.id) return;
+        const target = this.sockets().find((w) => this.att(w)?.id === msg.id);
+        if (!target) return;
+        this.send(target, { t: 'kicked' });
+        try { target.close(4001, 'Kicked'); } catch { /* already closing */ }
+        this.broadcast({ t: 'players', players: this.players().filter((p) => p.id !== msg.id) });
         return;
       }
       case 'settings': {
@@ -105,6 +132,8 @@ export class Room extends DurableObject<Env> {
           weather: WEATHERS.includes(s.weather) ? s.weather : 'clear',
           theme: THEMES.includes(s.theme) ? s.theme : 'mixed',
           gen: { ...DEFAULT_GEN },
+          maxPlayers: Math.max(2, Math.min(MAX_PLAYERS, Math.round(Number(s.maxPlayers) || MAX_PLAYERS))),
+          locked: !!s.locked,
         };
         for (const k of Object.keys(GEN_MAX) as (keyof typeof GEN_MAX)[])
           this.settings.gen[k] = Math.max(0, Math.min(GEN_MAX[k], Math.round(Number(s.gen?.[k] ?? DEFAULT_GEN[k]))));

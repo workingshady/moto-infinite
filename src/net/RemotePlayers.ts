@@ -25,6 +25,8 @@ export class RemotePlayers {
     const ids = new Set(players.filter((p) => p.id !== selfId).map((p) => p.id));
     for (const [id, r] of this.map) if (!ids.has(id)) { this.removeModels(r); this.map.delete(id); }
     for (const p of players) {
+      const old = this.map.get(p.id);
+      if (old && (old.name !== p.name || old.color !== p.color)) { this.removeModels(old); this.map.delete(p.id); } // renamed / recoloured
       if (p.id === selfId || this.map.has(p.id)) continue;
       const bike = buildBike(p.color), rider = buildRider(p.color), tag = nameTag(p.name, p.color);
       seatRider(rider, bike);

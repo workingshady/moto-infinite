@@ -49,7 +49,7 @@ export class App {
     this.input.onToggleHelp = () => document.body.classList.toggle('nohelp');
     this.attract();
     const code = new URLSearchParams(location.search).get('room')?.toUpperCase();
-    if (code && ROOM_CODE_RE.test(code)) void this.join(code);
+    if (code && ROOM_CODE_RE.test(code)) this.menu.showJoin(code); // pick name/colour first
     else this.menu.show(prefs.onboarded ? 'home' : 'onboard');
     window.addEventListener('webglcontextlost', () => this.menu.show('loading', 'Graphics context lost: reload the page.'));
   }
@@ -60,6 +60,13 @@ export class App {
       startTraining: () => this.startTraining(),
       createRoom: () => void this.join(newRoomCode()),
       joinRoom: (code: string) => void this.join(code),
+      updateProfile: (name: string, color: number) => {
+        this.menu.profile.name = name;
+        this.menu.profile.color = color;
+        store.set('profile', this.menu.profile);
+        this.net?.send({ t: 'profile', name, color });
+      },
+      kick: (id: string) => this.net?.send({ t: 'kick', id }),
       leaveRoom: () => this.leaveRoom(),
       lobbySettings: (s: LobbySettings) => this.net?.send({ t: 'settings', settings: s }),
       lobbyStart: () => this.net?.send({ t: 'start' }),
@@ -156,7 +163,8 @@ export class App {
     try {
       await net.connect(this.menu.profile.name, this.menu.profile.color);
     } catch (e) {
-      this.menu.show('online', (e as Error).message);
+      if (new URLSearchParams(location.search).get('room')) this.menu.showJoin(code, (e as Error).message);
+      else this.menu.show('online', (e as Error).message);
       return;
     }
     this.net = net;

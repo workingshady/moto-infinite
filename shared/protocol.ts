@@ -20,6 +20,10 @@ export interface LobbySettings {
   weather: Weather;
   theme: WorldTheme;
   gen: WorldGen;
+  /** Room size chosen by the host (2..MAX_PLAYERS). */
+  maxPlayers: number;
+  /** Locked rooms refuse new players. */
+  locked: boolean;
 }
 
 export interface PlayerInfo {
@@ -44,6 +48,8 @@ export interface NetState {
 
 export type ClientMsg =
   | { t: 'hello'; name: string; color: number }
+  | { t: 'profile'; name: string; color: number }
+  | { t: 'kick'; id: string }
   | { t: 'settings'; settings: LobbySettings }
   | { t: 'start' }
   | { t: 'back' }
@@ -62,13 +68,14 @@ export type ServerMsg =
   | { t: 'fire'; id: string; w: number; o: Vec3; d: Vec3[] }
   | { t: 'boom'; id: string; p: Vec3; r: number; dmg: number }
   | { t: 'finish'; id: string; time: number }
+  | { t: 'kicked' }
   | { t: 'error'; msg: string };
 
 export const MAX_PLAYERS = 8;
 export const DEFAULT_GEN: WorldGen = { terrain: 1, water: 1, flora: 1, roads: 1, poi: 1 };
 export const GEN_MAX: WorldGen = { terrain: 3, water: 2, flora: 2, roads: 2, poi: 2 };
 export const ROOM_CODE_RE = /^[A-Z0-9]{4,8}$/;
-export const DEFAULT_SETTINGS: LobbySettings = { mode: 'open', trackId: 'coast', laps: 3, pvp: false, seed: 1, time: 'day', weather: 'clear', theme: 'mixed', gen: { ...DEFAULT_GEN } };
+export const DEFAULT_SETTINGS: LobbySettings = { mode: 'open', trackId: 'coast', laps: 3, pvp: false, seed: 1, time: 'day', weather: 'clear', theme: 'mixed', gen: { ...DEFAULT_GEN }, maxPlayers: 8, locked: false };
 export const TIMES: TimeOfDay[] = ['day', 'dawn', 'sunset', 'night', 'cycle'];
 export const WEATHERS: Weather[] = ['clear', 'cloudy', 'rain', 'fog', 'snow', 'storm', 'dynamic'];
 export const THEMES: WorldTheme[] = ['mixed', 'desert', 'forest', 'alpine', 'islands'];

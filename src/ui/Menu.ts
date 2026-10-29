@@ -1,7 +1,7 @@
 // Landing page, game setup (shared by solo, split screen and online lobby), settings, pause and results.
 // Plain DOM: each screen is a template string; clicks are handled by data-attributes in one place.
 import { ASSIST, GEN, PLAYER_COLORS, QUALITY, THEME_DEFS, TRACKS, WEATHER_DEFS, type QualityName } from '../config';
-import { DEFAULT_GEN, GEN_MAX, THEMES, TIMES, WEATHERS, type WorldGen, type GameMode, type LobbySettings, type PlayerInfo, type TimeOfDay, type Weather, type WorldTheme } from '../../shared/protocol';
+import { DEFAULT_GEN, GEN_MAX, MAX_PLAYERS, THEMES, TIMES, WEATHERS, type WorldGen, type GameMode, type LobbySettings, type PlayerInfo, type TimeOfDay, type Weather, type WorldTheme } from '../../shared/protocol';
 import type { Standing } from '../systems/Race';
 import { fmt } from '../systems/Race';
 import { escapeHtml, hex } from '../utils/math';
@@ -68,6 +68,8 @@ export interface MenuActions {
   startTraining(): void;
   createRoom(): void;
   joinRoom(code: string): void;
+  updateProfile(name: string, color: number): void;
+  kick(id: string): void;
   leaveRoom(): void;
   lobbySettings(s: LobbySettings): void;
   lobbyStart(): void;
@@ -79,7 +81,7 @@ export interface MenuActions {
   saveProfile(p: Profile): void;
 }
 
-type Screen = 'onboard' | 'home' | 'mode' | 'online' | 'lobby' | 'settings' | 'howto' | 'pause' | 'results' | 'loading';
+type Screen = 'onboard' | 'joinroom' | 'home' | 'mode' | 'online' | 'lobby' | 'settings' | 'howto' | 'pause' | 'results' | 'loading';
 interface LobbyView { code: string; link: string; players: PlayerInfo[]; settings: LobbySettings; host: boolean; you: string }
 
 const TIME_LABEL: Record<TimeOfDay, string> = { day: '☀️ Day', dawn: '🌅 Dawn', sunset: '🌇 Sunset', night: '🌙 Night', cycle: '🔄 Live cycle' };
@@ -96,10 +98,13 @@ export class Menu {
   readonly root: HTMLDivElement;
   private screen: Screen = 'home';
   private back: Screen = 'home';
-  private setup: Setup = { split: false, mode: 'open', trackId: 'coast', laps: 3, pvp: false, seed: newSeed(), time: 'day', weather: 'clear', theme: 'mixed', gen: { ...DEFAULT_GEN } };
+  private setup: Setup = { split: false, mode: 'open', trackId: 'coast', laps: 3, pvp: false, seed: newSeed(), time: 'day', weather: 'clear', theme: 'mixed', gen: { ...DEFAULT_GEN }, maxPlayers: 8, locked: false };
   private lobby: LobbyView | null = null;
   private genKey: keyof WorldGen = 'terrain';
   private slide = 0;
+  /** Where onboarding returns to (home, or back into a room). */
+  private obBack: Screen = 'home';
+  private joinCode = '';
   private preview = new CharacterPreview();
   inGame = false;
 
@@ -140,8 +145,21 @@ export class Menu {
 
   /** Re-render the lobby in place when players or settings change. */
   private refreshLobby() {
+    const focused = document.activeElement as HTMLInputElement | null, keep = focused?.id === 'lname' ? focused.value : null;
     this.root.querySelector('.card-wrap')!.innerHTML = this.render('lobby');
     this.afterRender();
+    if (keep !== null) {
+      const el = this.root.querySelector<HTMLInputElement>('#lname')!;
+      el.value = keep;
+      el.focus();
+      el.setSelectionRange(keep.length, keep.length);
+    }
+  }
+
+  /** Invite link opened: pick a name/colour before joining. */
+  showJoin(code: string, error = '') {
+    this.joinCode = code;
+    this.show('joinroom', error);
   }
 
   private afterRender() {
@@ -217,9 +235,9 @@ export class Menu {
             </div>
           </div>
           <div class="row-buttons">
-            <button class="btn ghost" data-go="skip">Skip</button>
+            <button class="btn ghost" data-go="skip">${this.obBack === 'home' ? 'Skip' : '← Back to room'}</button>
             <span>${this.slide ? '<button class="btn" data-go="tprev">← Back</button>' : ''}
-            ${last ? '<button class="btn primary" data-go="train">🎓 Start training ride</button>' : '<button class="btn primary" data-go="tnext">Next →</button>'}</span>
+            ${!last ? '<button class="btn primary" data-go="tnext">Next →</button>' : this.obBack === 'home' ? '<button class="btn primary" data-go="train">🎓 Start training ride</button>' : '<button class="btn primary" data-go="skip">Got it, back to the room</button>'}</span>
           </div>
         </div>`;
       }
@@ -256,6 +274,19 @@ export class Menu {
         ${st.split ? `<p class="hint">P1: WASD · Space/Shift nitro · F fire · E ride · Q weapon &nbsp;|&nbsp; P2: Arrows · Right Shift nitro · / fire · Enter ride · . weapon · Gamepads work too.</p>` : ''}
         <div class="row-buttons"><button class="btn ghost" data-go="home">← Back</button><button class="btn primary" data-go="start">Ride →</button></div>`;
       }
+      case 'joinroom':
+        return `
+        <h2>🌐 Join room <span class="roomcode inline">${escapeHtml(this.joinCode)}</span></h2>
+        <p class="hint">A friend invited you. Pick your rider, then join the lobby.</p>
+        <div class="join-grid">
+          <div>
+            <div class="profile"><label>Your name <input id="jname" maxlength="16" value="${escapeHtml(P.name)}" autofocus></label></div>
+            <div class="dots">${colorDots(P.color, 'color')}</div>
+            <p class="err">${escapeHtml(String(data ?? ''))}</p>
+          </div>
+          <div id="charHost" class="char-host small"></div>
+        </div>
+        <div class="row-buttons"><button class="btn ghost" data-go="home">Not now</button><span><button class="btn" data-go="tutorial">🎓 How to play</button> <button class="btn primary" data-go="joinnow">Join →</button></span></div>`;
       case 'online':
         return `
         <h2>🌐 Online room</h2>
@@ -269,11 +300,18 @@ export class Menu {
         return `
         <div class="lobby-head">
           <div><h2>Lobby</h2><div class="dim small">Room code</div><div class="roomcode">${escapeHtml(v.code)}</div></div>
-          <ul class="players">${v.players.map((p) => `<li><i style="background:${hex(p.color)}"></i>${escapeHtml(p.name)}${p.host ? ' 👑' : ''}${p.id === v.you ? ' <em>(you)</em>' : ''}</li>`).join('')}</ul>
+          <div>
+            <div class="dim small">Riders ${v.players.length}/${v.settings.maxPlayers}${v.settings.locked ? ' · 🔒 locked' : ''}</div>
+            <ul class="players">${v.players.map((p) => `<li><i style="background:${hex(p.color)}"></i>${escapeHtml(p.name)}${p.host ? ' 👑' : ''}${p.id === v.you ? ' <em>(you)</em>' : ''}${v.host && p.id !== v.you ? `<button class="kick" data-kick="${escapeHtml(p.id)}" title="Remove from room">✕</button>` : ''}</li>`).join('')}</ul>
+          </div>
         </div>
+        <div class="me-row"><label>Your name <input id="lname" maxlength="16" value="${escapeHtml(v.players.find((p) => p.id === v.you)?.name ?? P.name)}"></label><div class="dots">${colorDots(v.players.find((p) => p.id === v.you)?.color ?? P.color, 'lcolor')}</div></div>
         <div class="share"><input readonly value="${escapeHtml(v.link)}" id="link"><button class="btn" data-go="copy">Copy link</button>${'share' in navigator ? '<button class="btn" data-go="share">Share</button>' : ''}</div>
         ${this.optionsPanel(v.settings, v.host, true)}
-        <div class="row-buttons"><button class="btn ghost" data-go="leave">Leave</button>${v.host ? `<button class="btn primary" data-go="lstart">Start for everyone (${v.players.length})</button>` : '<span class="wait">⏳ Waiting for the host to start…</span>'}</div>`;
+        <div class="opt room-opts ${v.host ? '' : 'disabled'}"><span>Room</span><div class="chips">${chips('maxPlayers', Array.from({ length: MAX_PLAYERS - 1 }, (_, i) => i + 2), v.settings.maxPlayers, (n) => `${n} max`)}</div>
+          <label class="check"><input type="checkbox" data-opt="locked" ${v.settings.locked ? 'checked' : ''} ${v.host ? '' : 'disabled'}> 🔒 Lock room</label></div>
+        ${v.host ? '' : '<p class="hint">Only the host 👑 can change the world and room settings.</p>'}
+        <div class="row-buttons"><span><button class="btn ghost" data-go="leave">Leave</button> <button class="btn ghost" data-go="tutorial">🎓 How to play</button></span>${v.host ? `<button class="btn primary" data-go="lstart">Start for everyone (${v.players.length})</button>` : '<span class="wait">⏳ Waiting for the host to start…</span>'}</div>`;
       }
       case 'settings':
         return `
@@ -329,9 +367,13 @@ export class Menu {
   }
 
   // ---------------------------------------------------------------- input
+  private myColor() {
+    return this.lobby?.players.find((p) => p.id === this.lobby!.you)?.color ?? this.profile.color;
+  }
+
   private readNames() {
     const P = this.profile;
-    const n1 = this.root.querySelector<HTMLInputElement>('#pname'), n2 = this.root.querySelector<HTMLInputElement>('#pname2');
+    const n1 = this.root.querySelector<HTMLInputElement>('#pname') ?? this.root.querySelector<HTMLInputElement>('#jname'), n2 = this.root.querySelector<HTMLInputElement>('#pname2');
     if (n1) P.name = n1.value.trim().slice(0, 16) || 'Rider';
     if (n2) P.name2 = n2.value.trim().slice(0, 16) || 'Player 2';
     this.a.saveProfile(P);
@@ -357,6 +399,8 @@ export class Menu {
       case 'weather': s.weather = val as Weather; break;
       case 'pvp': s.pvp = !!val; break;
       case 'seed': s.seed = newSeed(); break;
+      case 'maxPlayers': s.maxPlayers = +val; break;
+      case 'locked': s.locked = !!val; break;
       case 'gen': s.gen = { ...s.gen, [this.genKey]: +val }; break;
       case 'surprise': {
         const pick = <T,>(l: readonly T[]) => l[Math.floor(Math.random() * l.length)];
@@ -377,7 +421,8 @@ export class Menu {
   private change(e: Event) {
     const t = e.target as HTMLInputElement;
     if (t.dataset.opt === 'lapsCustom') this.setOpt('lapsCustom', t.value);
-    else if (t.dataset.opt === 'pvp') this.setOpt('pvp', t.checked);
+    else if (t.dataset.opt === 'pvp' || t.dataset.opt === 'locked') this.setOpt(t.dataset.opt, t.checked);
+    else if (t.id === 'lname') this.a.updateProfile(t.value.trim().slice(0, 16) || 'Rider', this.myColor());
   }
 
   private click(e: MouseEvent) {
@@ -387,6 +432,13 @@ export class Menu {
     if (d.opt) {
       this.genKey = (d.key as keyof WorldGen) ?? 'terrain';
       return this.setOpt(d.opt, d.val ?? '');
+    }
+    if (d.kick) return this.a.kick(d.kick);
+    if (d.lcolor) {
+      const name = this.root.querySelector<HTMLInputElement>('#lname')?.value.trim().slice(0, 16) || 'Rider';
+      P.color = +d.lcolor;
+      this.a.saveProfile(P);
+      return this.a.updateProfile(name, P.color);
     }
     if (d.color) { this.readNames(); P.color = +d.color; this.a.saveProfile(P); return this.show(this.screen); }
     if (d.color2) { this.readNames(); P.color2 = +d.color2; this.a.saveProfile(P); return this.show(this.screen); }
@@ -415,10 +467,15 @@ export class Menu {
         void navigator.share?.({ title: 'Moto Infinite', text: 'Ride with me in Moto Infinite!', url: link }).catch(() => undefined);
         return;
       }
-      case 'tutorial': this.slide = 0; return this.show('onboard');
+      case 'tutorial': this.readNames(); this.slide = 0; this.obBack = this.screen === 'lobby' || this.screen === 'joinroom' ? this.screen : 'home'; return this.show('onboard');
+      case 'joinnow': this.readNames(); return this.a.joinRoom(this.joinCode);
       case 'tnext': this.slide = Math.min(SLIDES.length - 1, this.slide + 1); return this.show('onboard');
       case 'tprev': this.slide = Math.max(0, this.slide - 1); return this.show('onboard');
-      case 'skip': prefs.onboarded = true; savePrefs(); return this.show('home');
+      case 'skip':
+        prefs.onboarded = true;
+        savePrefs();
+        if (this.obBack === 'lobby' && this.lobby) return this.show('lobby');
+        return this.obBack === 'joinroom' ? this.show('joinroom') : this.show('home');
       case 'train': prefs.onboarded = true; savePrefs(); return this.a.startTraining();
       case 'nitroHold': prefs.nitroToggle = false; savePrefs(); return this.show('settings');
       case 'nitroToggle': prefs.nitroToggle = true; savePrefs(); return this.show('settings');

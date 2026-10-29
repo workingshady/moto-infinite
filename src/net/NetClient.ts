@@ -16,6 +16,7 @@ export class NetClient {
   phase: Phase = 'lobby';
   private ws: WebSocket | null = null;
   private closedByUs = false;
+  private kicked = false;
 
   constructor(readonly code: string) {}
 
@@ -52,13 +53,14 @@ export class NetClient {
         else if (msg.t === 'settings') this.settings = msg.settings;
         else if (msg.t === 'start') { this.settings = msg.settings; this.phase = 'playing'; }
         else if (msg.t === 'back') this.phase = 'lobby';
+        else if (msg.t === 'kicked') this.kicked = true;
         else if (msg.t === 'error' && !welcomed) reject(new Error(msg.msg));
         this.events.emit(msg.t, msg as never);
       };
       ws.onerror = () => { if (!welcomed) reject(new Error('Could not reach the room server')); };
       ws.onclose = () => {
         if (!welcomed) reject(new Error('Connection closed'));
-        if (!this.closedByUs) this.events.emit('closed', { reason: 'Disconnected from room' });
+        if (!this.closedByUs) this.events.emit('closed', { reason: this.kicked ? 'The host removed you from the room.' : 'Disconnected from room' });
       };
     });
   }
