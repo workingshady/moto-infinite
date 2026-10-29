@@ -54,9 +54,9 @@ export function buildRider(color: number): RiderModel {
   // helmet in team colour with a dark visor and a white stripe
   const helmet = new THREE.Group();
   helmet.position.set(0, 2.3, 0);
-  helmet.add(mesh(new THREE.SphereGeometry(0.43, 12, 10), suit));
-  helmet.add(mesh(new THREE.TorusGeometry(0.43, 0.035, 4, 24, Math.PI), white, 0, 0, 0, false).rotateY(Math.PI / 2));
-  helmet.add(mesh(new THREE.SphereGeometry(0.44, 12, 6, -0.9, 1.8, 1.15, 0.6), visor, 0, 0, 0, false));
+  helmet.add(mesh(new THREE.SphereGeometry(0.5, 14, 10), suit));
+  helmet.add(mesh(new THREE.TorusGeometry(0.5, 0.04, 4, 24, Math.PI), white, 0, 0, 0, false).rotateY(Math.PI / 2));
+  helmet.add(mesh(new THREE.SphereGeometry(0.515, 14, 6, Math.PI / 2 - 0.9, 1.8, 1.15, 0.6), visor, 0, 0, 0, false));
   helmet.visible = false;
   root.add(helmet);
   const boot = { geo: box(0.36, 0.22, 0.55), m: dark, z: 0.09 }, hand = { geo: box(0.22, 0.22, 0.24), m: glove };
