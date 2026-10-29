@@ -151,7 +151,8 @@ export class Player {
         // steering eases in and re-centres smoothly instead of snapping
         const want = (left ? 1 : 0) - (right ? 1 : 0);
         B.steer = lerp(B.steer, want, damp(dt, want ? CONTROL.steerIn : CONTROL.steerOut));
-        B.h += B.steer * st.grip * g.env.grip * clamp(Math.abs(B.v) / 6, 0, 1) * Math.sign(B.v) * dt * (1 - clamp((Math.abs(B.v) - 35) / 60, 0, 0.4));
+        // full steering at any speed (it used to fade out at nitro speed), a little extra while boosting
+        B.h += B.steer * st.grip * g.env.grip * clamp(Math.abs(B.v) / 6, 0, 1) * Math.sign(B.v) * dt * (boosting ? CONTROL.boostSteer : 1);
         B.moveH = B.h;
         B.lean = lerp(B.lean, -B.steer * clamp(Math.abs(B.v) / 22, 0, 1) * 0.55, damp(dt, 6));
         // keys held while leaving the ground must be released before they do tricks
@@ -175,12 +176,24 @@ export class Player {
           B.pitch += (lv - cur) * Math.min(1, dt * CONTROL.airAssist);
           B.pitchV *= 1 - Math.min(1, dt * 3);
         }
-        const ds = spinIn * BIKE.spinRate * dt;
-        B.h += ds;
-        B.spinAcc += ds;
-        if (!spinIn) B.h -= wrapPi(B.h - B.moveH) * Math.min(1, dt * CONTROL.yawAssist);
-        B.lean = lerp(B.lean, 0, damp(dt, 3));
-        B.steer = 0;
+        // small hops and the start of a jump: ←/→ keeps steering the bike's direction (air control)
+        const airSteer = !B.fromRamp || B.airT < CONTROL.airSteerTime;
+        if (airSteer) {
+          const want = (left ? 1 : 0) - (right ? 1 : 0);
+          B.steer = lerp(B.steer, want, damp(dt, want ? CONTROL.steerIn : CONTROL.steerOut));
+          const turn = B.steer * st.grip * CONTROL.airSteer * (boosting ? CONTROL.boostSteer : 1) * dt * Math.sign(B.v || 1);
+          B.h += turn;
+          B.moveH += turn;
+          L.left = left;
+          L.right = right; // holding a direction through the hop won't start a spin
+        } else {
+          const ds = spinIn * BIKE.spinRate * dt;
+          B.h += ds;
+          B.spinAcc += ds;
+          B.steer = 0;
+        }
+        if (!spinIn || airSteer) B.h -= wrapPi(B.h - B.moveH) * Math.min(1, dt * CONTROL.yawAssist);
+        B.lean = lerp(B.lean, airSteer ? -B.steer * 0.3 : 0, damp(dt, 3));
         if (boosting) B.v += 8 * dt;
       }
     } else {
@@ -235,7 +248,7 @@ export class Player {
       B.vy = clamp((gy - B.lastG) / dt, -40, 22);
       B.air = false;
       if (wasAir) { B.impact = -impactVy; this.land(); }
-    } else if (!B.air && B.y - gy > 0.3) {
+    } else if (!B.air && B.y - gy > (T.onRamp(B.x, B.z) ? 0.3 : CONTROL.airborneGap)) {
       B.air = true;
       B.airT = 0;
       B.flipAcc = B.spinAcc = 0;

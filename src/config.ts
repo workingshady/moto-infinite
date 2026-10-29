@@ -30,7 +30,13 @@ export const ROAD = {
 };
 
 /** Input feel: steering eases in and re-centres instead of snapping. */
-export const CONTROL = { steerIn: 7, steerOut: 10, airAssist: 3.2, yawAssist: 2.2 };
+export const CONTROL = {
+  steerIn: 7, steerOut: 10, airAssist: 3.2, yawAssist: 2.2,
+  boostSteer: 1.2, // extra turn rate while nitro/boost pad is on, so you can still dodge at top speed
+  airSteer: 0.7, // ←/→ keeps steering on small hops and the first moments of a jump
+  airSteerTime: 0.4, // after this long off a ramp, ←/→ switches to spin tricks
+  airborneGap: 0.6, // metres above ground before a bump counts as being airborne
+};
 
 /** Auto-aim: targets inside the cone get locked, shots lead moving targets. */
 export const AIM = { cone: 0.5, droneRange: 110, propRange: 65, lead: true, assist: 0.85 };
