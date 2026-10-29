@@ -1,18 +1,71 @@
 // Landing page, game setup (shared by solo, split screen and online lobby), settings, pause and results.
 // Plain DOM: each screen is a template string; clicks are handled by data-attributes in one place.
-import { PLAYER_COLORS, QUALITY, THEME_DEFS, TRACKS, WEATHER_DEFS, type QualityName } from '../config';
-import { THEMES, TIMES, WEATHERS, type GameMode, type LobbySettings, type PlayerInfo, type TimeOfDay, type Weather, type WorldTheme } from '../../shared/protocol';
+import { ASSIST, GEN, PLAYER_COLORS, QUALITY, THEME_DEFS, TRACKS, WEATHER_DEFS, type QualityName } from '../config';
+import { DEFAULT_GEN, GEN_MAX, THEMES, TIMES, WEATHERS, type WorldGen, type GameMode, type LobbySettings, type PlayerInfo, type TimeOfDay, type Weather, type WorldTheme } from '../../shared/protocol';
 import type { Standing } from '../systems/Race';
 import { fmt } from '../systems/Race';
 import { escapeHtml, hex } from '../utils/math';
 import { STORY } from '../data/story';
 import { CharacterPreview, drawMapPreview } from './Preview';
+import { prefs, savePrefs } from '../core/prefs';
+
+const K = (k: string) => `<kbd class="key">${k}</kbd>`;
+/** Onboarding slides: what to press, and what it looks like when you get it right. */
+const SLIDES: { title: string; art: string; body: string; result?: string }[] = [
+  {
+    title: 'Welcome to Infinita',
+    art: `<div class="scene sunset"><span class="big-emoji bob">🏍️</span><span class="drone-fly">🛸</span></div>`,
+    body: `${escapeHtml(STORY.intro)}<br><br>This guide takes 1 minute. Then a <b>training ride</b> checks off each skill live.`,
+  },
+  {
+    title: 'Ride',
+    art: `<div class="keys-grid"><span></span>${K('↑')}<span></span>${K('←')}${K('↓')}${K('→')}</div><div class="or">or</div><div class="keys-grid"><span></span>${K('W')}<span></span>${K('A')}${K('S')}${K('D')}</div>`,
+    body: `${K('E')} gets on the bike. ${K('↑')} throttle, ${K('↓')} brake / reverse, ${K('←')}${K('→')} steer. Grey road = fast, grass and sand slow you down. Wet or snowy roads have less grip.`,
+    result: '<span class="speed">93</span> km/h · Riding',
+  },
+  {
+    title: 'Nitro: boost while steering',
+    art: `<div class="combo">${K('Space')}<b>+</b>${K('←')}<span class="trail">💨💨💨</span></div>`,
+    body: `Hold ${K('Space')}, ${K('Shift')} or ${K('N')} for nitro. <b>Nitro drives the bike by itself</b>, so you only need nitro + ${K('←')}/${K('→')} to steer at top speed.<br><span class="tip">💡 Some keyboards ignore 3 keys pressed at once ("ghosting"). If steering stops while boosting, drop ${K('↑')}, use WASD, or turn on <b>Nitro: tap to toggle</b> in Settings.</span>`,
+    result: 'NITRO!',
+  },
+  {
+    title: 'Jumps & landing',
+    art: `<div class="scene"><span class="ramp"></span><span class="big-emoji jump">🏍️</span></div>`,
+    body: `Orange striped ramps launch you (orange squares on the minimap). <b>Hands off in the air = the bike levels itself.</b> Land on both wheels, facing forward.`,
+    result: 'BIG AIR 1.4s · +112 XP',
+  },
+  {
+    title: 'Tricks & combos',
+    art: `<div class="trick-row"><div>${K('↑')}${K('↓')}<small>flip</small></div><div>${K('←')}${K('→')}<small>spin</small></div><div>${K('C')}<small>style</small></div></div>`,
+    body: `After takeoff <b>let go</b>, then press ${K('↑')}/${K('↓')} to flip or ${K('←')}/${K('→')} to spin. Hold ${K('C')} for a style trick: alone = No-Hander, + ${K('↑')} = Superman, + ${K('↓')} = Heel Clicker. Let go before landing. Flip + spin = CORKSCREW bonus. Chain tricks within 5 s to build a combo.`,
+    result: 'BACKFLIP + 360 SPIN + CORKSCREW · +1890 XP · COMBO x3',
+  },
+  {
+    title: 'Weapons & drones',
+    art: `<div class="scene night"><span class="reticle-demo"></span><span class="big-emoji">🛸</span><span class="hit-demo">✕</span></div>`,
+    body: `${K('F')} or left click fires. Shots <b>auto-aim</b> at the red reticle and lead moving drones. ✕ = hit, red ✕ = kill. ${K('Q')} switches weapon. Level up to unlock Rocket, Railgun, Swarm and Mines. Scouts are fast, gunners shoot, bombers drop bombs.`,
+  },
+  {
+    title: 'The world',
+    art: `<div class="poi-row"><span style="--c:#ffb03f">🏘 Village</span><span style="--c:#5dff8a">⛽ Gas station</span><span style="--c:#ffffff">🌬 Windmill</span><span style="--c:#ff7ad9">🛹 Stunt zone</span><span style="--c:#ff3355">📡 Vex outpost</span></div>`,
+    body: `Every seed builds a different world. Ride under a <b>gas station</b> canopy to refuel and repair. Clear <b>Vex outposts</b>. Grab 💎 gems and power-ups (green repair, blue shield, yellow magnet, pink double XP). Timed challenges and story chapters keep coming.`,
+  },
+  {
+    title: 'Racing',
+    art: `<div class="scene"><span class="gate"></span><span class="big-emoji">🏁</span></div>`,
+    body: `Pass every blue gate in order; the checkered gate is start/finish. The minimap circles the next gate. Your best lap is saved as a <b>ghost</b> to race against. In rooms the host picks track, laps, weather and time.`,
+    result: 'LAP 2 · 0:41.07 · BEST',
+  },
+];
+
 
 export interface Profile { name: string; color: number; name2: string; color2: number }
 export type Setup = LobbySettings & { split: boolean };
 
 export interface MenuActions {
   startLocal(setup: Setup): void;
+  startTraining(): void;
   createRoom(): void;
   joinRoom(code: string): void;
   leaveRoom(): void;
@@ -26,7 +79,7 @@ export interface MenuActions {
   saveProfile(p: Profile): void;
 }
 
-type Screen = 'home' | 'mode' | 'online' | 'lobby' | 'settings' | 'howto' | 'pause' | 'results' | 'loading';
+type Screen = 'onboard' | 'home' | 'mode' | 'online' | 'lobby' | 'settings' | 'howto' | 'pause' | 'results' | 'loading';
 interface LobbyView { code: string; link: string; players: PlayerInfo[]; settings: LobbySettings; host: boolean; you: string }
 
 const TIME_LABEL: Record<TimeOfDay, string> = { day: '☀️ Day', dawn: '🌅 Dawn', sunset: '🌇 Sunset', night: '🌙 Night', cycle: '🔄 Live cycle' };
@@ -43,8 +96,10 @@ export class Menu {
   readonly root: HTMLDivElement;
   private screen: Screen = 'home';
   private back: Screen = 'home';
-  private setup: Setup = { split: false, mode: 'open', trackId: 'coast', laps: 3, pvp: false, seed: newSeed(), time: 'day', weather: 'clear', theme: 'mixed' };
+  private setup: Setup = { split: false, mode: 'open', trackId: 'coast', laps: 3, pvp: false, seed: newSeed(), time: 'day', weather: 'clear', theme: 'mixed', gen: { ...DEFAULT_GEN } };
   private lobby: LobbyView | null = null;
+  private genKey: keyof WorldGen = 'terrain';
+  private slide = 0;
   private preview = new CharacterPreview();
   inGame = false;
 
@@ -72,7 +127,7 @@ export class Menu {
     this.root.style.display = '';
     this.screen = s;
     this.root.className = s === 'pause' || s === 'results' ? 'overlay dim' : 'overlay';
-    const wide = s === 'home' || s === 'mode' || s === 'lobby';
+    const wide = s === 'home' || s === 'mode' || s === 'lobby' || s === 'onboard';
     this.root.innerHTML = `<div class="card-wrap ${wide ? 'wide' : ''}">${this.render(s, data)}</div>`;
     this.afterRender();
   }
@@ -112,6 +167,8 @@ export class Menu {
     const dis = editable ? '' : 'disabled';
     const track = TRACKS.find((t) => t.id === s.trackId) ?? TRACKS[0];
     const customLaps = !LAPS.includes(s.laps);
+    const genRow = (key: keyof WorldGen, label: string) =>
+      `<div class="opt"><span>${label}</span><div class="chips">${GEN[key].map((g, i) => `<button class="chip ${s.gen[key] === i ? 'on' : ''}" data-opt="gen" data-key="${key}" data-val="${i}">${g.label}</button>`).join('')}</div></div>`;
     return `
     <div class="setup">
       <div class="setup-opts ${dis}">
@@ -122,11 +179,15 @@ export class Menu {
         ${s.mode === 'open' ? `
         <div class="opt"><span>World</span><div class="chips">${chips('theme', THEMES, s.theme, (t) => THEME_DEFS[t].label)}</div></div>
         <p class="hint">${THEME_DEFS[s.theme].blurb}</p>
-        <div class="opt"><span>Map</span><div class="chips"><button class="chip" data-opt="seed" data-val="new">🎲 New random world</button></div></div>` : `
+        <details class="gen" open><summary>🛠 World generator</summary>
+          ${genRow('terrain', 'Terrain')}${genRow('water', 'Water')}${genRow('flora', 'Nature')}${genRow('roads', 'Roads')}${genRow('poi', 'Landmarks')}
+        </details>
+        <div class="opt"><span>Map</span><div class="chips"><button class="chip" data-opt="seed" data-val="new">🎲 New seed</button><button class="chip hot" data-opt="surprise" data-val="1">✨ Surprise me</button></div></div>` : `
         <div class="opt"><span>Track</span><div class="chips">${chips('trackId', TRACKS.map((t) => t.id), s.trackId, (id) => TRACKS.find((t) => t.id === id)!.name)}</div></div>
         <p class="hint">${track.blurb}${s.trackId === 'random' ? ' <button class="chip" data-opt="seed" data-val="new">🎲 Reroll</button>' : ''}</p>
         <div class="opt"><span>Laps</span><div class="chips">${chips('laps', LAPS, customLaps ? -1 : s.laps, (n) => `${n}`)}
-          <label class="custom ${customLaps ? 'on' : ''}">Custom <input type="number" min="1" max="50" value="${s.laps}" data-opt="lapsCustom" ${dis}></label></div></div>`}
+          <label class="custom ${customLaps ? 'on' : ''}">Custom <input type="number" min="1" max="50" value="${s.laps}" data-opt="lapsCustom" ${dis}></label></div></div>
+        ${s.trackId === 'random' ? `<details class="gen"><summary>🛠 Scenery generator</summary>${genRow('terrain', 'Terrain')}${genRow('water', 'Water')}${genRow('flora', 'Nature')}</details>` : ''}`}
         <div class="opt"><span>Time</span><div class="chips">${chips('time', TIMES, s.time, (t) => TIME_LABEL[t])}</div></div>
         <div class="opt"><span>Weather</span><div class="chips">${chips('weather', WEATHERS, s.weather, (w) => `${WEATHER_ICON[w]} ${w === 'dynamic' ? 'Changing' : WEATHER_DEFS[w].label}`)}</div></div>
         ${showPvp ? `<label class="check"><input type="checkbox" data-opt="pvp" ${s.pvp ? 'checked' : ''} ${dis}> Riders can shoot each other</label>` : ''}
@@ -141,6 +202,27 @@ export class Menu {
   private render(s: Screen, data?: unknown): string {
     const P = this.profile;
     switch (s) {
+      case 'onboard': {
+        const sl = SLIDES[this.slide], last = this.slide === SLIDES.length - 1;
+        return `
+        <div class="onboard">
+          <div class="dots-progress">${SLIDES.map((_, i) => `<i class="${i === this.slide ? 'on' : i < this.slide ? 'seen' : ''}"></i>`).join('')}</div>
+          <div class="ob-grid">
+            <div class="ob-art">${sl.art}</div>
+            <div class="ob-text">
+              <div class="label">HOW TO PLAY · ${this.slide + 1}/${SLIDES.length}</div>
+              <h2>${sl.title}</h2>
+              <p>${sl.body}</p>
+              ${sl.result ? `<div class="result-mock"><div class="label">WHAT IT LOOKS LIKE</div><div class="mock-banner">${sl.result}</div></div>` : ''}
+            </div>
+          </div>
+          <div class="row-buttons">
+            <button class="btn ghost" data-go="skip">Skip</button>
+            <span>${this.slide ? '<button class="btn" data-go="tprev">← Back</button>' : ''}
+            ${last ? '<button class="btn primary" data-go="train">🎓 Start training ride</button>' : '<button class="btn primary" data-go="tnext">Next →</button>'}</span>
+          </div>
+        </div>`;
+      }
       case 'home':
         return `
         <div class="hero">
@@ -155,8 +237,9 @@ export class Menu {
               <button class="btn primary" data-go="solo">▶ Play solo</button>
               <button class="btn" data-go="split">👥 2 players · split screen</button>
               <button class="btn" data-go="online">🌐 Online room · invite friends</button>
+              <button class="btn" data-go="tutorial">🎓 Tutorial & training ride</button>
             </div>
-            <div class="row-buttons"><button class="btn ghost" data-go="howto">How to play</button><button class="btn ghost" data-go="settings">Settings</button></div>
+            <div class="row-buttons"><button class="btn ghost" data-go="howto">Controls</button><button class="btn ghost" data-go="settings">Settings</button></div>
           </div>
           <div class="hero-right">
             <div id="charHost" class="char-host"></div>
@@ -197,6 +280,10 @@ export class Menu {
         <h2>Settings</h2>
         <div class="opt"><span>Graphics</span><div class="chips">${(Object.keys(QUALITY) as QualityName[]).map((q) => `<button class="chip ${q === this.quality ? 'on' : ''}" data-quality="${q}">${QUALITY[q].label}</button>`).join('')}</div></div>
         <p class="hint">Low turns off shadows and shortens view distance. Use it on laptops, phones and in split screen if it stutters.</p>
+        <div class="opt"><span>Assist</span><div class="chips">${ASSIST.map((a, i) => `<button class="chip ${prefs.assist === i ? 'on' : ''}" data-assist="${i}">${a.label}</button>`).join('')}</div></div>
+        <p class="hint">Riding assist keeps the bike on the road when you're not steering, glances you off trees instead of stopping dead, and softens crashes. Pro = no help.</p>
+        <div class="opt"><span>Nitro</span><div class="chips"><button class="chip ${prefs.nitroToggle ? '' : 'on'}" data-go="nitroHold">Hold</button><button class="chip ${prefs.nitroToggle ? 'on' : ''}" data-go="nitroToggle">Tap to toggle</button></div></div>
+        <p class="hint">Toggle mode helps keyboards that ignore 3 keys at once: tap nitro once, then only steer.</p>
         <div class="opt"><span>Sound</span><div class="chips"><button class="chip" data-go="mute">${this.muted() ? '🔇 Off' : '🔊 On'}</button></div></div>
         <div class="row-buttons"><button class="btn ghost" data-go="back">← Back</button></div>`;
       case 'howto':
@@ -210,6 +297,7 @@ export class Menu {
           <tr><td>Q / 1-3</td><td>Next weapon / pick a level-up card</td></tr>
           <tr><td>E</td><td>Get on / off the bike</td></tr>
           <tr><td>In the air</td><td>Release, then ↑↓ to flip and ←→ to spin. Hands off = bike levels itself</td></tr>
+          <tr><td>C</td><td>Style trick in the air (+↑ Superman, +↓ Heel Clicker)</td></tr>
           <tr><td>R</td><td>Respawn on the nearest road</td></tr>
           <tr><td>Right drag · wheel</td><td>Look around · zoom</td></tr>
           <tr><td>Esc / Start</td><td>Pause menu</td></tr>
@@ -269,6 +357,18 @@ export class Menu {
       case 'weather': s.weather = val as Weather; break;
       case 'pvp': s.pvp = !!val; break;
       case 'seed': s.seed = newSeed(); break;
+      case 'gen': s.gen = { ...s.gen, [this.genKey]: +val }; break;
+      case 'surprise': {
+        const pick = <T,>(l: readonly T[]) => l[Math.floor(Math.random() * l.length)];
+        s.seed = newSeed();
+        s.theme = pick(THEMES);
+        s.time = pick(TIMES);
+        s.weather = pick(WEATHERS);
+        s.gen = { ...s.gen };
+        for (const k of Object.keys(GEN_MAX) as (keyof WorldGen)[]) s.gen[k] = Math.floor(Math.random() * (GEN_MAX[k] + 1));
+        if (s.gen.poi === 0) s.gen.poi = 1;
+        break;
+      }
     }
     if (editingLobby) this.a.lobbySettings(s);
     else this.show('mode');
@@ -284,9 +384,13 @@ export class Menu {
     const t = (e.target as HTMLElement).closest<HTMLElement>('button');
     if (!t || (t as HTMLButtonElement).disabled || t.closest('.disabled')) return;
     const d = t.dataset, P = this.profile, st = this.setup;
-    if (d.opt) return this.setOpt(d.opt, d.val ?? '');
+    if (d.opt) {
+      this.genKey = (d.key as keyof WorldGen) ?? 'terrain';
+      return this.setOpt(d.opt, d.val ?? '');
+    }
     if (d.color) { this.readNames(); P.color = +d.color; this.a.saveProfile(P); return this.show(this.screen); }
     if (d.color2) { this.readNames(); P.color2 = +d.color2; this.a.saveProfile(P); return this.show(this.screen); }
+    if (d.assist) { prefs.assist = +d.assist; savePrefs(); return this.show('settings'); }
     if (d.quality) { this.quality = d.quality as QualityName; this.a.setQuality(this.quality); return this.show('settings'); }
     switch (d.go) {
       case 'solo': this.readNames(); st.split = false; return this.show('mode');
@@ -311,6 +415,13 @@ export class Menu {
         void navigator.share?.({ title: 'Moto Infinite', text: 'Ride with me in Moto Infinite!', url: link }).catch(() => undefined);
         return;
       }
+      case 'tutorial': this.slide = 0; return this.show('onboard');
+      case 'tnext': this.slide = Math.min(SLIDES.length - 1, this.slide + 1); return this.show('onboard');
+      case 'tprev': this.slide = Math.max(0, this.slide - 1); return this.show('onboard');
+      case 'skip': prefs.onboarded = true; savePrefs(); return this.show('home');
+      case 'train': prefs.onboarded = true; savePrefs(); return this.a.startTraining();
+      case 'nitroHold': prefs.nitroToggle = false; savePrefs(); return this.show('settings');
+      case 'nitroToggle': prefs.nitroToggle = true; savePrefs(); return this.show('settings');
       case 'leave': return this.a.leaveRoom();
       case 'lstart': return this.a.lobbyStart();
       case 'mute': this.a.toggleMute(); return this.show('settings');

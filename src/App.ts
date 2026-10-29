@@ -6,8 +6,9 @@ import { Menu, type Profile, type Setup } from './ui/Menu';
 import { createTouch } from './ui/Touch';
 import { NetClient, newRoomCode } from './net/NetClient';
 import { PLAYER_COLORS, TRACKS, type QualityName } from './config';
-import { ROOM_CODE_RE, type LobbySettings } from '../shared/protocol';
+import { DEFAULT_GEN, ROOM_CODE_RE, type LobbySettings } from '../shared/protocol';
 import type { Standing } from './systems/Race';
+import { prefs } from './core/prefs';
 
 const store = {
   get<T>(k: string, fallback: T): T {
@@ -49,13 +50,14 @@ export class App {
     this.attract();
     const code = new URLSearchParams(location.search).get('room')?.toUpperCase();
     if (code && ROOM_CODE_RE.test(code)) void this.join(code);
-    else this.menu.show('home');
+    else this.menu.show(prefs.onboarded ? 'home' : 'onboard');
     window.addEventListener('webglcontextlost', () => this.menu.show('loading', 'Graphics context lost: reload the page.'));
   }
 
   private actions() {
     return {
       startLocal: (s: Setup) => this.startLocal(s),
+      startTraining: () => this.startTraining(),
       createRoom: () => void this.join(newRoomCode()),
       joinRoom: (code: string) => void this.join(code),
       leaveRoom: () => this.leaveRoom(),
@@ -86,7 +88,7 @@ export class App {
     const times = ['day', 'sunset', 'dawn'] as const;
     this.replaceGame({
       mode: 'open', seed: Math.floor(Math.random() * 1e9), trackId: '', laps: 0, pvp: false, quality: this.quality, locals: [], net: null, attract: true,
-      time: times[Math.floor(Math.random() * times.length)], weather: 'clear', theme: 'mixed',
+      time: times[Math.floor(Math.random() * times.length)], weather: 'clear', theme: 'mixed', gen: { ...DEFAULT_GEN },
     });
   }
 
@@ -95,7 +97,7 @@ export class App {
     const track = s.mode === 'race' && s.trackId !== 'random' ? TRACKS.find((t) => t.id === s.trackId) : undefined;
     return {
       mode: s.mode, seed: track?.seed ?? s.seed, trackId: s.trackId, laps: s.laps, pvp: s.pvp,
-      time: s.time, weather: s.weather, theme: track?.theme ?? s.theme, quality: this.quality, locals, net,
+      time: s.time, weather: s.weather, theme: track?.theme ?? s.theme, gen: track ? { ...DEFAULT_GEN } : { ...DEFAULT_GEN, ...s.gen }, quality: this.quality, locals, net,
     };
   }
 
@@ -119,6 +121,22 @@ export class App {
     this.withLoading(() => {
       this.replaceGame(this.session(s, locals, null));
       this.enterPlay(!s.split);
+    });
+  }
+
+  /** Guided training ride: flat, dry, quiet world, starting on foot next to the bike. */
+  private startTraining() {
+    this.audio.init();
+    this.lastLocal = null;
+    this.input.setLayout(false);
+    const P = this.menu.profile;
+    this.withLoading(() => {
+      this.replaceGame({
+        mode: 'open', seed: Math.floor(Math.random() * 1e9), trackId: '', laps: 0, pvp: false, time: 'day', weather: 'clear', theme: 'mixed',
+        gen: { terrain: 0, water: 0, flora: 0, roads: 1, poi: 2 }, tutorial: true, quality: this.quality,
+        locals: [{ name: P.name, color: P.color, controller: this.input.controllers[0] }], net: null,
+      });
+      this.enterPlay(true);
     });
   }
 

@@ -7,7 +7,7 @@ import type { Engine } from '../core/Audio';
 import type { Entity } from './EntityManager';
 import type { Pose } from '../world/layout';
 import type { NetState } from '../../shared/protocol';
-import { BIKE, CONTROL, LANDING, PHYS, PLAYER, POWERUPS, type PowerupKind } from '../config';
+import { ASSIST, BIKE, CONTROL, LANDING, PHYS, PLAYER, POWERUPS, ROAD, type PowerupKind } from '../config';
 import { clamp, damp, lerp, rnd, TAU, wrapPi } from '../utils/math';
 import { buildBike, buildRider, seatRider, type BikeModel, type RiderModel } from './models';
 import { WEAPONS } from '../data/weapons';
@@ -15,6 +15,9 @@ import { UPGRADES, type Upgrade } from '../data/upgrades';
 import { Hud } from '../ui/Hud';
 import { PlayerChallenges } from '../systems/Challenges';
 import { STORY } from '../data/story';
+import { prefs } from '../core/prefs';
+
+type Style = 'NO-HANDER' | 'SUPERMAN' | 'HEEL CLICKER';
 
 const xpNeed = (level: number) => 350 + level * 250;
 
@@ -52,6 +55,10 @@ export class Player {
   private respawnT = 0;
   private engine: Engine | null = null;
   private _v = new THREE.Vector3();
+  private nitroOn = false;
+  private style: Style | null = null;
+  private styleT = 0;
+  private styleDone: Style[] = [];
 
   constructor(readonly game: Game, readonly index: number, readonly ctrl: Controller, readonly name: string, readonly color: number, spawn: Pose, mounted: boolean) {
     this.bike = buildBike(color);
@@ -130,7 +137,9 @@ export class Player {
     const up = active && c.is('up'), down = active && c.is('down'), left = active && c.is('left'), right = active && c.is('right');
     let boosting = false;
     if (this.riding && !s.dead) {
-      const wantN = active && c.is('nitro') && s.nitro > 1;
+      if (prefs.nitroToggle && active && c.hit('nitro')) this.nitroOn = !this.nitroOn;
+      if (s.nitro <= 1) this.nitroOn = false;
+      const wantN = active && (prefs.nitroToggle ? this.nitroOn : c.is('nitro')) && s.nitro > 1;
       if (wantN) {
         if (!B.wasN) { g.audio.play('nitro'); this.cam.shake = Math.max(this.cam.shake, 0.25); this.cam.fovKick = 8; }
         s.nitro -= BIKE.nitroBurn * dt;
@@ -141,7 +150,7 @@ export class Player {
       const top = st.top * (boosting ? BIKE.nitroTopMul : 1) * (onRoad ? 1 : BIKE.offroadTop);
       if (!B.air) {
         if (up) B.v += (B.v < 0 ? 40 : st.accel * (boosting ? BIKE.nitroAccelMul : 1)) * dt;
-        else if (boosting) B.v += st.accel * 1.2 * dt;
+        else if (boosting) B.v += st.accel * BIKE.nitroAccelMul * dt; // nitro drives by itself: Space + ←/→ is enough
         if (down) B.v -= (B.v > 0 ? BIKE.brake : BIKE.reverse) * dt;
         if (!up && !down && !boosting) B.v *= 1 - BIKE.coastDrag * dt;
         if (!onRoad) B.v *= 1 - BIKE.offroadDrag * dt;
@@ -153,6 +162,7 @@ export class Player {
         B.steer = lerp(B.steer, want, damp(dt, want ? CONTROL.steerIn : CONTROL.steerOut));
         // full steering at any speed (it used to fade out at nitro speed), a little extra while boosting
         B.h += B.steer * st.grip * g.env.grip * clamp(Math.abs(B.v) / 6, 0, 1) * Math.sign(B.v) * dt * (boosting ? CONTROL.boostSteer : 1);
+        this.assistSteer(dt, want);
         B.moveH = B.h;
         B.lean = lerp(B.lean, -B.steer * clamp(Math.abs(B.v) / 22, 0, 1) * 0.55, damp(dt, 6));
         // keys held while leaving the ground must be released before they do tricks
@@ -163,7 +173,16 @@ export class Player {
         if (!down) L.down = false;
         if (!left) L.left = false;
         if (!right) L.right = false;
-        const pitchIn = (up && !L.up ? 1 : 0) - (down && !L.down ? 1 : 0);
+        const trick = active && c.is('trick') && B.airT > 0.15;
+        if (trick) {
+          // C in the air: ↑ = Superman, ↓ = Heel Clicker, nothing = No-Hander (↑↓ pick the pose instead of flipping)
+          const want: Style = up ? 'SUPERMAN' : down ? 'HEEL CLICKER' : 'NO-HANDER';
+          if (want !== this.style) { this.style = want; this.styleT = 0; }
+          this.styleT += dt;
+          if (this.styleT > 0.35 && !this.styleDone.includes(want)) this.styleDone.push(want);
+        } else this.style = null;
+        this.poseStyle();
+        const pitchIn = trick ? 0 : (up && !L.up ? 1 : 0) - (down && !L.down ? 1 : 0);
         const spinIn = (left && !L.left ? 1 : 0) - (right && !L.right ? 1 : 0);
         B.pitchV += pitchIn * BIKE.flipAccel * dt;
         B.pitchV *= 1 - 1.8 * dt;
@@ -210,11 +229,35 @@ export class Player {
     const nx = B.x + Math.sin(B.moveH) * B.v * dt, nz = B.z + Math.cos(B.moveH) * B.v * dt;
     if (B.v !== 0) {
       const blk = g.chunks.blocked(nx, nz, 1, B.y, B.air ? 99 : 1.3);
-      if (blk) {
+      let glanced = false;
+      if (blk === 'tree' || blk === 'wall') {
+        // try sliding past at a small angle before treating it as a head-on hit
+        const A = ASSIST[prefs.assist] ?? ASSIST[1];
+        for (const turn of [0.35, -0.35, 0.7, -0.7]) {
+          const h2 = B.moveH + turn, sx = B.x + Math.sin(h2) * B.v * dt, sz = B.z + Math.cos(h2) * B.v * dt;
+          if (!g.chunks.blocked(sx, sz, 1, B.y, B.air ? 99 : 1.3)) {
+            B.h += turn * 0.5;
+            B.moveH = B.h;
+            B.v *= A.glance;
+            B.x = sx;
+            B.z = sz;
+            this.cam.shake = Math.max(this.cam.shake, 0.15);
+            glanced = true;
+            break;
+          }
+        }
+        if (glanced) {
+          g.audio.play('thud');
+          g.fx.burst(B.x, B.y + 0.6, B.z, { n: 8, speed: 4, life: 0.5, size: [0.8, 1.6], colors: [0x9a8a70], gravity: -1, drag: 2, smoke: true, alpha: 0.5 });
+        }
+      }
+      if (glanced) {
+        // slid past the obstacle, position already updated
+      } else if (blk) {
         if (Math.abs(B.v) > LANDING.wallDamageSpeed) {
           this.cam.shake = 0.5;
           g.audio.play('crash');
-          this.hurt(Math.abs(B.v) * 0.3 * (1 - st.crashArmor), undefined, true);
+          this.hurt(Math.abs(B.v) * 0.3 * (1 - st.crashArmor) * (ASSIST[prefs.assist] ?? ASSIST[1]).crash, undefined, true);
           g.fx.burst(nx, B.y + 1, nz, { n: 20, speed: 6, life: 0.8, size: [1, 3], colors: [0x9a8a70], gravity: -1, drag: 2, smoke: true, alpha: 0.6 });
         }
         B.v *= -0.25;
@@ -245,7 +288,7 @@ export class Player {
     if (B.y <= gy) {
       const wasAir = B.air, impactVy = B.vy;
       B.y = gy;
-      B.vy = clamp((gy - B.lastG) / dt, -40, 22);
+      B.vy = clamp((gy - B.lastG) / dt, -40, B.fromRamp || T.onRamp(B.x, B.z) ? 22 : (ASSIST[prefs.assist] ?? ASSIST[1]).crest);
       B.air = false;
       if (wasAir) { B.impact = -impactVy; this.land(); }
     } else if (!B.air && B.y - gy > (T.onRamp(B.x, B.z) ? 0.3 : CONTROL.airborneGap)) {
@@ -253,6 +296,7 @@ export class Player {
       B.airT = 0;
       B.flipAcc = B.spinAcc = 0;
       B.pitchV = 0;
+      this.styleDone = [];
       B.fromRamp = T.onRamp(B.x, B.z);
       if (B.fromRamp && this.riding) g.events.emit('progress', { player: this, id: 'ramp', value: 1 });
     }
@@ -303,8 +347,13 @@ export class Player {
   private land() {
     const B = this.B, g = this.game, air = B.airT, slope = this.slopePitch();
     const pErr = wrapPi(B.pitch - slope), yawErr = wrapPi(B.h - B.moveH);
-    if (this.riding && air > LANDING.minAir && (Math.abs(pErr) > LANDING.maxPitchErr || Math.abs(yawErr) > LANDING.maxYawErr)) {
-      this.crash(Math.abs(pErr) > LANDING.maxPitchErr ? 'Land your flips straight!' : 'Land facing forward!');
+    const posing = this.style !== null;
+    this.style = null;
+    this.poseStyle();
+    if (this.riding && posing && air > LANDING.minAir) {
+      this.crash('Bail! Let go of the trick key before landing');
+    } else if (this.riding && air > LANDING.minAir && (Math.abs(pErr) > LANDING.maxPitchErr * this.assist.landing || Math.abs(yawErr) > LANDING.maxYawErr * this.assist.landing)) {
+      this.crash(Math.abs(pErr) > LANDING.maxPitchErr * this.assist.landing ? 'Land your flips straight!' : 'Land facing forward!');
     } else if (this.riding) {
       const flips = Math.round(Math.abs(B.flipAcc) / TAU), spins = Math.round(Math.abs(B.spinAcc) / TAU), tricks: string[] = [];
       let pts = 0;
@@ -318,6 +367,12 @@ export class Player {
         pts += 180 * spins;
         g.events.emit('progress', { player: this, id: 'spin', value: spins });
       }
+      for (const st of this.styleDone) {
+        tricks.push(st);
+        pts += st === 'NO-HANDER' ? 150 : 220;
+      }
+      if (this.styleDone.length) g.events.emit('progress', { player: this, id: 'style', value: this.styleDone.length });
+      if (flips > 0 && spins > 0) { tricks.push('CORKSCREW'); pts += 200; }
       if (air > 0.9) { tricks.push('BIG AIR ' + air.toFixed(1) + 's'); pts += Math.round(air * 80); }
       if (Math.abs(pErr) < 0.15 && tricks.length) { tricks.push('PERFECT'); pts += 100; }
       g.events.emit('progress', { player: this, id: 'air', value: air });
@@ -350,6 +405,58 @@ export class Player {
     }
   }
 
+  private get assist() {
+    return ASSIST[prefs.assist] ?? ASSIST[1];
+  }
+
+  /**
+   * Riding assist: with no steering input the bike follows the road's curve, and near the edge it is
+   * nudged back towards the asphalt. Never acts against an active steer.
+   */
+  private assistSteer(dt: number, steerInput: number) {
+    const A = this.assist, B = this.B;
+    if ((!A.follow && !A.edge) || Math.abs(B.v) < 8) return;
+    const T = this.game.terrain, rd = T.layout.roadDist(B.x, B.z);
+    if (rd > ROAD.shoulder + 4) return; // off-road: you're on your own
+    const road = T.layout.nearestRoad(B.x, B.z);
+    // the road runs both ways: follow the direction closest to where we're heading
+    let target = road.h;
+    if (Math.abs(wrapPi(target - B.h)) > Math.PI / 2) target += Math.PI;
+    const err = wrapPi(target - B.h);
+    if (!steerInput && Math.abs(err) < 0.6) B.h += err * Math.min(1, dt * A.follow);
+    // edge guard: heading outward near the edge -> steer back toward the centre line
+    if (rd > ROAD.asphalt - 1.5 && A.edge) {
+      const toCx = road.x - B.x, toCz = road.z - B.z, toward = Math.atan2(toCx, toCz);
+      const out = wrapPi(toward - B.h);
+      if (Math.abs(out) > 0.2 && steerInput * out <= 0) B.h += clamp(out, -0.5, 0.5) * Math.min(1, dt * A.edge) * clamp((rd - ROAD.asphalt + 1.5) / 3, 0, 1);
+    }
+  }
+
+  /** Rider pose for style tricks (applied on top of the seated pose). */
+  private poseStyle() {
+    const r = this.rider, st = this.style;
+    if (!this.riding) return;
+    if (st === 'SUPERMAN') {
+      r.legL.rotation.set(0.3, 0, 0.25); r.legR.rotation.set(0.3, 0, -0.25);
+      r.torso.rotation.x = 0.9; r.armL.rotation.set(-1.4, 0, -0.1); r.armR.rotation.set(-1.4, 0, 0.1);
+    } else if (st === 'HEEL CLICKER') {
+      r.legL.rotation.set(-1.9, 0, -0.5); r.legR.rotation.set(-1.9, 0, 0.5);
+      r.torso.rotation.x = -0.1; r.armL.rotation.set(-1.15, 0, -0.15); r.armR.rotation.set(-1.15, 0, 0.15);
+    } else if (st === 'NO-HANDER') {
+      r.armL.rotation.set(0, 0, -2.4); r.armR.rotation.set(0, 0, 2.4);
+      r.torso.rotation.x = 0.05; r.legL.rotation.set(-1.35, 0, 0.12); r.legR.rotation.set(-1.35, 0, -0.12);
+    } else {
+      r.legL.rotation.set(-1.35, 0, 0.12); r.legR.rotation.set(-1.35, 0, -0.12);
+      r.armL.rotation.set(-1.15, 0, -0.15); r.armR.rotation.set(-1.15, 0, 0.15);
+      r.torso.rotation.x = 0.25;
+    }
+  }
+
+  /** True while nitro is switched on in toggle mode (HUD). */
+  get nitroLatched() {
+    return prefs.nitroToggle && this.nitroOn;
+  }
+
   private crash(reason: string) {
     const B = this.B, g = this.game;
     this.hud.banner('CRASH!', reason, '#ff4d5e');
@@ -359,7 +466,7 @@ export class Player {
     B.v *= 0.3; // keep some momentum so a crash isn't a full stop
     B.h = B.moveH;
     this.s.combo = 0;
-    this.hurt(LANDING.crashDamage * (1 - this.stats.crashArmor), undefined, true);
+    this.hurt(LANDING.crashDamage * (1 - this.stats.crashArmor) * this.assist.crash, undefined, true);
     g.fx.burst(B.x, B.y + 0.5, B.z, { n: 30, speed: 6, life: 1.4, size: [1.5, 4], colors: [0x9a8a70, 0x7a6a55], gravity: -1, drag: 1.5, smoke: true, alpha: 0.7 });
   }
 
@@ -425,6 +532,19 @@ export class Player {
     B.y = B.lastG = this.game.terrain.groundAt(B.x, B.z);
     if (!this.riding) this.mount();
     this.syncP();
+  }
+
+  private inFuel = false;
+  /** Gas stations refill nitro and repair while you're parked under the canopy. */
+  checkZones(zones: { x: number; z: number; r: number }[], dt: number) {
+    const P = this.P;
+    const inside = zones.some((z) => (P.x - z.x) ** 2 + (P.z - z.z) ** 2 < z.r * z.r);
+    if (inside) {
+      this.s.nitro = Math.min(this.stats.nitroMax, this.s.nitro + 60 * dt);
+      this.s.hp = Math.min(this.stats.hpMax, this.s.hp + 25 * dt);
+      if (!this.inFuel) { this.hud.banner('REFUELING', 'nitro + repair', '#5dff8a'); this.game.audio.play('power'); }
+    }
+    this.inFuel = inside;
   }
 
   /** Explosion knock-up. */

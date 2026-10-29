@@ -1,7 +1,7 @@
 // One Durable Object per room code. Relays rider snapshots/shots between players and owns the lobby state.
 // Uses the WebSocket Hibernation API so idle rooms cost nothing while players stay connected.
 import { DurableObject } from 'cloudflare:workers';
-import { DEFAULT_SETTINGS, MAX_PLAYERS, THEMES, TIMES, WEATHERS, type ClientMsg, type LobbySettings, type Phase, type PlayerInfo, type ServerMsg } from '../shared/protocol';
+import { DEFAULT_GEN, DEFAULT_SETTINGS, GEN_MAX, MAX_PLAYERS, THEMES, TIMES, WEATHERS, type ClientMsg, type LobbySettings, type Phase, type PlayerInfo, type ServerMsg } from '../shared/protocol';
 
 interface Attachment { id: string; name: string; color: number; joined: number; hello: boolean }
 
@@ -104,7 +104,10 @@ export class Room extends DurableObject<Env> {
           time: TIMES.includes(s.time) ? s.time : 'day',
           weather: WEATHERS.includes(s.weather) ? s.weather : 'clear',
           theme: THEMES.includes(s.theme) ? s.theme : 'mixed',
+          gen: { ...DEFAULT_GEN },
         };
+        for (const k of Object.keys(GEN_MAX) as (keyof typeof GEN_MAX)[])
+          this.settings.gen[k] = Math.max(0, Math.min(GEN_MAX[k], Math.round(Number(s.gen?.[k] ?? DEFAULT_GEN[k]))));
         await this.ctx.storage.put('settings', this.settings);
         this.broadcast({ t: 'settings', settings: this.settings });
         return;

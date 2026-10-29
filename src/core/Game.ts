@@ -4,7 +4,7 @@ import { Renderer } from './Renderer';
 import { Events } from './Events';
 import type { Audio } from './Audio';
 import type { Controller, Input } from './Input';
-import type { GameMode, TimeOfDay, Weather, WorldTheme } from '../../shared/protocol';
+import type { GameMode, TimeOfDay, Weather, WorldGen, WorldTheme } from '../../shared/protocol';
 import type { NetClient } from '../net/NetClient';
 import type { ChallengeId } from '../data/challenges';
 import { Noise } from '../utils/noise';
@@ -19,7 +19,8 @@ import { Effects } from '../systems/Effects';
 import { Combat } from '../systems/Combat';
 import { Race, type Standing } from '../systems/Race';
 import { RemotePlayers } from '../net/RemotePlayers';
-import { NET, PHYS, QUALITY, TRACKS, WORLD, type QualityName } from '../config';
+import { Tutorial } from '../systems/Tutorial';
+import { GEN, NET, PHYS, QUALITY, TRACKS, WORLD, type QualityName } from '../config';
 import { STORY } from '../data/story';
 
 export interface LocalPlayerSpec { name: string; color: number; controller: Controller }
@@ -33,6 +34,9 @@ export interface SessionOptions {
   time: TimeOfDay;
   weather: Weather;
   theme: WorldTheme;
+  gen: WorldGen;
+  /** Guided training ride for new players. */
+  tutorial?: boolean;
   quality: QualityName;
   locals: LocalPlayerSpec[];
   net: NetClient | null;
@@ -65,6 +69,7 @@ export class Game {
   readonly hudLayer: HTMLDivElement;
   readonly net: NetClient | null;
   race: Race | null = null;
+  tutorial: Tutorial | null = null;
   remotes: RemotePlayers | null = null;
   time = 0;
   frame = 0;
@@ -79,8 +84,8 @@ export class Game {
   constructor(readonly opts: SessionOptions, readonly input: Input, readonly audio: Audio, readonly hooks: GameHooks) {
     this.net = opts.net;
     const noise = new Noise(opts.seed);
-    this.layout = opts.mode === 'race' ? new Circuit(noise, opts.seed) : new GridRoads(noise);
-    this.terrain = new Terrain(noise, this.layout, opts.theme);
+    this.layout = opts.mode === 'race' ? new Circuit(noise, opts.seed) : new GridRoads(noise, opts.seed, opts.gen.roads, GEN.poi[opts.gen.poi].chance);
+    this.terrain = new Terrain(noise, this.layout, opts.theme, opts.gen);
     this.renderer = new Renderer(opts.quality, document.body);
     input.attachCanvas(this.renderer.gl.domElement);
     this.hudLayer = document.createElement('div');
@@ -109,6 +114,7 @@ export class Game {
       opts.locals.forEach((l, i) => this.players.push(new Player(this, i, l.controller, l.name, l.color, this.spawnPoints[first + i], opts.mode === 'race' || opts.locals.length > 1 || !!this.net)));
       if (opts.mode === 'race' && this.layout instanceof Circuit) this.race = new Race(this, this.layout, opts.laps, opts.trackId);
       if (this.net) this.wireNet(this.net);
+      if (opts.tutorial) this.tutorial = new Tutorial(this);
     }
     addEventListener('resize', this.onResize);
     this.resize();
@@ -138,7 +144,7 @@ export class Game {
     this.raf = requestAnimationFrame(this.loop);
     if (this.opts.attract) return;
     const track = TRACKS.find((t) => t.id === this.opts.trackId);
-    const beat = this.opts.mode === 'open' ? STORY.spawn : { title: `${STORY.race.title} · ${(track?.name ?? 'RANDOM').toUpperCase()}`, text: `${this.opts.laps} lap${this.opts.laps > 1 ? 's' : ''}. ${STORY.race.text}` };
+    const beat = this.opts.tutorial ? { title: 'TRAINING RIDE', text: 'Follow the checklist on the right. Each step teaches one skill.' } : this.opts.mode === 'open' ? STORY.spawn : { title: `${STORY.race.title} · ${(track?.name ?? 'RANDOM').toUpperCase()}`, text: `${this.opts.laps} lap${this.opts.laps > 1 ? 's' : ''}. ${STORY.race.text}` };
     setTimeout(() => this.players.forEach((p) => p.storyBeat(beat.title, beat.text)), 700);
   }
 
@@ -204,9 +210,12 @@ export class Game {
       this.combat.update(h);
     }
     for (const pd of this.terrain.pads) pd.cd -= dt;
+    this.chunks.animate(dt);
+    for (const p of this.players) p.checkZones(this.chunks.zones, dt);
     this.fx.update(dt);
     this.effects.update(dt);
-    for (const p of this.players) p.challenges?.update(dt);
+    if (!this.tutorial || this.tutorial.complete) for (const p of this.players) p.challenges?.update(dt);
+    this.tutorial?.update(dt);
     this.race?.update(dt);
     this.remotes?.update(dt);
     const focus = this.players.length ? this.players.map((p) => p.P) : [this.attractFocus()];

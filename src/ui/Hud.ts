@@ -5,9 +5,12 @@ import type { Player } from '../entities/Player';
 import type { Upgrade } from '../data/upgrades';
 import type { Viewport } from '../core/Renderer';
 import { WEAPONS } from '../data/weapons';
-import { POWERUPS, type PowerupKind } from '../config';
+import { POI_KINDS, POWERUPS, type PoiKind, type PowerupKind } from '../config';
+
+const POI_COLOR = Object.fromEntries(POI_KINDS.map((k) => [k.kind, k.color])) as Record<PoiKind, string>;
 import { clamp, escapeHtml, hex, TAU } from '../utils/math';
 import { fmt } from '../systems/Race';
+import { STEPS } from '../systems/Tutorial';
 
 const TEMPLATE = `
 <canvas class="lines"></canvas>
@@ -26,6 +29,7 @@ const TEMPLATE = `
 </div>
 <div class="panel challenge" data-k="ch"><div class="label">CHALLENGE</div><b data-k="cTxt"></b><div class="bar"><i class="cbar" data-k="cBar"></i></div><div data-k="cTime" class="dim"></div></div>
 <div class="panel racebox" data-k="race"><div class="place" data-k="place"></div><div data-k="lap"></div><div class="dim" data-k="times"></div></div>
+<div class="panel tut" data-k="tut"></div>
 <div class="panel mapwrap"><canvas class="minimap" width="160" height="160"></canvas></div>
 <div class="panel prompt" data-k="prompt">Press <b data-k="rideKey">E</b> to ride</div>
 <div class="banner" data-k="banner"></div>
@@ -50,6 +54,7 @@ export class Hud {
   private hurtA = 0;
   private rect: Viewport = { x: 0, y: 0, w: innerWidth, h: innerHeight };
   private _v = new THREE.Vector3();
+  private tutKey = '';
 
   constructor(private game: Game, private p: Player) {
     this.root = document.createElement('div');
@@ -198,7 +203,7 @@ export class Hud {
     e.xpBar.style.width = (s.xp / p.xpNeed()) * 100 + '%';
     e.score.textContent = s.score + (s.combo > 1 ? ` (x${s.combo})` : '');
     e.gems.textContent = String(s.gems);
-    e.weapon.textContent = WEAPONS[s.weapon].name;
+    e.weapon.textContent = WEAPONS[s.weapon].name + (p.nitroLatched ? ' · NOS ON' : '');
     e.dist.textContent = (s.dist / 1000).toFixed(2) + ' km';
     e.clock.textContent = g.env.label;
     e.buffs.innerHTML = (Object.keys(p.buffs) as PowerupKind[])
@@ -220,6 +225,19 @@ export class Hud {
       e.lap.textContent = r.finished ? 'FINISHED' : `Lap ${Math.max(1, Math.min(r.lap, race.laps))}/${race.laps}`;
       const cur = race.started && !r.finished ? g.time - r.lapStart : 0;
       e.times.innerHTML = `${r.finished ? fmt(r.finishTime) : fmt(cur)}<br>best ${r.best ? fmt(r.best) : '--'}${race.bestLap() ? ` · ghost ${fmt(race.bestLap())}` : ''}`;
+    }
+    const tut = g.tutorial;
+    e.tut.style.display = tut ? 'block' : 'none';
+    if (tut) {
+      const key = tut.complete ? 'done' : String(tut.step);
+      if (key !== this.tutKey) {
+        this.tutKey = key;
+        e.tut.innerHTML = `<div class="label">TRAINING ${Math.min(tut.step, STEPS.length)}/${STEPS.length}</div>` +
+          STEPS.map((st, i) => i < tut.step ? `<div class="ok">✓ ${escapeHtml(st.title)}</div>`
+            : i === tut.step ? `<div class="cur"><b>▸ ${escapeHtml(st.title)}</b><kbd>${escapeHtml(st.keys)}</kbd><span>${escapeHtml(st.hint)}</span></div>`
+            : `<div class="todo">${escapeHtml(st.title)}</div>`).join('') +
+          (tut.complete ? '<div class="cur"><b>🏁 All done!</b><span>Free ride: challenges are live now.</span></div>' : '');
+      }
     }
     if (frame % 6 === 0) this.minimap();
   }
@@ -260,6 +278,15 @@ export class Hud {
       if (en.type === 'gem') { mm.fillStyle = '#46e3ff'; mm.fillRect(a - 1.5, b - 1.5, 3, 3); }
       else { mm.fillStyle = en.type === 'drone' ? '#ff3355' : '#ffd23f'; mm.beginPath(); mm.arc(a, b, 3.5, 0, TAU); mm.fill(); }
     });
+    for (const poi of g.chunks.pois) {
+      const [a, b] = toM(poi.x, poi.z);
+      if (a < -6 || b < -6 || a > W2 + 6 || b > W2 + 6) continue;
+      mm.fillStyle = POI_COLOR[poi.kind];
+      mm.fillRect(a - 4, b - 4, 8, 8);
+      mm.strokeStyle = 'rgba(0,0,0,.7)';
+      mm.lineWidth = 1.5;
+      mm.strokeRect(a - 4, b - 4, 8, 8);
+    }
     for (const r of g.terrain.ramps) { const [a, b] = toM(r.x, r.z); mm.fillStyle = '#f2a33a'; mm.fillRect(a - 2.5, b - 2.5, 5, 5); }
     if (g.race && !p.race.finished) {
       const n = g.race.nextGate(p), [a, b] = toM(n.x, n.z);

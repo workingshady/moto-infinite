@@ -6,6 +6,8 @@ import type { Pad, Ramp } from './Terrain';
 import { RAMP } from './Terrain';
 import { FEATURES, DRONES, QUALITY, ROAD, WORLD } from '../config';
 import { G, MAT, mesh } from '../entities/assets';
+import { buildPoi, dressCircuit, type Spinner, type Zone } from './Landmarks';
+import { Circuit, type Poi } from './layout';
 import { mulberry32, PI, TAU } from '../utils/math';
 
 export interface Obstacle { x: number; z: number; r: number; top: number }
@@ -24,6 +26,11 @@ interface Part { g: THREE.BufferGeometry; m: THREE.Material; mats: number[]; col
 
 export class ChunkManager {
   private chunks = new Map<number, Chunk>();
+  readonly spinners: Spinner[] = [];
+  readonly zones: Zone[] = [];
+  /** Landmarks currently loaded (minimap). */
+  readonly pois: Poi[] = [];
+  private poiChunk = new Map<Poi, Chunk>();
   view: number;
 
   constructor(private game: Game) {
@@ -95,6 +102,12 @@ export class ChunkManager {
 
     this.scenery(ch, rng, x0, z0);
     this.markings(ch, x0, z0);
+    for (const poi of g.layout.pois(x0, z0, CH)) {
+      buildPoi(g, ch, poi, this.spinners, this.zones);
+      this.pois.push(poi);
+      this.poiChunk.set(poi, ch);
+    }
+    if (g.layout instanceof Circuit) dressCircuit(g, ch, g.layout, x0, z0, CH);
     const F = FEATURES[g.opts.mode];
     g.layout.forEachRoadPoint(x0, z0, CH, (x, z, tx, tz, along) => {
       if (along >= 0 && along < 60) return; // keep the race start straight clear
@@ -125,15 +138,16 @@ export class ChunkManager {
     const pine = (snowy: boolean) =>
       ([[2.4, 1], [3.6, 0.8], [4.7, 0.58]] as const).forEach(([yy, k]) => add('pine', G.cone, MAT.white, child(0, yy, 0, k), snowy ? SNOW_PINE : PINE_COLOR));
 
-    for (let t = 0; t < WORLD.scenery; t++) {
+    for (let t = 0, n = Math.round(WORLD.scenery * T.flora); t < n; t++) {
       const x = x0 + rng() * CH, z = z0 + rng() * CH, y = T.heightAt(x, z), rd = T.layout.roadDist(x, z);
       if (rd < ROAD.clear || y < 1.8) continue;
       const b = T.biome(x, z), roll = rng(), s = 0.8 + rng() * 0.6;
-      if (y > T.snowLine - 4) {
+      const snow = T.snowAt(x, z);
+      if (y > snow - 4) {
         if (roll < 0.18) {
           base(x, y, z, s);
           add('trunk', G.trunk, MAT.trunk, child(0, 1.1, 0));
-          pine(y > T.snowLine + 2);
+          pine(y > snow + 2);
           ch.obs.push({ x, z, r: 0.6 * s, top: y + 6 });
         } else if (roll < 0.3) {
           rock(x, y, z, s * 1.4, s, s * 1.2);
@@ -274,7 +288,14 @@ export class ChunkManager {
     for (const r of ch.ramps) T.ramps.splice(T.ramps.indexOf(r), 1);
     for (const p of ch.pads) T.pads.splice(T.pads.indexOf(p), 1);
     g.entities.removeChunk(ch);
+    for (let i = this.spinners.length - 1; i >= 0; i--) if (this.spinners[i].chunk === ch) this.spinners.splice(i, 1);
+    for (let i = this.zones.length - 1; i >= 0; i--) if (this.zones[i].chunk === ch) this.zones.splice(i, 1);
+    for (let i = this.pois.length - 1; i >= 0; i--) if (this.poiChunk.get(this.pois[i]) === ch) { this.poiChunk.delete(this.pois[i]); this.pois.splice(i, 1); }
     this.chunks.delete(key(ch.cx, ch.cz));
+  }
+
+  animate(dt: number) {
+    for (const s of this.spinners) s.obj.rotation.z += s.speed * dt;
   }
 
   /** Is the spot blocked by water, a cliff or a tree/rock? */

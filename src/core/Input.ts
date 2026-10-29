@@ -3,32 +3,32 @@
 
 export type Action =
   | 'up' | 'down' | 'left' | 'right' | 'nitro' | 'jump' | 'fire'
-  | 'ride' | 'weapon' | 'respawn' | 'pick1' | 'pick2' | 'pick3';
+  | 'ride' | 'weapon' | 'respawn' | 'trick' | 'pick1' | 'pick2' | 'pick3';
 
 type Bindings = Record<Action, string[]>;
 
 export const BINDINGS: Record<'solo' | 'p1' | 'p2', Bindings> = {
   solo: {
     up: ['ArrowUp', 'KeyW'], down: ['ArrowDown', 'KeyS'], left: ['ArrowLeft', 'KeyA'], right: ['ArrowRight', 'KeyD'],
-    nitro: ['ShiftLeft', 'ShiftRight', 'Space'], jump: ['Space'], fire: ['KeyF'], ride: ['KeyE'], weapon: ['KeyQ'],
-    respawn: ['KeyR'], pick1: ['Digit1'], pick2: ['Digit2'], pick3: ['Digit3'],
+    nitro: ['ShiftLeft', 'ShiftRight', 'Space', 'KeyN'], jump: ['Space'], fire: ['KeyF'], ride: ['KeyE'], weapon: ['KeyQ'],
+    respawn: ['KeyR'], trick: ['KeyC'], pick1: ['Digit1'], pick2: ['Digit2'], pick3: ['Digit3'],
   },
   p1: {
     up: ['KeyW'], down: ['KeyS'], left: ['KeyA'], right: ['KeyD'],
     nitro: ['ShiftLeft', 'Space'], jump: ['Space'], fire: ['KeyF'], ride: ['KeyE'], weapon: ['KeyQ'],
-    respawn: ['KeyR'], pick1: ['Digit1'], pick2: ['Digit2'], pick3: ['Digit3'],
+    respawn: ['KeyR'], trick: ['KeyC'], pick1: ['Digit1'], pick2: ['Digit2'], pick3: ['Digit3'],
   },
   p2: {
     up: ['ArrowUp'], down: ['ArrowDown'], left: ['ArrowLeft'], right: ['ArrowRight'],
     nitro: ['ShiftRight', 'Numpad0'], jump: ['ShiftRight', 'Numpad0'], fire: ['Slash', 'Numpad1'], ride: ['Enter', 'NumpadEnter'],
-    weapon: ['Period', 'Numpad2'], respawn: ['Backspace', 'Numpad3'], pick1: ['Digit8', 'Numpad7'], pick2: ['Digit9', 'Numpad8'], pick3: ['Digit0', 'Numpad9'],
+    weapon: ['Period', 'Numpad2'], respawn: ['Backspace', 'Numpad3'], trick: ['Quote', 'Numpad4'], pick1: ['Digit8', 'Numpad7'], pick2: ['Digit9', 'Numpad8'], pick3: ['Digit0', 'Numpad9'],
   },
 };
 
 // Standard gamepad layout: 0=A 1=B 2=X 3=Y 4=LB 5=RB 6=LT 7=RT 8=Back 9=Start 12-15=D-pad
 const PAD: Record<Action, number[]> = {
   up: [0, 7, 12], down: [6, 13], left: [14], right: [15], nitro: [1, 5], jump: [1], fire: [2],
-  ride: [3], weapon: [4], respawn: [8], pick1: [14], pick2: [12], pick3: [15],
+  ride: [3], weapon: [4], respawn: [8], trick: [10, 11], pick1: [14], pick2: [12], pick3: [15],
 };
 
 export class Controller {

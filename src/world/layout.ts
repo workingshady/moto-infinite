@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import type { Noise } from '../utils/noise';
 import { mulberry32, TAU } from '../utils/math';
-import { WORLD } from '../config';
+import { GEN, POI_KINDS, type PoiKind } from '../config';
 
 export interface Pose { x: number; z: number; h: number }
 export type RoadPointFn = (x: number, z: number, tx: number, tz: number, along: number) => void;
@@ -18,83 +18,173 @@ export interface RoadLayout {
   /** Points along roads inside the square, every ~8 m, with unit tangent and distance along the road (-1 if unknown). */
   forEachRoadPoint(x0: number, z0: number, size: number, fn: RoadPointFn): void;
   drawRoads(ctx: CanvasRenderingContext2D, toMap: (x: number, z: number) => [number, number], px: number, pz: number, r: number): void;
+  /** Landmarks inside a world square (open world only). */
+  pois(x0: number, z0: number, size: number): Poi[];
 }
 
 const roadHeight = (noise: Noise, x: number, z: number) => 4 + noise.fbm(x / 220 + 40, z / 220 + 40, 3) * 12;
 
+/** Deterministic 0..1 hash of integers (same on every client). */
+export function hash01(a: number, b: number, c: number) {
+  let h = Math.imul(a | 0, 374761393) ^ Math.imul(b | 0, 668265263) ^ Math.imul(c | 0, 2147483647);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+
+export interface Poi { x: number; z: number; kind: PoiKind; h: number; id: number }
+interface Line { a1: number; a2: number; f1: number; f2: number; o1: number; o2: number }
+
+/**
+ * Open-world roads: two families of wavy lines crossing each other. Every seed rotates the whole
+ * network and gives each line its own curviness, so no two worlds share the same road map.
+ * Crossroads can host landmarks (villages, gas stations, windmills, stunt zones, drone outposts).
+ */
 export class GridRoads implements RoadLayout {
   readonly kind = 'grid';
-  private readonly G = WORLD.grid;
-  constructor(private noise: Noise) {}
+  private readonly G: number;
+  private readonly A: number;
+  private readonly c: number;
+  private readonly s: number;
+  private lines = new Map<number, Line>();
 
-  private rx(k: number, z: number) { return k * this.G + 30 * Math.sin(z / 110 + k * 1.3) + 12 * Math.sin(z / 47 + k * 2.1); }
-  private rz(k: number, x: number) { return k * this.G + 30 * Math.sin(x / 120 + k * 0.7) + 12 * Math.sin(x / 53 + k * 1.9); }
-  private drx(k: number, z: number) { return (30 / 110) * Math.cos(z / 110 + k * 1.3) + (12 / 47) * Math.cos(z / 47 + k * 2.1); }
-  private drz(k: number, x: number) { return (30 / 120) * Math.cos(x / 120 + k * 0.7) + (12 / 53) * Math.cos(x / 53 + k * 1.9); }
-
-  private distV(x: number, z: number) {
-    let d = 1e9;
-    const k0 = Math.round(x / this.G);
-    for (let k = k0 - 1; k <= k0 + 1; k++) d = Math.min(d, Math.abs(x - this.rx(k, z)));
-    return d * 0.93;
-  }
-  private distH(x: number, z: number) {
-    let d = 1e9;
-    const k0 = Math.round(z / this.G);
-    for (let k = k0 - 1; k <= k0 + 1; k++) d = Math.min(d, Math.abs(z - this.rz(k, x)));
-    return d * 0.93;
+  constructor(private noise: Noise, private seed: number, roads = 1, private poiChance = 0.35) {
+    this.G = GEN.roads[roads].spacing;
+    this.A = GEN.roads[roads].curve;
+    const ang = hash01(seed, 7, 11) * Math.PI * 0.5;
+    this.c = Math.cos(ang);
+    this.s = Math.sin(ang);
   }
 
-  roadDist(x: number, z: number) { return Math.min(this.distV(x, z), this.distH(x, z)); }
+  private line(k: number, axis: number): Line {
+    const key = k * 2 + axis;
+    let L = this.lines.get(key);
+    if (!L) {
+      const h = (i: number) => hash01(k, axis * 31 + i, this.seed);
+      L = { a1: 30 * this.A * (0.45 + h(1)), a2: 12 * this.A * (0.4 + h(2)), f1: 110 * (0.7 + h(3) * 0.7), f2: 47 * (0.7 + h(4) * 0.7), o1: h(5) * 20, o2: h(6) * 20 };
+      this.lines.set(key, L);
+    }
+    return L;
+  }
+  // local frame: u across "vertical" roads, w along them
+  private ru(k: number, w: number) { const L = this.line(k, 0); return k * this.G + L.a1 * Math.sin(w / L.f1 + L.o1) + L.a2 * Math.sin(w / L.f2 + L.o2); }
+  private rw(j: number, u: number) { const L = this.line(j, 1); return j * this.G + L.a1 * Math.sin(u / L.f1 + L.o1) + L.a2 * Math.sin(u / L.f2 + L.o2); }
+  private dru(k: number, w: number) { const L = this.line(k, 0); return (L.a1 / L.f1) * Math.cos(w / L.f1 + L.o1) + (L.a2 / L.f2) * Math.cos(w / L.f2 + L.o2); }
+  private drw(j: number, u: number) { const L = this.line(j, 1); return (L.a1 / L.f1) * Math.cos(u / L.f1 + L.o1) + (L.a2 / L.f2) * Math.cos(u / L.f2 + L.o2); }
+  private toU(x: number, z: number) { return x * this.c + z * this.s; }
+  private toW(x: number, z: number) { return -x * this.s + z * this.c; }
+  private toX(u: number, w: number) { return u * this.c - w * this.s; }
+  private toZ(u: number, w: number) { return u * this.s + w * this.c; }
+
+  private distV(u: number, w: number) {
+    let d = 1e9;
+    const k0 = Math.round(u / this.G);
+    for (let k = k0 - 1; k <= k0 + 1; k++) d = Math.min(d, Math.abs(u - this.ru(k, w)));
+    return d * 0.93;
+  }
+  private distH(u: number, w: number) {
+    let d = 1e9;
+    const j0 = Math.round(w / this.G);
+    for (let j = j0 - 1; j <= j0 + 1; j++) d = Math.min(d, Math.abs(w - this.rw(j, u)));
+    return d * 0.93;
+  }
+
+  roadDist(x: number, z: number) {
+    const u = this.toU(x, z), w = this.toW(x, z);
+    return Math.min(this.distV(u, w), this.distH(u, w));
+  }
   roadHeight(x: number, z: number) { return roadHeight(this.noise, x, z); }
 
+  /** World pose from a local point + local tangent. */
+  private pose(u: number, w: number, tu: number, tw: number): Pose {
+    const dx = tu * this.c - tw * this.s, dz = tu * this.s + tw * this.c;
+    return { x: this.toX(u, w), z: this.toZ(u, w), h: Math.atan2(dx, dz) };
+  }
+
   nearestRoad(x: number, z: number): Pose {
+    const u = this.toU(x, z), w = this.toW(x, z);
     let best: Pose = { x, z, h: 0 }, bd = 1e9;
-    const kx = Math.round(x / this.G), kz = Math.round(z / this.G);
+    const kx = Math.round(u / this.G), kz = Math.round(w / this.G);
     for (let k = kx - 1; k <= kx + 1; k++) {
-      const rx = this.rx(k, z), d = Math.abs(rx - x);
-      if (d < bd) { bd = d; best = { x: rx, z, h: Math.atan2(this.drx(k, z), 1) }; }
+      const ru = this.ru(k, w), d = Math.abs(ru - u);
+      if (d < bd) { bd = d; best = this.pose(ru, w, this.dru(k, w), 1); }
     }
-    for (let k = kz - 1; k <= kz + 1; k++) {
-      const rz = this.rz(k, x), d = Math.abs(rz - z);
-      if (d < bd) { bd = d; best = { x, z: rz, h: Math.atan2(1, this.drz(k, x)) }; }
+    for (let j = kz - 1; j <= kz + 1; j++) {
+      const rw = this.rw(j, u), d = Math.abs(rw - w);
+      if (d < bd) { bd = d; best = this.pose(u, rw, 1, this.drw(j, u)); }
     }
     return best;
   }
 
   spawn(i: number): Pose {
-    const row = Math.floor(i / 2), z = -row * 7, side = i % 2 ? 1.8 : -1.8;
-    return { x: this.rx(0, z) + (i === 0 && row === 0 ? 0 : side), z, h: Math.atan2(this.drx(0, z), 1) };
+    const row = Math.floor(i / 2), w = -row * 7, side = i === 0 && row === 0 ? 0 : i % 2 ? 2.6 : -2.6;
+    return this.pose(this.ru(0, w) + side, w, this.dru(0, w), 1);
+  }
+
+  /** Bounding box of a world square in the local road frame. */
+  private localBox(x0: number, z0: number, size: number) {
+    let u0 = 1e9, u1 = -1e9, w0 = 1e9, w1 = -1e9;
+    for (const [x, z] of [[x0, z0], [x0 + size, z0], [x0, z0 + size], [x0 + size, z0 + size]]) {
+      const u = this.toU(x, z), w = this.toW(x, z);
+      u0 = Math.min(u0, u); u1 = Math.max(u1, u); w0 = Math.min(w0, w); w1 = Math.max(w1, w);
+    }
+    return { u0, u1, w0, w1 };
   }
 
   forEachRoadPoint(x0: number, z0: number, size: number, fn: RoadPointFn) {
-    const G = this.G;
-    for (let k = Math.floor((x0 - 60) / G); k <= Math.ceil((x0 + size + 60) / G); k++)
-      for (let z = z0 + 4; z < z0 + size; z += 8) {
-        const x = this.rx(k, z);
-        if (x < x0 || x >= x0 + size || this.distH(x, z) < 22) continue;
-        const d = this.drx(k, z), l = Math.hypot(d, 1);
-        fn(x, z, d / l, 1 / l, -1);
+    const G = this.G, b = this.localBox(x0, z0, size);
+    const inside = (x: number, z: number) => x >= x0 && x < x0 + size && z >= z0 && z < z0 + size;
+    for (let k = Math.floor((b.u0 - 80) / G); k <= Math.ceil((b.u1 + 80) / G); k++)
+      for (let w = Math.ceil(b.w0 / 8) * 8 + 4; w < b.w1; w += 8) {
+        const u = this.ru(k, w);
+        if (this.distH(u, w) < 22) continue;
+        const P = this.pose(u, w, this.dru(k, w), 1);
+        if (inside(P.x, P.z)) fn(P.x, P.z, Math.sin(P.h), Math.cos(P.h), -1);
       }
-    for (let k = Math.floor((z0 - 60) / G); k <= Math.ceil((z0 + size + 60) / G); k++)
-      for (let x = x0 + 4; x < x0 + size; x += 8) {
-        const z = this.rz(k, x);
-        if (z < z0 || z >= z0 + size || this.distV(x, z) < 22) continue;
-        const d = this.drz(k, x), l = Math.hypot(1, d);
-        fn(x, z, 1 / l, d / l, -1);
+    for (let j = Math.floor((b.w0 - 80) / G); j <= Math.ceil((b.w1 + 80) / G); j++)
+      for (let u = Math.ceil(b.u0 / 8) * 8 + 4; u < b.u1; u += 8) {
+        const w = this.rw(j, u);
+        if (this.distV(u, w) < 22) continue;
+        const P = this.pose(u, w, 1, this.drw(j, u));
+        if (inside(P.x, P.z)) fn(P.x, P.z, Math.sin(P.h), Math.cos(P.h), -1);
       }
   }
 
+  /** Landmarks at crossroads inside a world square. */
+  pois(x0: number, z0: number, size: number): Poi[] {
+    if (this.poiChance <= 0) return [];
+    const G = this.G, b = this.localBox(x0, z0, size), out: Poi[] = [];
+    const total = POI_KINDS.reduce((a, p) => a + p.weight, 0);
+    for (let k = Math.floor((b.u0 - 60) / G); k <= Math.ceil((b.u1 + 60) / G); k++)
+      for (let j = Math.floor((b.w0 - 60) / G); j <= Math.ceil((b.w1 + 60) / G); j++) {
+        if ((k === 0 && (j === 0 || j === -1)) || hash01(k, j, this.seed ^ 0x9e37) > this.poiChance) continue;
+        let u = k * G, w = j * G;
+        for (let it = 0; it < 4; it++) { u = this.ru(k, w); w = this.rw(j, u); } // solve for the crossing point
+        const x = this.toX(u, w), z = this.toZ(u, w);
+        if (x < x0 || x >= x0 + size || z < z0 || z >= z0 + size) continue;
+        let r = hash01(k, j, this.seed ^ 0x51ed) * total, kind = POI_KINDS[0].kind;
+        for (const p of POI_KINDS) { if ((r -= p.weight) <= 0) { kind = p.kind; break; } }
+        out.push({ x, z, kind, h: this.pose(u, w, this.dru(k, w), 1).h, id: k * 100003 + j });
+      }
+    return out;
+  }
+
   drawRoads(ctx: CanvasRenderingContext2D, toMap: (x: number, z: number) => [number, number], px: number, pz: number, R: number) {
-    const kx = Math.round(px / this.G), kz = Math.round(pz / this.G);
-    for (let k = kx - 2; k <= kx + 2; k++) {
+    const pu = this.toU(px, pz), pw = this.toW(px, pz), span = R * 1.5, n = Math.ceil(span / this.G) + 1;
+    const kx = Math.round(pu / this.G), kz = Math.round(pw / this.G), step = Math.max(6, R / 30);
+    for (let k = kx - n; k <= kx + n; k++) {
       ctx.beginPath();
-      for (let z = pz - R; z <= pz + R; z += 10) { const [a, b] = toMap(this.rx(k, z), z); if (z === pz - R) ctx.moveTo(a, b); else ctx.lineTo(a, b); }
+      for (let w = pw - span; w <= pw + span; w += step) {
+        const u = this.ru(k, w), [a, b] = toMap(this.toX(u, w), this.toZ(u, w));
+        if (w === pw - span) ctx.moveTo(a, b); else ctx.lineTo(a, b);
+      }
       ctx.stroke();
     }
-    for (let k = kz - 2; k <= kz + 2; k++) {
+    for (let j = kz - n; j <= kz + n; j++) {
       ctx.beginPath();
-      for (let x = px - R; x <= px + R; x += 10) { const [a, b] = toMap(x, this.rz(k, x)); if (x === px - R) ctx.moveTo(a, b); else ctx.lineTo(a, b); }
+      for (let u = pu - span; u <= pu + span; u += step) {
+        const w = this.rw(j, u), [a, b] = toMap(this.toX(u, w), this.toZ(u, w));
+        if (u === pu - span) ctx.moveTo(a, b); else ctx.lineTo(a, b);
+      }
       ctx.stroke();
     }
   }
@@ -164,6 +254,13 @@ export class Circuit implements RoadLayout {
   }
 
   roadDist(x: number, z: number) { return this.nearest(x, z).d; }
+  pois(): Poi[] { return []; }
+
+  /** How sharply the track bends at sample i (sine of the turn over ~12 m, sign = direction). */
+  curvature(i: number) {
+    const a = (i - 3 + this.n) % this.n, b = (i + 3) % this.n;
+    return this.tx[a] * this.tz[b] - this.tz[a] * this.tx[b];
+  }
   roadHeight(x: number, z: number) { return roadHeight(this.noise, x, z); }
 
   nearestRoad(x: number, z: number): Pose {
@@ -172,7 +269,7 @@ export class Circuit implements RoadLayout {
   }
 
   spawn(i: number): Pose {
-    const row = Math.floor(i / 2), back = 8 + row * 7, side = i % 2 ? 1.8 : -1.8;
+    const row = Math.floor(i / 2), back = 8 + row * 7, side = i % 2 ? 2.6 : -2.6;
     const j = (this.n - Math.round(back / this.spacing)) % this.n;
     const tx = this.tx[j], tz = this.tz[j];
     return { x: this.px[j] + tz * side, z: this.pz[j] - tx * side, h: Math.atan2(tx, tz) };

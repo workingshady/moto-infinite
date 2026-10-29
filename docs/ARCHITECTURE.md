@@ -16,11 +16,13 @@ src/
     Input.ts             Keyboard/mouse/touch/gamepads → per-player Controller actions
     Audio.ts             WebAudio synth (no audio files)
     Events.ts            Typed event bus (challenge progress etc.)
+    prefs.ts             Saved player preferences (riding assist, nitro toggle, onboarding seen)
   data/                  Pure data tables: weapons, upgrades, challenges, story
   world/
     layout.ts            RoadLayout interface: GridRoads (open world) and Circuit (race loop)
     Terrain.ts           Height/colour of the ground, world themes, ramps and pads
     Chunks.ts            Streams 64 m chunks: terrain, instanced scenery, road markings, features
+    Landmarks.ts         Villages, gas stations, windmills, stunt zones, drone outposts; race grandstands + tyre walls
     Environment.ts       Sky, day/night, weather (rain/snow/fog/storm), water, clouds, stars
   entities/
     Player.ts            One local rider: bike physics, tricks, walking, camera, XP, power-ups
@@ -31,6 +33,7 @@ src/
     Combat.ts            Projectiles, railgun beams, mines, bombs, explosions, PvP
     Race.ts              Countdown, checkpoints, laps, positions, best-lap ghost
     Challenges.ts        Timed challenges per player with streaks
+    Tutorial.ts          Guided training ride checklist
     Particles.ts         GPU particle pools
     Effects.ts           Shockwave rings, debris, beams, skid marks (pooled/instanced)
   net/
@@ -60,7 +63,9 @@ worker/
 ## How the world works
 
 - The world is generated from a **seed**: same seed = same world on every client, so online players only send their own position (15×/s), shots and finishes.
-- **Open world** roads form an endless wavy grid; chunks build around each local player (one per frame) and unload behind.
+- **Open world** roads form an endless wavy grid. Each seed rotates the grid and gives every road line its own curves; crossroads may host landmarks. Chunks build around each local player (one per frame) and unload behind.
+- **Terrain** = domain-warped continents + rolling hills + ridged mountains, optional river bands, a temperature-varied snow line. The world generator options (terrain, water, nature, roads, landmarks) scale these.
+- **Riding assist** (Settings) follows the road and guards the edge only when you are not steering, lets the bike glance off obstacles, and limits crest launches.
 - **Race** builds a closed Catmull-Rom loop from the track seed. 8 gates split it into segments; progress = lap + position inside the current segment.
 - **Time and weather** run in `Environment`: sky colours blend between keys in `SKY_KEYS`; dynamic weather picks a new state every ~90 s and blends into it. Wet/snowy roads lower grip.
 

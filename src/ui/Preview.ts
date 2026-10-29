@@ -4,7 +4,7 @@ import { buildBike, buildRider, seatRider } from '../entities/models';
 import { Noise } from '../utils/noise';
 import { Circuit, GridRoads } from '../world/layout';
 import { Terrain } from '../world/Terrain';
-import { RACE, TRACKS } from '../config';
+import { GEN, POI_KINDS, RACE, TRACKS } from '../config';
 import type { LobbySettings } from '../../shared/protocol';
 import { TAU } from '../utils/math';
 
@@ -93,8 +93,8 @@ export function drawMapPreview(canvas: HTMLCanvasElement, s: LobbySettings): Map
   const seed = s.mode === 'race' ? (s.trackId === 'random' || !track ? s.seed : track.seed) : s.seed;
   const theme = s.mode === 'race' && track && s.trackId !== 'random' ? track.theme : s.theme;
   const noise = new Noise(seed);
-  const layout = s.mode === 'race' ? new Circuit(noise, seed) : new GridRoads(noise);
-  const T = new Terrain(noise, layout, theme);
+  const layout = s.mode === 'race' ? new Circuit(noise, seed) : new GridRoads(noise, seed, s.gen.roads, GEN.poi[s.gen.poi].chance);
+  const T = new Terrain(noise, layout, theme, s.gen);
   const W = canvas.width, H = canvas.height, ctx = canvas.getContext('2d')!;
   let cx = 0, cz = 0, span = 700;
   if (layout instanceof Circuit) {
@@ -148,6 +148,18 @@ export function drawMapPreview(canvas: HTMLCanvasElement, s: LobbySettings): Map
     ctx.strokeStyle = '#e8e8e8';
     ctx.lineWidth = 3;
     layout.drawRoads(ctx, toC, cx, cz, span / 2);
+    // landmarks
+    ctx.font = 'bold 11px system-ui';
+    for (const poi of layout.pois(cx - span / 2, cz - span / 2, span)) {
+      const [a, b] = toC(poi.x, poi.z), def = POI_KINDS.find((k) => k.kind === poi.kind)!;
+      ctx.fillStyle = def.color;
+      ctx.strokeStyle = 'rgba(0,0,0,.6)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.rect(a - 5, b - 5, 10, 10);
+      ctx.fill();
+      ctx.stroke();
+    }
     const [a, b] = toC(cx, cz);
     ctx.fillStyle = '#ffd23f';
     ctx.beginPath();

@@ -41,6 +41,7 @@ export class EntityManager {
     const gy = this.game.terrain.groundAt(x, z);
     if (gy < 0.5 && type !== 'drone') return null;
     if (type === 'drone' && this.drones >= DRONES.maxAlive + (o.force ? 3 : 0)) return null;
+    if (type === 'drone' && this.game.opts.tutorial && !this.game.tutorial?.complete) return null; // no enemies while learning
     let inner: THREE.Object3D, hp = 1, r = 0.8, y = gy;
     const e = { type, x, z, vx: 0, vy: 0, vz: 0, chunk: o.chunk ?? null, alive: true, t: Math.random() * 10, cool: 2 + Math.random() * 2, ang: Math.random() * TAU, fuse: 0, hitFlash: 0, engaged: false } as Entity;
     if (type === 'gem') {

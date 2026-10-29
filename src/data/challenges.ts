@@ -2,7 +2,7 @@ import type { EntityType } from '../entities/EntityManager';
 
 export type ChallengeId =
   | 'gem' | 'air' | 'speed' | 'crate' | 'drone' | 'flip' | 'barrel' | 'dist'
-  | 'pad' | 'combo' | 'spin' | 'nohit' | 'powerup' | 'ramp';
+  | 'pad' | 'combo' | 'spin' | 'nohit' | 'powerup' | 'ramp' | 'style';
 
 export interface ChallengeDef {
   id: ChallengeId;
@@ -30,5 +30,6 @@ export const CHALLENGES: ChallengeDef[] = [
   { id: 'spin', mode: 'sum', text: (n) => `Land ${n} 360 spin${n > 1 ? 's' : ''}`, target: () => 1, time: 60 },
   { id: 'nohit', mode: 'max', text: (n) => `Survive ${n}s without damage`, target: () => pick(25, 3, 5), time: 60, fmt: (v) => Math.floor(v) + 's' },
   { id: 'powerup', mode: 'sum', text: (n) => `Grab ${n} power-up${n > 1 ? 's' : ''}`, target: () => 1, time: 50, spawn: { type: 'powerup', extra: 1 } },
+  { id: 'style', mode: 'sum', text: (n) => `Land ${n} style trick${n > 1 ? 's' : ''} (C in the air)`, target: () => pick(1, 2), time: 60 },
   { id: 'ramp', mode: 'sum', text: (n) => `Launch off ${n} ramps`, target: () => pick(2, 2), time: 60 },
 ];

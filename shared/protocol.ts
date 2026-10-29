@@ -5,6 +5,8 @@ export type GameMode = 'open' | 'race';
 export type TimeOfDay = 'day' | 'dawn' | 'sunset' | 'night' | 'cycle';
 export type Weather = 'clear' | 'cloudy' | 'rain' | 'fog' | 'snow' | 'storm' | 'dynamic';
 export type WorldTheme = 'mixed' | 'desert' | 'forest' | 'alpine' | 'islands';
+/** World generator knobs (0 = least, highest = most). */
+export interface WorldGen { terrain: number; water: number; flora: number; roads: number; poi: number }
 export type Phase = 'lobby' | 'playing';
 export type Vec3 = [number, number, number];
 
@@ -17,6 +19,7 @@ export interface LobbySettings {
   time: TimeOfDay;
   weather: Weather;
   theme: WorldTheme;
+  gen: WorldGen;
 }
 
 export interface PlayerInfo {
@@ -62,8 +65,10 @@ export type ServerMsg =
   | { t: 'error'; msg: string };
 
 export const MAX_PLAYERS = 8;
+export const DEFAULT_GEN: WorldGen = { terrain: 1, water: 1, flora: 1, roads: 1, poi: 1 };
+export const GEN_MAX: WorldGen = { terrain: 3, water: 2, flora: 2, roads: 2, poi: 2 };
 export const ROOM_CODE_RE = /^[A-Z0-9]{4,8}$/;
-export const DEFAULT_SETTINGS: LobbySettings = { mode: 'open', trackId: 'coast', laps: 3, pvp: false, seed: 1, time: 'day', weather: 'clear', theme: 'mixed' };
+export const DEFAULT_SETTINGS: LobbySettings = { mode: 'open', trackId: 'coast', laps: 3, pvp: false, seed: 1, time: 'day', weather: 'clear', theme: 'mixed', gen: { ...DEFAULT_GEN } };
 export const TIMES: TimeOfDay[] = ['day', 'dawn', 'sunset', 'night', 'cycle'];
 export const WEATHERS: Weather[] = ['clear', 'cloudy', 'rain', 'fog', 'snow', 'storm', 'dynamic'];
 export const THEMES: WorldTheme[] = ['mixed', 'desert', 'forest', 'alpine', 'islands'];

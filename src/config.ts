@@ -41,7 +41,17 @@ export const CONTROL = {
 /** Auto-aim: targets inside the cone get locked, shots lead moving targets. */
 export const AIM = { cone: 0.5, droneRange: 110, propRange: 65, lead: true, assist: 0.85 };
 
-export const PHYS ={ gravity: 30, walkGravity: 26, walkSpeed: 6.5, runSpeed: 12, jump: 9.5, maxSubstep: 1 / 60, maxDt: 0.05 };
+/**
+ * Riding assist levels (Settings). Road-follow only acts when you are NOT steering, so it never fights you.
+ * crest = max upward speed a road crest can give the bike (lower = sticks to the road).
+ */
+export const ASSIST = [
+  { label: 'Pro', follow: 0, edge: 0, glance: 0.5, crest: 22, landing: 1, crash: 1 },
+  { label: 'Normal', follow: 1.2, edge: 1.5, glance: 0.85, crest: 14, landing: 1.15, crash: 0.8 },
+  { label: 'Easy', follow: 2.6, edge: 3.5, glance: 0.95, crest: 9, landing: 1.4, crash: 0.5 },
+];
+
+export const PHYS = { gravity: 30, walkGravity: 26, walkSpeed: 6.5, runSpeed: 12, jump: 9.5, maxSubstep: 1 / 60, maxDt: 0.05 };
 
 export const BIKE = {
   top: 30, accel: 17, brake: 38, reverse: 10, maxReverse: 8,
@@ -144,3 +154,42 @@ export const DRONE_TYPES = {
   bomber: { hp: 110, speed: 1, orbit: 6, cool: 1.5, dmg: 22, color: 0xffa53f, scale: 1.4, xp: 120, bomb: true },
 };
 export type DroneKind = keyof typeof DRONE_TYPES;
+
+/** World generator levels, indexed by the WorldGen values chosen in the menu. */
+export const GEN = {
+  terrain: [
+    { label: 'Flat', mul: 0.45, ridge: 0 },
+    { label: 'Rolling', mul: 1, ridge: 0.6 },
+    { label: 'Hilly', mul: 1.25, ridge: 1 },
+    { label: 'Mountains', mul: 1.5, ridge: 1.6 },
+  ],
+  water: [
+    { label: 'Dry', sea: 6, rivers: false },
+    { label: 'Normal', sea: 0, rivers: false },
+    { label: 'Rivers & lakes', sea: -2, rivers: true },
+  ],
+  flora: [
+    { label: 'Sparse', mul: 0.45 },
+    { label: 'Normal', mul: 1 },
+    { label: 'Dense', mul: 1.6 },
+  ],
+  roads: [
+    { label: 'Wide grid', spacing: 380, curve: 0.8 },
+    { label: 'Normal', spacing: 260, curve: 1 },
+    { label: 'Twisty', spacing: 230, curve: 1.9 },
+  ],
+  poi: [
+    { label: 'Off', chance: 0 },
+    { label: 'Some', chance: 0.35 },
+    { label: 'Many', chance: 0.7 },
+  ],
+};
+
+export type PoiKind = 'village' | 'fuel' | 'windmill' | 'stunt' | 'outpost';
+export const POI_KINDS: { kind: PoiKind; weight: number; label: string; color: string }[] = [
+  { kind: 'village', weight: 3, label: 'Village', color: '#ffb03f' },
+  { kind: 'fuel', weight: 2, label: 'Gas station', color: '#5dff8a' },
+  { kind: 'windmill', weight: 2, label: 'Windmill', color: '#ffffff' },
+  { kind: 'stunt', weight: 2, label: 'Stunt zone', color: '#ff7ad9' },
+  { kind: 'outpost', weight: 2, label: 'Vex outpost', color: '#ff3355' },
+];
