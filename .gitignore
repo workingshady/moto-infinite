@@ -1,0 +1,24 @@
+# deps / build
+node_modules/
+dist/
+.wrangler/
+*.tsbuildinfo
+
+# secrets — never commit
+.env
+.env.*
+!.env.example
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+
+# private local notes (setup steps, account ids, tokens)
+SETUP.md
+private/
+
+# misc
+.DS_Store
+Thumbs.db
+*.log
+.vscode/*
+!.vscode/extensions.json

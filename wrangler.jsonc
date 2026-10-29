@@ -1,0 +1,15 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "moto-infinite",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-10-01",
+  "observability": { "enabled": true },
+  "assets": {
+    "not_found_handling": "single-page-application",
+    // Only these paths reach the Worker; everything else is served straight from the static build.
+    "run_worker_first": ["/api/*"]
+  }
+  // Multiplayer rooms (later): add a Durable Object binding + migration here, e.g.
+  // "durable_objects": { "bindings": [{ "name": "ROOMS", "class_name": "Room" }] },
+  // "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Room"] }]
+}

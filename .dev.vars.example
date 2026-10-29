@@ -1,0 +1,2 @@
+# Copy to .dev.vars (git-ignored) for local Worker secrets. Set production values with: npx wrangler secret put NAME
+APP_VERSION=dev
