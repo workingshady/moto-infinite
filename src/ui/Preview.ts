@@ -1,6 +1,7 @@
 // Menu previews: a spinning 3D rider+bike in your colours, and a top-down map of the world/track you're about to play.
 import * as THREE from 'three';
-import { buildBike, buildRider, seatRider } from '../entities/models';
+import { buildBike, buildRider, nameTag, seatRider } from '../entities/models';
+import { canvasTex } from '../entities/assets';
 import { Noise } from '../utils/noise';
 import { Circuit, GridRoads } from '../world/layout';
 import { Terrain } from '../world/Terrain';
@@ -170,4 +171,110 @@ export function drawMapPreview(canvas: HTMLCanvasElement, s: LobbySettings): Map
     ctx.fillText('YOU START HERE', a + 9, b - 8);
   }
   return { lengthKm: layout instanceof Circuit ? layout.length / 1000 : null, climb: Math.max(0, Math.round(hi - lo)), seed };
+}
+
+interface Slot { key: string; root: THREE.Group; wheels: THREE.Group[]; tag: THREE.Sprite; phase: number }
+
+/**
+ * Room lobby lineup: every player's bike + rider in their colours, riding in place on a scrolling road,
+ * with floating name tags (👑 host, ✓ ready). Camera slowly orbits; drag to spin.
+ */
+export class LobbyShowcase {
+  readonly canvas: HTMLCanvasElement;
+  private renderer: THREE.WebGLRenderer;
+  private scene = new THREE.Scene();
+  private camera = new THREE.PerspectiveCamera(34, 2, 0.1, 100);
+  private slots = new Map<string, Slot>();
+  private road: THREE.Texture;
+  private raf = 0;
+  private angle = 0;
+  private drag: number | null = null;
+  private span = 4;
+
+  constructor() {
+    this.canvas = document.createElement('canvas');
+    this.canvas.className = 'lineup';
+    this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, alpha: true, antialias: true });
+    this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    this.renderer.shadowMap.enabled = true;
+    this.scene.add(new THREE.HemisphereLight(0xdff2ff, 0x334455, 0.85));
+    const key = new THREE.DirectionalLight(0xfff0d8, 1.05);
+    key.position.set(5, 10, 7);
+    key.castShadow = true;
+    Object.assign(key.shadow.camera, { left: -14, right: 14, top: 8, bottom: -8 });
+    this.scene.add(key);
+    const rim = new THREE.DirectionalLight(0x6fb8ff, 0.7);
+    rim.position.set(-6, 4, -6);
+    this.scene.add(rim);
+    // scrolling asphalt with dashes = the bikes look like they're riding
+    this.road = canvasTex(64, 256, (g, w, h) => {
+      g.fillStyle = '#3a3f47'; g.fillRect(0, 0, w, h);
+      g.fillStyle = '#f2f2e6';
+      for (let y = 0; y < h; y += 64) g.fillRect(w / 2 - 2, y, 4, 32); // lane dashes run towards the camera
+    });
+    this.road.wrapS = this.road.wrapT = THREE.RepeatWrapping;
+    this.road.repeat.set(13, 4);
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(40, 14).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ map: this.road, roughness: 0.9 }));
+    floor.receiveShadow = true;
+    this.scene.add(floor);
+    this.canvas.addEventListener('pointerdown', (e) => { this.drag = e.clientX; this.canvas.setPointerCapture(e.pointerId); });
+    this.canvas.addEventListener('pointermove', (e) => {
+      if (this.drag === null) return;
+      this.angle -= (e.clientX - this.drag) * 0.006;
+      this.drag = e.clientX;
+    });
+    this.canvas.addEventListener('pointerup', () => (this.drag = null));
+  }
+
+  setPlayers(players: { id: string; name: string; color: number; host: boolean; ready: boolean }[], you: string) {
+    const ids = new Set(players.map((p) => p.id));
+    for (const [id, s] of this.slots) if (!ids.has(id)) { this.scene.remove(s.root); this.slots.delete(id); }
+    const gap = 3.1;
+    this.span = Math.max(4, players.length * gap);
+    players.forEach((p, i) => {
+      const label = `${p.host ? '👑 ' : ''}${p.name}${p.id === you ? ' (you)' : ''}${p.ready ? ' ✓' : ''}`, key = `${p.color}|${label}`;
+      let s = this.slots.get(p.id);
+      if (s && s.key !== key) { this.scene.remove(s.root); this.slots.delete(p.id); s = undefined; }
+      if (!s) {
+        const b = buildBike(p.color), r = buildRider(p.color), tag = nameTag(label, p.color), root = new THREE.Group();
+        seatRider(r, b);
+        b.root.rotation.y = 0.5; // 3/4 view, riding towards the camera
+        tag.position.set(0, 3.6, 0);
+        tag.scale.set(3.6, 0.9, 1);
+        root.add(b.root, tag);
+        this.scene.add(root);
+        s = { key, root, wheels: b.wheels, tag, phase: Math.random() * 6 };
+        this.slots.set(p.id, s);
+      }
+      s.root.position.set((i - (players.length - 1) / 2) * gap, 0, (i % 2) * -1.4); // staggered starting grid
+    });
+  }
+
+  mount(host: HTMLElement) {
+    host.appendChild(this.canvas);
+    const w = host.clientWidth || 600, h = host.clientHeight || 220;
+    this.renderer.setSize(w, h, false);
+    this.camera.aspect = w / h;
+    this.camera.updateProjectionMatrix();
+    if (this.raf) return;
+    let last = performance.now();
+    const loop = (now: number) => {
+      this.raf = requestAnimationFrame(loop);
+      if (!this.canvas.isConnected) { cancelAnimationFrame(this.raf); this.raf = 0; return; }
+      const dt = Math.min(0.05, (now - last) / 1000), t = now / 1000;
+      last = now;
+      if (this.drag === null) this.angle += dt * 0.12;
+      this.road.offset.y -= dt * 2.2;
+      for (const s of this.slots.values()) {
+        s.wheels.forEach((w) => (w.rotation.x += dt * 14));
+        s.root.children[0].rotation.z = Math.sin(t * 1.3 + s.phase) * 0.07; // gentle lean
+        s.root.children[0].position.y = Math.abs(Math.sin(t * 6 + s.phase)) * 0.03;
+      }
+      const d = 6 + this.span * 0.75, a = Math.sin(this.angle) * 0.55;
+      this.camera.position.set(Math.sin(a) * d, 3.2 + this.span * 0.08, Math.cos(a) * d);
+      this.camera.lookAt(0, 1.2, 0);
+      this.renderer.render(this.scene, this.camera);
+    };
+    this.raf = requestAnimationFrame(loop);
+  }
 }

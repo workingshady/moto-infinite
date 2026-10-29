@@ -3,7 +3,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import { DEFAULT_GEN, DEFAULT_SETTINGS, GEN_MAX, MAX_PLAYERS, THEMES, TIMES, WEATHERS, type ClientMsg, type LobbySettings, type Phase, type PlayerInfo, type ServerMsg } from '../shared/protocol';
 
-interface Attachment { id: string; name: string; color: number; joined: number; hello: boolean }
+interface Attachment { id: string; name: string; color: number; joined: number; hello: boolean; ready?: boolean }
 
 const MAX_MSG = 8 * 1024;
 const clean = (s: unknown) => [...String(s ?? '')].filter((c) => c >= ' ' && c !== '<' && c !== '>').join('').trim().slice(0, 16) || 'Rider';
@@ -46,7 +46,7 @@ export class Room extends DurableObject<Env> {
 
   private players(): PlayerInfo[] {
     const list = this.sockets().map((ws) => this.att(ws)).filter((a): a is Attachment => !!a?.hello).sort((a, b) => a.joined - b.joined);
-    return list.map((a, i) => ({ id: a.id, name: a.name, color: a.color, host: i === 0 }));
+    return list.map((a, i) => ({ id: a.id, name: a.name, color: a.color, host: i === 0, ready: i === 0 || !!a.ready }));
   }
 
   private send(ws: WebSocket, msg: ServerMsg) {
@@ -110,6 +110,12 @@ export class Room extends DurableObject<Env> {
         this.broadcast({ t: 'players', players: this.players() });
         return;
       }
+      case 'ready': {
+        a.ready = !!msg.ready;
+        ws.serializeAttachment(a);
+        this.broadcast({ t: 'players', players: this.players() });
+        return;
+      }
       case 'kick': {
         if (!this.isHost(ws) || msg.id === a.id) return;
         const target = this.sockets().find((w) => this.att(w)?.id === msg.id);
@@ -145,6 +151,11 @@ export class Room extends DurableObject<Env> {
         if (!this.isHost(ws)) return;
         this.phase = 'playing';
         await this.ctx.storage.put('phase', this.phase);
+        // everyone must ready up again next time they're back in the lobby
+        for (const w of this.sockets()) {
+          const at = this.att(w);
+          if (at?.ready) { at.ready = false; w.serializeAttachment(at); }
+        }
         this.broadcast({ t: 'start', settings: this.settings });
         return;
       }

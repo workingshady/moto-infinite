@@ -6,7 +6,7 @@ import type { Standing } from '../systems/Race';
 import { fmt } from '../systems/Race';
 import { escapeHtml, hex } from '../utils/math';
 import { STORY } from '../data/story';
-import { CharacterPreview, drawMapPreview } from './Preview';
+import { CharacterPreview, LobbyShowcase, drawMapPreview } from './Preview';
 import { prefs, savePrefs } from '../core/prefs';
 
 const K = (k: string) => `<kbd class="key">${k}</kbd>`;
@@ -70,6 +70,7 @@ export interface MenuActions {
   joinRoom(code: string): void;
   updateProfile(name: string, color: number): void;
   kick(id: string): void;
+  setReady(ready: boolean): void;
   leaveRoom(): void;
   lobbySettings(s: LobbySettings): void;
   lobbyStart(): void;
@@ -106,6 +107,7 @@ export class Menu {
   private obBack: Screen = 'home';
   private joinCode = '';
   private preview = new CharacterPreview();
+  private lineup = new LobbyShowcase();
   inGame = false;
 
   constructor(private a: MenuActions, public profile: Profile, public quality: QualityName, private muted: () => boolean) {
@@ -167,6 +169,11 @@ export class Menu {
     if (host) {
       this.preview.setColor(this.profile.color);
       this.preview.mount(host);
+    }
+    const lineHost = this.root.querySelector<HTMLElement>('#lineupHost');
+    if (lineHost && this.lobby) {
+      this.lineup.setPlayers(this.lobby.players, this.lobby.you);
+      this.lineup.mount(lineHost);
     }
     const map = this.root.querySelector<HTMLCanvasElement>('#mapCanvas');
     if (map) {
@@ -302,16 +309,21 @@ export class Menu {
           <div><h2>Lobby</h2><div class="dim small">Room code</div><div class="roomcode">${escapeHtml(v.code)}</div></div>
           <div>
             <div class="dim small">Riders ${v.players.length}/${v.settings.maxPlayers}${v.settings.locked ? ' · 🔒 locked' : ''}</div>
-            <ul class="players">${v.players.map((p) => `<li><i style="background:${hex(p.color)}"></i>${escapeHtml(p.name)}${p.host ? ' 👑' : ''}${p.id === v.you ? ' <em>(you)</em>' : ''}${v.host && p.id !== v.you ? `<button class="kick" data-kick="${escapeHtml(p.id)}" title="Remove from room">✕</button>` : ''}</li>`).join('')}</ul>
+            <ul class="players">${v.players.map((p) => `<li><i style="background:${hex(p.color)}"></i>${escapeHtml(p.name)}${p.host ? ' 👑' : ''}${p.id === v.you ? ' <em>(you)</em>' : ''}${p.ready ? ' <span class="ready">✓ ready</span>' : ' <span class="notready">…</span>'}${v.host && p.id !== v.you ? `<button class="kick" data-kick="${escapeHtml(p.id)}" title="Remove from room">✕</button>` : ''}</li>`).join('')}</ul>
           </div>
         </div>
+        <div id="lineupHost" class="lineup-host" title="Drag to spin"></div>
         <div class="me-row"><label>Your name <input id="lname" maxlength="16" value="${escapeHtml(v.players.find((p) => p.id === v.you)?.name ?? P.name)}"></label><div class="dots">${colorDots(v.players.find((p) => p.id === v.you)?.color ?? P.color, 'lcolor')}</div></div>
         <div class="share"><input readonly value="${escapeHtml(v.link)}" id="link"><button class="btn" data-go="copy">Copy link</button>${'share' in navigator ? '<button class="btn" data-go="share">Share</button>' : ''}</div>
         ${this.optionsPanel(v.settings, v.host, true)}
         <div class="opt room-opts ${v.host ? '' : 'disabled'}"><span>Room</span><div class="chips">${chips('maxPlayers', Array.from({ length: MAX_PLAYERS - 1 }, (_, i) => i + 2), v.settings.maxPlayers, (n) => `${n} max`)}</div>
           <label class="check"><input type="checkbox" data-opt="locked" ${v.settings.locked ? 'checked' : ''} ${v.host ? '' : 'disabled'}> 🔒 Lock room</label></div>
         ${v.host ? '' : '<p class="hint">Only the host 👑 can change the world and room settings.</p>'}
-        <div class="row-buttons"><span><button class="btn ghost" data-go="leave">Leave</button> <button class="btn ghost" data-go="tutorial">🎓 How to play</button></span>${v.host ? `<button class="btn primary" data-go="lstart">Start for everyone (${v.players.length})</button>` : '<span class="wait">⏳ Waiting for the host to start…</span>'}</div>`;
+        <div class="row-buttons"><span><button class="btn ghost" data-go="leave">Leave</button> <button class="btn ghost" data-go="tutorial">🎓 How to play</button></span>${v.host
+          ? `<button class="btn primary" data-go="lstart">Start for everyone · ${v.players.filter((p) => p.ready).length}/${v.players.length} ready</button>`
+          : (() => { const me = v.players.find((p) => p.id === v.you); return me?.ready
+            ? '<span class="wait">✓ Ready · waiting for the host…</span> <button class="btn" data-go="unready">Not ready</button>'
+            : '<button class="btn primary" data-go="ready">✋ I\'m ready</button>'; })()}</div>`;
       }
       case 'settings':
         return `
@@ -468,6 +480,8 @@ export class Menu {
         return;
       }
       case 'tutorial': this.readNames(); this.slide = 0; this.obBack = this.screen === 'lobby' || this.screen === 'joinroom' ? this.screen : 'home'; return this.show('onboard');
+      case 'ready': return this.a.setReady(true);
+      case 'unready': return this.a.setReady(false);
       case 'joinnow': this.readNames(); return this.a.joinRoom(this.joinCode);
       case 'tnext': this.slide = Math.min(SLIDES.length - 1, this.slide + 1); return this.show('onboard');
       case 'tprev': this.slide = Math.max(0, this.slide - 1); return this.show('onboard');

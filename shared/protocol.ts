@@ -31,6 +31,8 @@ export interface PlayerInfo {
   name: string;
   color: number;
   host: boolean;
+  /** Ready in the lobby (the host always counts as ready). */
+  ready: boolean;
 }
 
 /** Snapshot of one rider, sent ~15x per second. */
@@ -50,6 +52,7 @@ export type ClientMsg =
   | { t: 'hello'; name: string; color: number }
   | { t: 'profile'; name: string; color: number }
   | { t: 'kick'; id: string }
+  | { t: 'ready'; ready: boolean }
   | { t: 'settings'; settings: LobbySettings }
   | { t: 'start' }
   | { t: 'back' }

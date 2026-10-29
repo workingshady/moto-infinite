@@ -69,6 +69,20 @@ export const LANDING = {
   wallDamageSpeed: 14,
 };
 
+/**
+ * Leveling: XP needed for the next level = base * level^exp (power curve: quick early levels, slower later).
+ * Cards never freeze a race; in solo they slow time instead of pausing, then fold into a badge.
+ */
+export const LEVELING = {
+  base: 250, exp: 1.5,
+  healOnLevel: 0.25, // fraction of max health restored per level
+  rerolls: 2, // per run
+  pityEvery: 3, // guarantee a Rare+ card at least this often
+  slowmo: 0.25, // solo time scale while cards are open
+  foldAfter: 8, // seconds before open cards fold into the "upgrade ready" badge
+  pickShield: 1.5, // seconds of shield after picking
+};
+
 export const PLAYER = { hpMax: 100, regenDelay: 4, regenRate: 8, magnet: 3, respawnDelay: 1.8, comboWindow: 5 };
 
 export const DRONES = {

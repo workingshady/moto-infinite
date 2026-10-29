@@ -7,11 +7,11 @@ import type { Engine } from '../core/Audio';
 import type { Entity } from './EntityManager';
 import type { Pose } from '../world/layout';
 import type { NetState } from '../../shared/protocol';
-import { ASSIST, BIKE, CONTROL, LANDING, PHYS, PLAYER, POWERUPS, ROAD, type PowerupKind } from '../config';
+import { ASSIST, BIKE, LEVELING, CONTROL, LANDING, PHYS, PLAYER, POWERUPS, ROAD, type PowerupKind } from '../config';
 import { clamp, damp, lerp, rnd, TAU, wrapPi } from '../utils/math';
 import { buildBike, buildRider, seatRider, type BikeModel, type RiderModel } from './models';
 import { WEAPONS } from '../data/weapons';
-import { UPGRADES, type Upgrade } from '../data/upgrades';
+import { MILESTONES, TIERS, UPGRADES, type Card } from '../data/upgrades';
 import { Hud } from '../ui/Hud';
 import { PlayerChallenges } from '../systems/Challenges';
 import { STORY } from '../data/story';
@@ -19,7 +19,8 @@ import { prefs } from '../core/prefs';
 
 type Style = 'NO-HANDER' | 'SUPERMAN' | 'HEEL CLICKER';
 
-const xpNeed = (level: number) => 350 + level * 250;
+/** Power-curve XP requirement: quick early levels, slower later. */
+const xpNeed = (level: number) => Math.round(LEVELING.base * Math.pow(level, LEVELING.exp));
 
 export class Player {
   readonly camera = new THREE.PerspectiveCamera(62, 1, 0.3, 900);
@@ -51,7 +52,14 @@ export class Player {
   riding = false;
   controlsLocked = false;
   aimTarget: Entity | null = null;
-  cards: Upgrade[] = [];
+  cards: Card[] = [];
+  /** Cards on screen (false = folded into the "upgrade ready" badge). */
+  cardsOpen = false;
+  private cardT = 0;
+  private rerolls = LEVELING.rerolls;
+  private sinceRare = 0;
+  readonly stacks: Record<string, number> = {};
+  private flame = 0x66ccff;
   private respawnT = 0;
   private engine: Engine | null = null;
   private _v = new THREE.Vector3();
@@ -82,9 +90,13 @@ export class Player {
   handleInput() {
     const c = this.ctrl, s = this.s;
     if (this.cards.length) {
-      (['pick1', 'pick2', 'pick3'] as const).forEach((a, i) => c.hit(a) && this.pickCard(i));
-      if (this.game.paused) return;
+      if (c.hit('upgrade')) this.setCardsOpen(!this.cardsOpen);
+      if (this.cardsOpen) {
+        (['pick1', 'pick2', 'pick3'] as const).forEach((a, i) => c.hit(a) && this.pickCard(i));
+        if (c.hit('reroll')) this.reroll();
+      }
     }
+    if (this.game.paused) return;
     if (this.controlsLocked) return;
     if (c.hit('ride')) this.toggleRide();
     if (c.hit('respawn')) this.respawn();
@@ -324,7 +336,9 @@ export class Player {
     // exhaust flame, dust, tyre smoke
     const fx = Math.sin(B.h), fz = Math.cos(B.h), boost = this.cam.boost;
     this.bike.flame.scale.set(1, lerp(this.bike.flame.scale.y, boost > 0.1 ? 1.4 + Math.random() * 1.2 : 0.01, 0.5), 1);
-    this.bike.flameMat.color.setHex(B.pad > 0 ? 0xff66ff : 0x66ccff);
+    if (B.pad > 0) this.bike.flameMat.color.setHex(0xff66ff);
+    else if (this.flame < 0) this.bike.flameMat.color.setHSL((g.time * 0.6) % 1, 1, 0.6);
+    else this.bike.flameMat.color.setHex(this.flame);
     this.bike.headlight.intensity = g.env.night * 2.4;
     if (boost > 0.1) {
       const ex = B.x - fx * 1.7 + Math.cos(B.h) * 0.33, ez = B.z - fz * 1.7 - Math.sin(B.h) * 0.33;
@@ -618,6 +632,7 @@ export class Player {
       s.xp -= xpNeed(s.level);
       s.level++;
       s.pendingLevels++;
+      this.levelReward(s.level);
       const chapter = STORY.chapters.find((c) => c.level === s.level);
       if (chapter && this.game.opts.mode === 'open') this.storyBeat(chapter.title, chapter.text);
       const unlocked = WEAPONS.findIndex((w) => w.unlock === s.level);
@@ -626,7 +641,22 @@ export class Player {
         this.game.audio.play('unlock');
       }
     }
-    if (s.pendingLevels && !this.cards.length && !this.game.opts.attract) this.showCards();
+    // races are never interrupted: upgrades are only dealt in open world
+    if (s.pendingLevels && !this.cards.length && !this.game.opts.attract && this.game.opts.mode === 'open') this.dealCards(true);
+  }
+
+  /** Every level: heal, refill nitro, celebrate. Milestones recolour the exhaust. */
+  private levelReward(level: number) {
+    const s = this.s, g = this.game;
+    s.hp = Math.min(this.stats.hpMax, s.hp + this.stats.hpMax * LEVELING.healOnLevel);
+    s.nitro = this.stats.nitroMax;
+    g.audio.play('level');
+    g.fx.burst(this.P.x, this.P.y + 1.5, this.P.z, { n: 120, speed: 20, life: 1.4, size: [0.7, 0.1], colors: [0xffd23f, 0xffffff, 0xffa53f], gravity: 8 });
+    g.effects.ring(this.P.x, this.P.y + 0.3, this.P.z, 9, 0xffd23f);
+    this.cam.fovKick = 10;
+    const m = MILESTONES.find((x) => x.level === level);
+    if (m) this.flame = m.flame;
+    this.hud.levelUp(level, m?.title ?? (g.opts.mode === 'race' ? 'Upgrades wait until the race is over' : ''));
   }
 
   /** Story chapter reached: big banner + objective line in the HUD. */
@@ -639,25 +669,59 @@ export class Player {
     return xpNeed(this.s.level);
   }
 
-  private showCards() {
-    const g = this.game;
-    g.audio.play('level');
-    g.fx.burst(this.P.x, this.P.y + 1.5, this.P.z, { n: 120, speed: 20, life: 1.4, size: [0.7, 0.1], colors: [0xffd23f, 0xffffff, 0xffa53f], gravity: 8 });
-    this.cards = [...UPGRADES].sort(() => Math.random() - 0.5).slice(0, 3);
-    this.hud.showCards(this.cards, (i) => this.pickCard(i));
-    g.onCardsChanged();
+  /** Roll 3 different upgrades (skipping maxed ones) with rarity; guarantees a Rare+ every few levels. */
+  private dealCards(open: boolean) {
+    const pool = UPGRADES.filter((u) => (this.stacks[u.id] ?? 0) < u.max).sort(() => Math.random() - 0.5).slice(0, 3);
+    if (!pool.length) { this.s.pendingLevels = 0; return; }
+    const total = TIERS.reduce((a, t) => a + t.weight, 0);
+    this.cards = pool.map((u) => {
+      let r = Math.random() * total, tier = 0;
+      for (let i = 0; i < TIERS.length; i++) if ((r -= TIERS[i].weight) <= 0) { tier = i; break; }
+      return { u, tier };
+    });
+    if (this.cards.some((c) => c.tier > 0)) this.sinceRare = 0;
+    else if (++this.sinceRare >= LEVELING.pityEvery) {
+      this.cards[Math.floor(Math.random() * this.cards.length)].tier = Math.random() < 0.25 ? 2 : 1;
+      this.sinceRare = 0;
+    }
+    this.setCardsOpen(open);
+  }
+
+  private setCardsOpen(open: boolean) {
+    this.cardsOpen = open && this.cards.length > 0;
+    this.cardT = 0;
+    if (this.cardsOpen) this.hud.showCards(this.cards, (i) => this.pickCard(i), () => this.reroll(), this.rerolls, this.stacks);
+    else this.hud.foldCards(this.cards.length ? this.s.pendingLevels : 0);
+    this.game.onCardsChanged();
+  }
+
+  private reroll() {
+    if (this.rerolls <= 0 || !this.cards.length) return;
+    this.rerolls--;
+    this.game.audio.play('select');
+    this.dealCards(true);
+  }
+
+  /** Real-time tick (not slowed by slow motion): open cards fold away after a while. */
+  tickCards(dt: number) {
+    if (!this.cardsOpen) return;
+    this.cardT += dt;
+    if (this.cardT > LEVELING.foldAfter) this.setCardsOpen(false);
   }
 
   pickCard(i: number) {
-    const u = this.cards[i];
-    if (!u) return;
-    u.apply(this);
+    const card = this.cards[i];
+    if (!card) return;
+    const tier = TIERS[card.tier];
+    card.u.apply(this, tier.mul);
+    this.stacks[card.u.id] = (this.stacks[card.u.id] ?? 0) + 1;
+    this.buffs.shield = Math.max(this.buffs.shield, LEVELING.pickShield); // no unfair hits right after choosing
     this.s.pendingLevels--;
     this.cards = [];
-    this.hud.hideCards();
-    this.hud.banner(u.title.toUpperCase(), `Level ${this.s.level - this.s.pendingLevels}`, '#ffd23f');
-    this.game.onCardsChanged();
-    if (this.s.pendingLevels) setTimeout(() => !this.cards.length && this.showCards(), 500);
+    this.game.audio.play('unlock');
+    this.hud.banner(`${card.u.icon} ${card.u.title.toUpperCase()}`, `${tier.name} · ${card.u.desc(tier.mul)}`, tier.color);
+    if (this.s.pendingLevels > 0) this.dealCards(true);
+    else this.setCardsOpen(false);
   }
 
   // ---------------------------------------------------------------- camera, audio, network

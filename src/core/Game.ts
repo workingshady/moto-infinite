@@ -20,7 +20,7 @@ import { Combat } from '../systems/Combat';
 import { Race, type Standing } from '../systems/Race';
 import { RemotePlayers } from '../net/RemotePlayers';
 import { Tutorial } from '../systems/Tutorial';
-import { GEN, NET, PHYS, QUALITY, TRACKS, WORLD, type QualityName } from '../config';
+import { GEN, LEVELING, NET, PHYS, QUALITY, TRACKS, WORLD, type QualityName } from '../config';
 import { STORY } from '../data/story';
 
 export interface LocalPlayerSpec { name: string; color: number; controller: Controller }
@@ -148,17 +148,17 @@ export class Game {
     setTimeout(() => this.players.forEach((p) => p.storyBeat(beat.title, beat.text)), 700);
   }
 
-  /** Solo games freeze while a level-up card is open; split screen and online keep running. */
+  /** Time multiplier: solo games go slow-motion while level-up cards are open (never a hard freeze). */
+  timeScale = 1;
   onCardsChanged() {
-    if (this.players.length === 1 && !this.net) this.paused = this.players[0].cards.length > 0 || this.menuPaused;
+    const solo = this.players.length === 1 && !this.net;
+    this.timeScale = solo && this.players[0].cardsOpen ? LEVELING.slowmo : 1;
   }
 
-  private menuPaused = false;
   setMenuPaused(on: boolean) {
-    this.menuPaused = on;
     this.input.enabled = !on && !this.opts.attract;
     if (this.net) return; // online games keep running behind the menu
-    this.paused = on || this.players.some((p) => p.cards.length > 0 && this.players.length === 1);
+    this.paused = on;
   }
 
   nearestPlayer(x: number, z: number, aliveOnly = false): Player | null {
@@ -197,7 +197,8 @@ export class Game {
       this.input.poll();
       for (const p of this.players) p.handleInput();
     }
-    if (!this.paused) this.update(dt);
+    for (const p of this.players) p.tickCards(dt);
+    if (!this.paused) this.update(dt * this.timeScale);
     this.render(dt);
   };
 

@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import type { Game } from '../core/Game';
 import type { Player } from '../entities/Player';
-import type { Upgrade } from '../data/upgrades';
+import { TIERS, type Card } from '../data/upgrades';
 import type { Viewport } from '../core/Renderer';
 import { WEAPONS } from '../data/weapons';
 import { POI_KINDS, POWERUPS, type PoiKind, type PowerupKind } from '../config';
@@ -36,7 +36,9 @@ const TEMPLATE = `
 <div class="story" data-k="story"><b data-k="storyT"></b><span data-k="storyX"></span></div>
 <div class="objective" data-k="objective"></div>
 <div class="countdown" data-k="countdown"></div>
-<div class="levelup" data-k="levelup"><h2>LEVEL UP!</h2><div class="dim">Choose a skill</div><div class="cards" data-k="cards"></div></div>
+<div class="levelup" data-k="levelup"><div class="lu-head"><b>CHOOSE AN UPGRADE</b><span data-k="luHint"></span></div><div class="cards" data-k="cards"></div></div>
+<div class="upbadge" data-k="upbadge"></div>
+<div class="lvlburst" data-k="lvlburst"><div class="rays"></div><div class="lvl-num" data-k="lvlNum"></div><div class="lvl-sub" data-k="lvlSub"></div></div>
 <div class="ptag" data-k="tag"></div>
 `;
 
@@ -137,18 +139,49 @@ export class Hud {
     this.hurtA = Math.min(0.9, this.hurtA + 0.5);
   }
 
-  showCards(cards: Upgrade[], onPick: (i: number) => void) {
-    const keys = this.p.ctrl.bindings;
-    const label = (i: number) => [keys.pick1, keys.pick2, keys.pick3][i][0].replace('Digit', '').replace('Numpad', 'Num');
-    this.els.cards.innerHTML = cards
-      .map((u, i) => `<button class="card" data-i="${i}"><div class="t">${escapeHtml(u.title)}</div><div class="d">${escapeHtml(u.desc)}</div><kbd>${label(i)}</kbd></button>`)
-      .join('');
-    this.els.cards.querySelectorAll<HTMLButtonElement>('.card').forEach((b) => (b.onclick = () => onPick(+b.dataset.i!)));
+  private key(list: string[]) {
+    return (list[0] ?? '').replace('Digit', '').replace('Numpad', 'Num').replace('Key', '').replace('Backslash', '\\').replace('BracketRight', ']');
+  }
+
+  /** Non-blocking card row at the bottom: rarity colours, stack counts, reroll button. */
+  showCards(cards: Card[], onPick: (i: number) => void, onReroll: () => void, rerolls: number, stacks: Record<string, number>) {
+    const k = this.p.ctrl.bindings, picks = [k.pick1, k.pick2, k.pick3];
+    this.els.cards.innerHTML = cards.map((c, i) => {
+      const t = TIERS[c.tier], n = stacks[c.u.id] ?? 0;
+      return `<button class="card tier${c.tier}" data-i="${i}" style="--tier:${t.color};animation-delay:${i * 0.08}s">
+        <div class="rarity">${t.name}</div><div class="icon">${c.u.icon}</div><div class="t">${escapeHtml(c.u.title)}</div>
+        <div class="d">${escapeHtml(c.u.desc(t.mul))}</div><div class="stack">${'●'.repeat(n)}${'○'.repeat(Math.max(0, c.u.max - n))}</div><kbd>${this.key(picks[i])}</kbd></button>`;
+    }).join('') + `<button class="card reroll" ${rerolls > 0 ? '' : 'disabled'}><div class="icon">🎲</div><div class="t">Reroll</div><div class="d">${rerolls} left</div><kbd>${this.key(k.reroll)}</kbd></button>`;
+    this.els.cards.querySelectorAll<HTMLButtonElement>('.card[data-i]').forEach((b) => (b.onclick = () => onPick(+b.dataset.i!)));
+    this.els.cards.querySelector<HTMLButtonElement>('.card.reroll')!.onclick = onReroll;
+    this.els.luHint.textContent = `${this.key(k.upgrade)} = later`;
     this.els.levelup.style.display = 'flex';
+    this.els.upbadge.style.display = 'none';
+    this.root.classList.add('cards-open');
+  }
+
+  /** Cards put away: show a small "upgrade ready" badge instead. */
+  foldCards(pending: number) {
+    this.els.levelup.style.display = 'none';
+    this.els.upbadge.style.display = pending > 0 ? 'block' : 'none';
+    this.root.classList.remove('cards-open');
+    this.els.upbadge.innerHTML = `⬆ ${pending} upgrade${pending > 1 ? 's' : ''} ready · press <kbd>${this.key(this.p.ctrl.bindings.upgrade)}</kbd>`;
   }
 
   hideCards() {
-    this.els.levelup.style.display = 'none';
+    this.foldCards(0);
+  }
+
+  /** Big animated "LEVEL n" badge with rays + XP bar shine. */
+  levelUp(level: number, sub: string) {
+    const e = this.els;
+    e.lvlNum.textContent = `LEVEL ${level}`;
+    e.lvlSub.textContent = sub || '+25% health · nitro refilled';
+    for (const el of [e.lvlburst, e.xpBar]) {
+      el.classList.remove('show');
+      void el.offsetWidth;
+      el.classList.add('show');
+    }
   }
 
   private project(x: number, y: number, z: number) {

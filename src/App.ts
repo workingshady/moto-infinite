@@ -34,7 +34,7 @@ export class App {
   private input = new Input();
   private audio = new Audio();
   private menu: Menu;
-  private game: Game | null = null;
+  game: Game | null = null;
   private net: NetClient | null = null;
   private lastLocal: Setup | null = null;
   private touch: HTMLDivElement | null = null;
@@ -51,6 +51,8 @@ export class App {
     const code = new URLSearchParams(location.search).get('room')?.toUpperCase();
     if (code && ROOM_CODE_RE.test(code)) this.menu.showJoin(code); // pick name/colour first
     else this.menu.show(prefs.onboarded ? 'home' : 'onboard');
+    // ?debug exposes the app for automated browser tests (e.g. granting XP)
+    if (new URLSearchParams(location.search).has('debug')) (window as unknown as { __moto: App }).__moto = this;
     window.addEventListener('webglcontextlost', () => this.menu.show('loading', 'Graphics context lost: reload the page.'));
   }
 
@@ -67,6 +69,7 @@ export class App {
         this.net?.send({ t: 'profile', name, color });
       },
       kick: (id: string) => this.net?.send({ t: 'kick', id }),
+      setReady: (ready: boolean) => this.net?.send({ t: 'ready', ready }),
       leaveRoom: () => this.leaveRoom(),
       lobbySettings: (s: LobbySettings) => this.net?.send({ t: 'settings', settings: s }),
       lobbyStart: () => this.net?.send({ t: 'start' }),
