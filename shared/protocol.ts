@@ -3,7 +3,8 @@
 
 export type GameMode = 'open' | 'race' | 'drift' | 'f1';
 export type TimeOfDay = 'day' | 'dawn' | 'sunset' | 'night' | 'cycle';
-export type Weather = 'clear' | 'cloudy' | 'rain' | 'fog' | 'snow' | 'storm' | 'dynamic';
+export type Weather = 'clear' | 'cloudy' | 'drizzle' | 'rain' | 'storm' | 'fog' | 'snow' | 'blizzard' | 'hail' | 'wind' | 'sandstorm' | 'dynamic';
+export type FixedWeather = Exclude<Weather, 'dynamic'>;
 export type WorldTheme = 'mixed' | 'desert' | 'forest' | 'alpine' | 'islands';
 /** World generator knobs (0 = least, highest = most). */
 export interface WorldGen { terrain: number; water: number; flora: number; roads: number; poi: number }
@@ -18,6 +19,8 @@ export interface LobbySettings {
   seed: number;
   time: TimeOfDay;
   weather: Weather;
+  /** Several weathers picked at once are layered together (e.g. fog + rain + storm). Empty/absent = just `weather`. */
+  weathers?: FixedWeather[];
   theme: WorldTheme;
   gen: WorldGen;
   /** Room size chosen by the host (2..MAX_PLAYERS). */
@@ -90,5 +93,12 @@ export const GEN_MAX: WorldGen = { terrain: 3, water: 2, flora: 2, roads: 2, poi
 export const ROOM_CODE_RE = /^[A-Z0-9]{4,8}$/;
 export const DEFAULT_SETTINGS: LobbySettings = { mode: 'open', trackId: 'coast', laps: 3, pvp: false, seed: 1, time: 'day', weather: 'clear', theme: 'mixed', gen: { ...DEFAULT_GEN }, maxPlayers: 8, locked: false, drones: 2, ai: 5, session: 'race', tyre: 'medium' };
 export const TIMES: TimeOfDay[] = ['day', 'dawn', 'sunset', 'night', 'cycle'];
-export const WEATHERS: Weather[] = ['clear', 'cloudy', 'rain', 'fog', 'snow', 'storm', 'dynamic'];
+export const WEATHERS: Weather[] = ['clear', 'cloudy', 'drizzle', 'rain', 'storm', 'fog', 'snow', 'blizzard', 'hail', 'wind', 'sandstorm', 'dynamic'];
+export const FIXED_WEATHERS = WEATHERS.filter((w): w is FixedWeather => w !== 'dynamic');
+/** The weathers a session actually layers: the picked set, or the single `weather` ([] = changing). */
+export function activeWeathers(s: { weather: Weather; weathers?: FixedWeather[] }): FixedWeather[] {
+  if (s.weather === 'dynamic') return [];
+  const list = (s.weathers ?? []).filter((w) => FIXED_WEATHERS.includes(w));
+  return list.length ? list : [s.weather];
+}
 export const THEMES: WorldTheme[] = ['mixed', 'desert', 'forest', 'alpine', 'islands'];

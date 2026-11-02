@@ -1,7 +1,7 @@
 // Landing page, game setup (shared by solo, split screen and online lobby), settings, pause and results.
 // Plain DOM: each screen is a template string; clicks are handled by data-attributes in one place.
-import { ASSIST, DRONE_LEVELS, GEN, PLAYER_COLORS, QUALITY, THEME_DEFS, TRACKS, WEATHER_DEFS, type QualityName } from '../config';
-import { DEFAULT_GEN, GEN_MAX, MAX_PLAYERS, THEMES, TIMES, WEATHERS, type WorldGen, type GameMode, type LobbySettings, type PlayerInfo, type TimeOfDay, type Weather, type WorldTheme } from '../../shared/protocol';
+import { ASSIST, DRONE_LEVELS, GEN, PLAYER_COLORS, QUALITY, THEME_DEFS, TRACKS, WEATHER_DEFS, combineWeather, type QualityName } from '../config';
+import { DEFAULT_GEN, FIXED_WEATHERS, GEN_MAX, MAX_PLAYERS, THEMES, TIMES, WEATHERS, activeWeathers, type WorldGen, type GameMode, type LobbySettings, type PlayerInfo, type TimeOfDay, type Weather, type WorldTheme } from '../../shared/protocol';
 import type { Standing } from '../systems/Race';
 import { fmt } from '../systems/Race';
 import { escapeHtml, hex } from '../utils/math';
@@ -120,7 +120,18 @@ type Screen = 'garage' | 'onboard' | 'joinroom' | 'home' | 'mode' | 'online' | '
 interface LobbyView { code: string; link: string; players: PlayerInfo[]; settings: LobbySettings; host: boolean; you: string }
 
 const TIME_LABEL: Record<TimeOfDay, string> = { day: '☀️ Day', dawn: '🌅 Dawn', sunset: '🌇 Sunset', night: '🌙 Night', cycle: '🔄 Live cycle' };
-const WEATHER_ICON: Record<Weather, string> = { clear: '☀️', cloudy: '☁️', rain: '🌧️', fog: '🌫️', snow: '❄️', storm: '⛈️', dynamic: '🎲' };
+/** What the picked weather (mix) does to the ride. */
+function weatherHint(s: LobbySettings) {
+  const ws = activeWeathers(s);
+  if (!ws.length) return 'Changes every minute or two, sometimes two weathers at once. Tap several weathers to layer them yourself.';
+  const d = combineWeather(ws), grip = Math.round((1 - d.grip) * 100), view = Math.round(d.fogFar * 100);
+  const bits = [ws.length > 1 ? `<b>${d.label}</b> layered together.` : WEATHER_DEFS[ws[0]].blurb];
+  if (grip > 0) bits.push(`Grip −${grip}%.`);
+  if (view < 95) bits.push(`View ${view}%.`);
+  if (d.wind > 0.6) bits.push('Crosswind gusts.');
+  if (ws.length === 1) bits.push('Tap more weathers to layer them (e.g. Fog + Rain + Storm).');
+  return bits.join(' ');
+}
 const MODE_LABEL: Record<GameMode, string> = { open: '🌄 Open world', race: '🏁 Circuit race', f1: '🏎 Formula 1', drift: '🌀 Drift' };
 
 /** One-glance strip of what everyone is about to play (mode, place, laps, time, weather). */
@@ -128,7 +139,7 @@ function raceSummary(s: LobbySettings) {
   const place = s.mode === 'open' ? THEME_DEFS[s.theme].label
     : (s.mode === 'f1' ? F1_TRACKS : s.mode === 'drift' ? DRIFT_TRACKS : TRACKS).find((t) => t.id === s.trackId)?.name ?? '';
   const laps = s.mode === 'race' || s.mode === 'f1' ? `<span>🔁 ${s.laps} lap${s.laps === 1 ? '' : 's'}</span>` : '';
-  const weather = `${WEATHER_ICON[s.weather]} ${s.weather === 'dynamic' ? 'Changing' : WEATHER_DEFS[s.weather].label}`;
+  const ws = activeWeathers(s), weather = ws.length ? ws.map((w) => `${WEATHER_DEFS[w].icon} ${WEATHER_DEFS[w].label}`).join(' + ') : '🎲 Changing';
   return `<div class="race-summary"><b>${MODE_LABEL[s.mode] ?? s.mode}</b><span>📍 ${escapeHtml(place)}</span>${laps}<span>${TIME_LABEL[s.time]}</span><span>${weather}</span></div>`;
 }
 const LAPS = [1, 3, 5, 10];
@@ -303,7 +314,8 @@ export class Menu {
         <div class="opt"><span>AI rivals</span><div class="chips">${chips('ai', [0, 3, 5, 7], s.ai, (n) => (n ? `${n}` : 'None'))}</div></div>
         ${s.trackId === 'random' ? `<details class="gen"><summary>🛠 Scenery generator</summary>${genRow('terrain', 'Terrain')}${genRow('water', 'Water')}${genRow('flora', 'Nature')}</details>` : ''}`}
         <div class="opt"><span>Time</span><div class="chips">${chips('time', TIMES, s.time, (t) => TIME_LABEL[t])}</div></div>
-        <div class="opt"><span>Weather</span><div class="chips">${chips('weather', WEATHERS, s.weather, (w) => `${WEATHER_ICON[w]} ${w === 'dynamic' ? 'Changing' : WEATHER_DEFS[w].label}`)}</div></div>
+        <div class="opt"><span>Weather</span><div class="chips">${FIXED_WEATHERS.map((w) => `<button class="chip ${activeWeathers(s).includes(w) ? 'on' : ''}" data-opt="weather" data-val="${w}" title="${WEATHER_DEFS[w].blurb}">${WEATHER_DEFS[w].icon} ${WEATHER_DEFS[w].label}</button>`).join('')}<button class="chip ${s.weather === 'dynamic' ? 'on' : ''}" data-opt="weather" data-val="dynamic" title="Rolls through every weather, sometimes two at once">🎲 Changing</button></div></div>
+        <p class="hint">${weatherHint(s)}</p>
         ${showPvp ? `<label class="check"><input type="checkbox" data-opt="pvp" ${s.pvp ? 'checked' : ''} ${dis}> Riders can shoot each other</label>` : ''}
       </div>
       <div class="setup-map">
@@ -379,7 +391,7 @@ export class Menu {
           <div class="hero-right">
             <div id="charHost" class="char-host"></div>
             <div class="dim small center">Drag to spin · pick a colour on the left</div>
-            <ul class="features"><li>🌦 Live weather & day/night</li><li>🏁 5 circuits + random tracks</li><li>🗺 5 world themes, endless map</li><li>🔫 6 weapons, 3 drone types</li></ul>
+            <ul class="features"><li>🌦 11 weathers, mix them + day/night</li><li>🏁 5 circuits + random tracks</li><li>🗺 5 world themes, endless map</li><li>🔫 6 weapons, 3 drone types</li></ul>
           </div>
         </div>`;
       case 'mode': {
@@ -596,6 +608,7 @@ export class Menu {
     const editingLobby = this.screen === 'lobby' && this.lobby;
     if (editingLobby && !this.lobby!.host) return;
     const s: LobbySettings = editingLobby ? { ...this.lobby!.settings } : this.setup;
+    const weatherBefore = s.weather;
     switch (key) {
       case 'mode': {
         s.mode = val as GameMode;
@@ -626,7 +639,16 @@ export class Menu {
       case 'laps': s.laps = +val; break;
       case 'lapsCustom': s.laps = Math.max(1, Math.min(50, Math.round(+val) || 1)); break;
       case 'time': s.time = val as TimeOfDay; break;
-      case 'weather': s.weather = val as Weather; break;
+      case 'weather': {
+        // tap to add/remove a weather; picked ones layer together. Clear and Changing stand alone.
+        const w = val as Weather;
+        if (w === 'dynamic' || w === 'clear') { s.weather = w; s.weathers = undefined; break; }
+        const cur = activeWeathers(s).filter((x) => x !== 'clear');
+        const next = cur.includes(w) ? cur.filter((x) => x !== w) : [...cur, w].slice(-4);
+        s.weather = next[0] ?? 'clear';
+        s.weathers = next.length > 1 ? next : undefined;
+        break;
+      }
       case 'pvp': s.pvp = !!val; break;
       case 'seed': s.seed = newSeed(); break;
       case 'maxPlayers': s.maxPlayers = +val; break;
@@ -642,12 +664,14 @@ export class Menu {
         s.theme = pick(THEMES);
         s.time = pick(TIMES);
         s.weather = pick(WEATHERS);
+        s.weathers = Math.random() < 0.3 && s.weather !== 'dynamic' && s.weather !== 'clear' ? [s.weather, pick(FIXED_WEATHERS.filter((w) => w !== s.weather && w !== 'clear'))] : undefined;
         s.gen = { ...s.gen };
         for (const k of Object.keys(GEN_MAX) as (keyof WorldGen)[]) s.gen[k] = Math.floor(Math.random() * (GEN_MAX[k] + 1));
         if (s.gen.poi === 0) s.gen.poi = 1;
         break;
       }
     }
+    if (key !== 'weather' && key !== 'surprise' && s.weather !== weatherBefore) s.weathers = undefined;
     if (editingLobby) this.a.lobbySettings(s);
     else this.show('mode');
   }

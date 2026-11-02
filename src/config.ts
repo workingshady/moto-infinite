@@ -1,5 +1,5 @@
 // Every tunable number of the game lives here. Change gameplay feel, spawn rates or graphics in one place.
-import type { GameMode, TimeOfDay, Weather, WorldTheme } from '../shared/protocol';
+import type { FixedWeather, GameMode, TimeOfDay, Weather, WorldTheme } from '../shared/protocol';
 
 export const QUALITY = {
   low: { label: 'Low (fastest)', pixelRatio: 1, antialias: false, shadows: false, shadowMap: 1024, view: 3, fogFar: 185, particles: 0.5 },
@@ -217,17 +217,41 @@ export const SKY_KEYS: { h: number; sky: number; sun: number; sunI: number; hemi
 export const TIME_HOURS: Record<Exclude<TimeOfDay, 'cycle'>, number> = { day: 12, dawn: 6.6, sunset: 18.4, night: 23 };
 export const DAY_LENGTH = 480; // seconds for a full 24 h in "cycle" mode
 
-export const WEATHER_DEFS: Record<Exclude<Weather, 'dynamic'>, { label: string; rain: number; snow: number; fogFar: number; dark: number; clouds: number; lightning: boolean }> = {
-  clear: { label: 'Clear', rain: 0, snow: 0, fogFar: 1, dark: 0, clouds: 0.6, lightning: false },
-  cloudy: { label: 'Cloudy', rain: 0, snow: 0, fogFar: 0.85, dark: 0.15, clouds: 1, lightning: false },
-  rain: { label: 'Rain', rain: 1, snow: 0, fogFar: 0.7, dark: 0.3, clouds: 1, lightning: false },
-  fog: { label: 'Fog', rain: 0, snow: 0, fogFar: 0.4, dark: 0.15, clouds: 0.7, lightning: false },
-  snow: { label: 'Snow', rain: 0, snow: 1, fogFar: 0.65, dark: 0.1, clouds: 1, lightning: false },
-  storm: { label: 'Storm', rain: 1, snow: 0, fogFar: 0.55, dark: 0.5, clouds: 1, lightning: true },
+/**
+ * Per-weather look and feel. Several picked weathers are layered: the strongest rain/snow/hail/dust/wind/dark wins,
+ * the shortest fog distance wins and grips multiply.
+ * rain/snow/hail/dust = particle density 0..1 · fogFar = view-distance multiplier · dark = overcast dimming
+ * wind = gust strength 0..1 (pushes vehicles sideways, blows particles) · grip = tyre grip multiplier · tint = fog/sky colour cast
+ */
+export interface WeatherDef { label: string; icon: string; rain: number; snow: number; hail: number; dust: number; fogFar: number; dark: number; clouds: number; wind: number; grip: number; lightning: boolean; tint?: number; blurb: string }
+export const WEATHER_DEFS: Record<FixedWeather, WeatherDef> = {
+  clear: { label: 'Clear', icon: '☀️', rain: 0, snow: 0, hail: 0, dust: 0, fogFar: 1, dark: 0, clouds: 0.6, wind: 0.1, grip: 1, lightning: false, blurb: 'Dry road, full grip, long views.' },
+  cloudy: { label: 'Cloudy', icon: '☁️', rain: 0, snow: 0, hail: 0, dust: 0, fogFar: 0.85, dark: 0.15, clouds: 1, wind: 0.2, grip: 1, lightning: false, blurb: 'Grey sky, softer light.' },
+  drizzle: { label: 'Drizzle', icon: '🌦️', rain: 0.35, snow: 0, hail: 0, dust: 0, fogFar: 0.85, dark: 0.15, clouds: 1, wind: 0.2, grip: 0.94, lightning: false, blurb: 'Light rain: the road gets greasy.' },
+  rain: { label: 'Rain', icon: '🌧️', rain: 1, snow: 0, hail: 0, dust: 0, fogFar: 0.7, dark: 0.3, clouds: 1, wind: 0.35, grip: 0.88, lightning: false, blurb: 'Wet road, less grip, brake earlier.' },
+  storm: { label: 'Storm', icon: '⛈️', rain: 1, snow: 0, hail: 0, dust: 0, fogFar: 0.55, dark: 0.5, clouds: 1, wind: 0.75, grip: 0.84, lightning: true, blurb: 'Lightning, thunder and strong gusts.' },
+  fog: { label: 'Fog', icon: '🌫️', rain: 0, snow: 0, hail: 0, dust: 0, fogFar: 0.4, dark: 0.15, clouds: 0.7, wind: 0, grip: 0.97, lightning: false, blurb: 'Very short view distance, damp road.' },
+  snow: { label: 'Snow', icon: '❄️', rain: 0, snow: 1, hail: 0, dust: 0, fogFar: 0.65, dark: 0.1, clouds: 1, wind: 0.2, grip: 0.8, lightning: false, blurb: 'Snowfall, slippery road.' },
+  blizzard: { label: 'Blizzard', icon: '🌨️', rain: 0, snow: 1, hail: 0, dust: 0, fogFar: 0.3, dark: 0.35, clouds: 1, wind: 1, grip: 0.74, lightning: false, tint: 0xdfe8f2, blurb: 'Whiteout: snow, strong wind, almost no view.' },
+  hail: { label: 'Hail', icon: '🧊', rain: 0.3, snow: 0, hail: 1, dust: 0, fogFar: 0.7, dark: 0.35, clouds: 1, wind: 0.4, grip: 0.82, lightning: false, blurb: 'Ice pellets hammer down, icy road.' },
+  wind: { label: 'Windy', icon: '🌬️', rain: 0, snow: 0, hail: 0, dust: 0.2, fogFar: 0.95, dark: 0.05, clouds: 0.8, wind: 1, grip: 1, lightning: false, blurb: 'Crosswind gusts push you sideways.' },
+  sandstorm: { label: 'Sandstorm', icon: '🏜️', rain: 0, snow: 0, hail: 0, dust: 1, fogFar: 0.3, dark: 0.25, clouds: 0.3, wind: 0.9, grip: 0.9, lightning: false, tint: 0xc8945a, blurb: 'Orange dust wall, sand on the road, strong wind.' },
 };
 export const WEATHER_CHANGE = 90; // seconds between changes in "dynamic" weather
-/** Wet or snowy roads reduce grip. */
-export const WEATHER_GRIP = { rain: 0.88, snow: 0.8 };
+
+/** Layer several weathers into one target (see WEATHER_DEFS). */
+export function combineWeather(list: FixedWeather[]): WeatherDef {
+  const defs = (list.length ? list : (['clear'] as FixedWeather[])).map((w) => WEATHER_DEFS[w]);
+  if (defs.length === 1) return defs[0];
+  const max = (k: 'rain' | 'snow' | 'hail' | 'dust' | 'dark' | 'clouds' | 'wind') => Math.max(...defs.map((d) => d[k]));
+  return {
+    label: defs.map((d) => d.label).join(' + '), icon: defs.map((d) => d.icon).join(''),
+    rain: max('rain'), snow: max('snow'), hail: max('hail'), dust: max('dust'), dark: Math.min(0.7, max('dark') + 0.05 * (defs.length - 1)),
+    clouds: max('clouds'), wind: max('wind'), lightning: defs.some((d) => d.lightning), tint: defs.find((d) => d.tint !== undefined)?.tint,
+    fogFar: Math.min(...defs.map((d) => d.fogFar)) * Math.pow(0.92, defs.length - 1),
+    grip: Math.max(0.65, defs.reduce((g, d) => g * d.grip, 1)), blurb: '',
+  };
+}
 
 export const DRONE_TYPES = {
   scout: { hp: 25, speed: 2.6, orbit: 14, cool: 0.7, dmg: 5, color: 0x3cc8ff, scale: 0.8, xp: 40, bomb: false },

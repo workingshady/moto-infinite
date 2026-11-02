@@ -2,13 +2,14 @@
 // Time of day can stand still or cycle; weather can be fixed or change every few minutes.
 // Rain/snow and water waves animate on the GPU, clouds are one instanced draw call.
 import * as THREE from 'three';
-import { DAY_LENGTH, QUALITY, SKY_KEYS, TIME_HOURS, WEATHER_CHANGE, WEATHER_DEFS, WEATHER_GRIP, WORLD, type QualityName } from '../config';
-import type { TimeOfDay, Weather } from '../../shared/protocol';
+import { DAY_LENGTH, QUALITY, SKY_KEYS, TIME_HOURS, WEATHER_CHANGE, WORLD, combineWeather, type QualityName, type WeatherDef } from '../config';
+import type { FixedWeather, TimeOfDay } from '../../shared/protocol';
 import { M } from '../entities/assets';
 import { clamp, damp, lerp, PI } from '../utils/math';
 
-type FixedWeather = Exclude<Weather, 'dynamic'>;
-const DYNAMIC_POOL: FixedWeather[] = ['clear', 'clear', 'cloudy', 'rain', 'fog', 'storm', 'snow'];
+// "Changing" weather draws from these; sometimes two layer together (rain + fog, snow + wind...)
+const DYNAMIC_POOL: FixedWeather[][] = [['clear'], ['clear'], ['cloudy'], ['drizzle'], ['rain'], ['fog'], ['storm'], ['snow'], ['wind'], ['hail'],
+  ['rain', 'fog'], ['snow', 'wind'], ['cloudy', 'wind'], ['blizzard'], ['sandstorm']];
 const _c1 = new THREE.Color(), _c2 = new THREE.Color();
 
 function precipitation(count: number, size: number, color: number, speed: number, drift: number, streak: number) {
@@ -23,11 +24,11 @@ function precipitation(count: number, size: number, color: number, speed: number
   const mat = new THREE.ShaderMaterial({
     transparent: true,
     depthWrite: false,
-    uniforms: { uTime: { value: 0 }, uAmount: { value: 0 }, uColor: { value: new THREE.Color(color) }, uScale: { value: 600 } },
+    uniforms: { uTime: { value: 0 }, uAmount: { value: 0 }, uColor: { value: new THREE.Color(color) }, uScale: { value: 600 }, uWind: { value: 0 } },
     // particles fall and wrap inside a 80x40x80 box that follows the camera
-    vertexShader: `uniform float uTime;uniform float uAmount;uniform float uScale;varying float vA;
+    vertexShader: `uniform float uTime;uniform float uAmount;uniform float uScale;uniform float uWind;varying float vA;
       void main(){vec3 p=position;p.y=mod(p.y-uTime*${speed.toFixed(1)},40.)-20.;
-      p.x=mod(p.x+sin(uTime*.7+position.z)*${drift.toFixed(2)}+40.,80.)-40.;
+      p.x=mod(p.x+sin(uTime*.7+position.z)*${drift.toFixed(2)}+uWind+40.,80.)-40.;
       vA=step(fract(position.x*12.9898+position.z*78.233),uAmount);
       vec4 mv=modelViewMatrix*vec4(p,1.);gl_PointSize=min(${size.toFixed(2)}*uScale/max(1.,-mv.z),48.);gl_Position=projectionMatrix*mv;}`,
     fragmentShader: `uniform vec3 uColor;varying float vA;void main(){vec2 c=gl_PointCoord-.5;
@@ -44,7 +45,11 @@ export class Environment {
   readonly boomLight = new THREE.PointLight(0xff8a3a, 0, 40, 2);
   hour: number;
   night = 0; // 0 = full day, 1 = full night
-  weather: FixedWeather;
+  /** The weathers layered right now (one, or several picked together). */
+  weathers: FixedWeather[];
+  /** Crosswind: sideways push in m/s^2 (gusting) and the direction it blows towards (radians, like a heading). */
+  windPush = 0;
+  windDir = Math.random() * PI * 2;
   onThunder: (() => void) | null = null;
 
   private sky = new THREE.Color();
@@ -59,17 +64,26 @@ export class Environment {
   private starMat: THREE.PointsMaterial;
   private rain: ReturnType<typeof precipitation>;
   private snow: ReturnType<typeof precipitation>;
-  private mix = { rain: 0, snow: 0, fog: 1, dark: 0, clouds: 0.6 };
+  private hail: ReturnType<typeof precipitation>;
+  private dust: ReturnType<typeof precipitation>;
+  private target: WeatherDef;
+  private dynamic: boolean;
+  private mix = { rain: 0, snow: 0, hail: 0, dust: 0, fog: 1, dark: 0, clouds: 0.6, wind: 0, grip: 1, tint: 0 };
+  private tint = new THREE.Color(0xc8945a);
+  private windOff = 0;
   private flash = 0;
   private nextBolt = 6;
   private weatherT = WEATHER_CHANGE;
   private _m = new THREE.Matrix4();
 
-  constructor(scene: THREE.Scene, quality: QualityName, private timeMode: TimeOfDay = 'day', private weatherMode: Weather = 'clear') {
+  /** `weathers` = the layered set; empty = "Changing" (rolls through DYNAMIC_POOL). */
+  constructor(scene: THREE.Scene, quality: QualityName, private timeMode: TimeOfDay = 'day', weathers: FixedWeather[] = ['clear']) {
     this.hour = timeMode === 'cycle' ? 10 : TIME_HOURS[timeMode];
-    this.weather = weatherMode === 'dynamic' ? 'clear' : weatherMode;
-    const w = WEATHER_DEFS[this.weather];
-    Object.assign(this.mix, { rain: w.rain, snow: w.snow, fog: w.fogFar, dark: w.dark, clouds: w.clouds });
+    this.dynamic = weathers.length === 0;
+    this.weathers = this.dynamic ? ['clear'] : weathers;
+    const w = (this.target = combineWeather(this.weathers));
+    Object.assign(this.mix, { rain: w.rain, snow: w.snow, hail: w.hail, dust: w.dust, fog: w.fogFar, dark: w.dark, clouds: w.clouds, wind: w.wind, grip: w.grip, tint: w.tint ? 1 : 0 });
+    if (w.tint) this.tint.setHex(w.tint);
 
     this.fogFarBase = QUALITY[quality].fogFar;
     this.fog = new THREE.Fog(0x9fd6f2, WORLD.fogNear, this.fogFarBase);
@@ -125,7 +139,9 @@ export class Environment {
 
     this.rain = precipitation(6000, 0.42, 0xbfd8ff, 26, 0.3, 1);
     this.snow = precipitation(3500, 0.55, 0xffffff, 3.2, 2.5, 0);
-    scene.add(this.rain.pts, this.snow.pts);
+    this.hail = precipitation(2500, 0.32, 0xeef6ff, 34, 0.1, 0);
+    this.dust = precipitation(5000, 0.7, 0xd9a864, 1.2, 4, 0);
+    scene.add(this.rain.pts, this.snow.pts, this.hail.pts, this.dust.pts);
     this.applySky(0);
   }
 
@@ -139,14 +155,14 @@ export class Environment {
     this.fogFarBase = Q.fogFar;
   }
 
-  /** Grip multiplier from the road surface (wet/snowy). */
+  /** Grip multiplier from the road surface (wet, snowy, icy, sandy), blended as weather rolls in. */
   get grip() {
-    return lerp(1, WEATHER_GRIP.rain, this.mix.rain) * lerp(1, WEATHER_GRIP.snow, this.mix.snow);
+    return this.mix.grip;
   }
 
   get label() {
     const h = Math.floor(this.hour), m = Math.floor((this.hour - h) * 60);
-    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')} · ${WEATHER_DEFS[this.weather].label}`;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')} · ${this.target.icon} ${this.target.label}${this.windPush > 1.2 ? ' · gusts' : ''}`;
   }
 
   /** Point the sun's shadow box at a player and move rain/stars with their camera before rendering their view. */
@@ -156,10 +172,11 @@ export class Environment {
     this.sun.position.set(x + dir * 70, y + 90 * el + 10, z + 30);
     this.sun.target.position.set(x, y, z);
     this.sun.target.updateMatrixWorld();
-    this.rain.pts.position.copy(cam.position);
-    this.snow.pts.position.copy(cam.position);
+    for (const p of [this.rain, this.snow, this.hail, this.dust]) {
+      p.pts.position.copy(cam.position);
+      p.mat.uniforms.uScale.value = pixelHeight * 0.6;
+    }
     this.stars.position.copy(cam.position);
-    this.rain.mat.uniforms.uScale.value = this.snow.mat.uniforms.uScale.value = pixelHeight * 0.6;
   }
 
   private applySky(dt: number) {
@@ -169,6 +186,8 @@ export class Environment {
     const A = SKY_KEYS[i], B = SKY_KEYS[i + 1], t = clamp((h - A.h) / (B.h - A.h), 0, 1);
     const dark = this.mix.dark, k = dt ? damp(dt, 2) : 1;
     _c1.setHex(A.sky).lerp(_c2.setHex(B.sky), t).lerp(_c2.setHex(0x55606e), dark * 0.7);
+    // sandstorms / blizzards wash the sky and fog in their colour (dimmer at night)
+    if (this.mix.tint > 0.01) _c1.lerp(_c2.copy(this.tint).multiplyScalar(lerp(1, 0.25, this.night)), this.mix.tint * 0.75);
     this.sky.lerp(_c1, k);
     this.fog.color.copy(this.sky);
     this.sun.color.setHex(A.sun).lerp(_c2.setHex(B.sun), t);
@@ -186,26 +205,40 @@ export class Environment {
   update(dt: number, t: number, fx: number, fz: number) {
     this.time.value = t;
     if (this.timeMode === 'cycle') this.hour = (this.hour + (dt * 24) / DAY_LENGTH) % 24;
-    if (this.weatherMode === 'dynamic') {
+    if (this.dynamic) {
       this.weatherT -= dt;
       if (this.weatherT <= 0) {
         this.weatherT = WEATHER_CHANGE * (0.7 + Math.random() * 0.6);
-        const opts = DYNAMIC_POOL.filter((w) => w !== this.weather);
-        this.weather = opts[Math.floor(Math.random() * opts.length)];
+        const now = this.weathers.join('+'), opts = DYNAMIC_POOL.filter((w) => w.join('+') !== now);
+        this.weathers = opts[Math.floor(Math.random() * opts.length)];
+        this.target = combineWeather(this.weathers);
+        if (this.target.tint) this.tint.setHex(this.target.tint);
       }
     }
     // blend towards the current weather so changes roll in smoothly
-    const W = WEATHER_DEFS[this.weather], k = damp(dt, 0.25);
-    this.mix.rain = lerp(this.mix.rain, W.rain, k);
-    this.mix.snow = lerp(this.mix.snow, W.snow, k);
-    this.mix.fog = lerp(this.mix.fog, W.fogFar, k);
-    this.mix.dark = lerp(this.mix.dark, W.dark, k);
-    this.mix.clouds = lerp(this.mix.clouds, W.clouds, k);
-    this.rain.mat.uniforms.uTime.value = this.snow.mat.uniforms.uTime.value = t;
-    this.rain.mat.uniforms.uAmount.value = this.mix.rain;
-    this.snow.mat.uniforms.uAmount.value = this.mix.snow;
-    this.rain.pts.visible = this.mix.rain > 0.02;
-    this.snow.pts.visible = this.mix.snow > 0.02;
+    const W = this.target, k = damp(dt, 0.25), m = this.mix;
+    m.rain = lerp(m.rain, W.rain, k);
+    m.snow = lerp(m.snow, W.snow, k);
+    m.hail = lerp(m.hail, W.hail, k);
+    m.dust = lerp(m.dust, W.dust, k);
+    m.fog = lerp(m.fog, W.fogFar, k);
+    m.dark = lerp(m.dark, W.dark, k);
+    m.clouds = lerp(m.clouds, W.clouds, k);
+    m.wind = lerp(m.wind, W.wind, k);
+    m.grip = lerp(m.grip, W.grip, k);
+    m.tint = lerp(m.tint, W.tint ? 1 : 0, k);
+    // gusty crosswind: slowly veering direction, strength pulses between lulls and gusts
+    this.windDir += Math.sin(t * 0.05) * 0.02 * dt;
+    const gust = 0.55 + 0.45 * Math.sin(t * 0.9) * Math.sin(t * 0.31 + 1.7);
+    this.windPush = m.wind * gust * 3.2;
+    this.windOff += (2 + m.wind * gust * 14) * dt;
+    const layers: [ReturnType<typeof precipitation>, number, number][] = [[this.rain, m.rain, 0.6], [this.snow, m.snow, 1], [this.hail, m.hail, 0.25], [this.dust, m.dust, 1.4]];
+    for (const [p, amount, windK] of layers) {
+      p.mat.uniforms.uTime.value = t;
+      p.mat.uniforms.uAmount.value = amount;
+      p.mat.uniforms.uWind.value = (this.windOff * windK) % 80;
+      p.pts.visible = amount > 0.02;
+    }
     if (W.lightning) {
       this.nextBolt -= dt;
       if (this.nextBolt <= 0) {
@@ -223,7 +256,7 @@ export class Environment {
     const visible = Math.round(this.cloudData.length * Math.min(1, 0.4 + this.mix.clouds * 0.6));
     for (let ci = 0; ci < this.cloudData.length; ci++) {
       const c = this.cloudData[ci];
-      c.x += c.v * dt;
+      c.x += c.v * (1 + m.wind * 3) * dt;
       if (c.x - fx > 260) c.x -= 520;
       if (c.x - fx < -260) c.x += 520;
       if (c.z - fz > 260) c.z -= 520;

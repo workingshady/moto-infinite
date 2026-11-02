@@ -339,6 +339,10 @@ export class Player {
     B.pad = Math.max(0, B.pad - dt);
     this.cam.boost = lerp(this.cam.boost, boosting && this.riding ? 1 : 0, damp(dt, 6));
 
+    // crosswind gusts nudge the heading sideways (a = push * sideways share of the wind; turn rate = a / v)
+    const E = g.env;
+    if (!B.air && E.windPush > 0.05 && Math.abs(B.v) > 3) B.moveH += (E.windPush * Math.sin(E.windDir - B.moveH) / Math.max(12, Math.abs(B.v))) * Math.sign(B.v) * dt;
+
     // horizontal move + collisions
     const nx = B.x + Math.sin(B.moveH) * B.v * dt, nz = B.z + Math.cos(B.moveH) * B.v * dt;
     if (B.v !== 0) {

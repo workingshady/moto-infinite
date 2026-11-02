@@ -6,7 +6,8 @@ import type { TrackLine } from '../world/layout';
 import { F1 } from '../config';
 import { G, MAT, mesh } from '../entities/assets';
 import { buildGhost } from '../entities/models';
-import { RACE } from '../config';
+import { RACE, WEATHER_DEFS } from '../config';
+import { activeWeathers } from '../../shared/protocol';
 import { lerp, lerpAngle } from '../utils/math';
 
 export interface Standing { id: string; name: string; color: number; local: boolean; prog: number; time: number | null; lap: number }
@@ -123,7 +124,7 @@ export class Race {
           if (r.lap >= this.laps) {
             r.finished = true;
             // F1 regulations at the flag: time penalties, and a dry race of 3+ laps needs at least one tyre change
-            const noStop = this.f1Start && this.laps >= 3 && p.f1.stops === 0 && g.opts.weather !== 'rain' && g.opts.session !== 'quali';
+            const noStop = this.f1Start && this.laps >= 3 && p.f1.stops === 0 && !activeWeathers(g.opts).some((w) => WEATHER_DEFS[w].rain > 0.5) && g.opts.session !== 'quali';
             r.finishTime = g.time - this.startTime + p.f1.penalty + (noStop ? F1.mandatoryStopPenalty : 0);
             if (noStop) p.hud.banner('NO PIT STOP', `+${F1.mandatoryStopPenalty}s: both compounds are mandatory`, '#ff4d5e');
             p.controlsLocked = false;

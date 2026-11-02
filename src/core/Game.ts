@@ -4,7 +4,7 @@ import { Renderer } from './Renderer';
 import { Events } from './Events';
 import type { Audio } from './Audio';
 import type { Controller, Input } from './Input';
-import type { GameMode, TimeOfDay, Weather, WorldGen, WorldTheme } from '../../shared/protocol';
+import { activeWeathers, type FixedWeather, type GameMode, type TimeOfDay, type Weather, type WorldGen, type WorldTheme } from '../../shared/protocol';
 import type { NetClient } from '../net/NetClient';
 import type { ChallengeId } from '../data/challenges';
 import { Noise } from '../utils/noise';
@@ -37,6 +37,8 @@ export interface SessionOptions {
   pvp: boolean;
   time: TimeOfDay;
   weather: Weather;
+  /** Several weathers layered together (see activeWeathers). */
+  weathers?: FixedWeather[];
   theme: WorldTheme;
   gen: WorldGen;
   /** Enemy drone amount, index into DRONE_LEVELS. */
@@ -107,7 +109,7 @@ export class Game {
     this.hudLayer = document.createElement('div');
     this.hudLayer.id = 'hud-layer';
     document.body.appendChild(this.hudLayer);
-    this.env = new Environment(this.scene, opts.quality, opts.time, opts.weather);
+    this.env = new Environment(this.scene, opts.quality, opts.time, activeWeathers(opts));
     this.env.onThunder = () => audio.play('thunder');
     this.fx = new Particles(this.scene);
     this.fx.amount = QUALITY[opts.quality].particles;
