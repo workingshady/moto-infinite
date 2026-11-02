@@ -307,7 +307,7 @@ export class Menu {
         ${showPvp ? `<label class="check"><input type="checkbox" data-opt="pvp" ${s.pvp ? 'checked' : ''} ${dis}> Riders can shoot each other</label>` : ''}
       </div>
       <div class="setup-map">
-        <canvas id="mapCanvas" width="280" height="280"></canvas>
+        <canvas id="mapCanvas" width="400" height="400"></canvas>
         <div class="dim small" id="mapInfo">Drawing map…</div>
       </div>
     </div>`;
