@@ -228,7 +228,7 @@ export class Menu {
         <div class="modes">
           <button class="mode ${s.mode === 'open' ? 'on' : ''}" data-opt="mode" data-val="open"><b>🌄 Open world</b><span>Endless roads, story chapters, drones, challenges, level-ups</span></button>
           <button class="mode ${s.mode === 'race' ? 'on' : ''}" data-opt="mode" data-val="race"><b>🏁 Circuit race</b><span>Closed loop, checkpoint gates, laps, positions, best-lap ghost</span></button>
-          <button class="mode ${s.mode === 'drift' ? 'on' : ''}" data-opt="mode" data-val="drift"><b>🌀 Drift</b><span>Container docks, mountain pass, skidpad, gymkhana. Score angle × speed, chain combos</span></button>
+          <button class="mode ${s.mode === 'drift' ? 'on' : ''}" data-opt="mode" data-val="drift"><b>🌀 Drift</b><span>8 venues: port, mountain pass, skidpad, gymkhana, airfield, harbor, car park, street. Score angle × speed, chain combos</span></button>
         </div>
         ${s.mode === 'drift' ? `
         <div class="opt"><span>Venue</span><div class="chips">${chips('trackId', DRIFT_TRACKS.map((t) => t.id), s.trackId, (id) => DRIFT_TRACKS.find((t) => t.id === id)!.name)}</div></div>

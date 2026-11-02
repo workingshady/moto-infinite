@@ -185,7 +185,7 @@ export function drawMapPreview(canvas: HTMLCanvasElement, s: LobbySettings): Map
     ctx.fillStyle = '#fff';
     ctx.fillText('YOU START HERE', a + 9, b - 8);
   }
-  return { lengthKm: layout instanceof Circuit ? layout.length / 1000 : null, climb: Math.max(0, Math.round(hi - lo)), seed };
+  return { lengthKm: layout instanceof Circuit || layout instanceof DriftTrack ? layout.length / 1000 : null, climb: Math.max(0, Math.round(hi - lo)), seed };
 }
 
 interface Slot { key: string; root: THREE.Group; wheels: THREE.Group[]; tag: THREE.Sprite; phase: number }
