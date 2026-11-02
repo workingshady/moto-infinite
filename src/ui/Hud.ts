@@ -314,8 +314,10 @@ export class Hud {
       e.f1tyre.style.borderColor = hex(F1.tyres[f.compound].color);
       e.f1wear.textContent = Math.round(f.wear * 100) + '% wear';
       e.f1drs.className = f.aeroOpen ? 'on' : '';
+      e.f1drs.textContent = p.def.f1?.aero === 'active' ? (f.overtake ? 'OVERTAKE' : 'STRAIGHT') : 'NO DRS';
       e.f1slip.className = f.slip ? 'on' : '';
       e.f1pit.className = f.inPit ? 'on' : '';
+      e.f1wear.textContent = Math.round(f.wear * 100) + '% wear' + (f.penalty ? ` · +${f.penalty}s` : '') + (f.limits ? ` · TL ${f.limits}/${F1.trackLimits}` : '');
     }
     // analog cluster for every vehicle except F1 cars in F1 mode (they have the F1 dash above)
     const showG = p.riding && !isF1;

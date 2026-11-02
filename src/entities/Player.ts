@@ -45,7 +45,7 @@ export class Player {
   /** Formula 1 state: tyres, aero, pit stops. */
   readonly f1 = {
     compound: 'medium' as TyreCompound, wear: 0, aeroOpen: false, slip: false, inPit: false, pitT: 0, stops: 0, penalty: 0,
-    topMul: 1, accelMul: 1, gripMul: 1, stillT: 0,
+    gripMul: 1, stillT: 0, overtake: false, limits: 0, limitT: 0, offT: 0,
   };
   readonly drift = { on: false, pts: 0, t: 0, cool: 0, angle: 0, total: 0, best: 0, zone: '', zoneMult: 1, jitter: 0, prevAngle: 0 };
   readonly W = { x: 0, z: 0, y: 0, h: 0, vy: 0, ground: true, phase: 0, amt: 0 };
@@ -209,20 +209,21 @@ export class Player {
       if (B.pad > 0) boosting = true;
       const F = this.def.f1;
       if (F) this.f1Step(dt, active && c.is('trick'), down);
-      const top = st.top * (boosting ? (F ? F.ersTop : BIKE.nitroTopMul) : 1) * (onRoad ? 1 : lerp(BIKE.offroadTop, 1, this.def.offroad)) * this.f1.topMul;
+      const top = st.top * (boosting ? BIKE.nitroTopMul : 1) * (onRoad ? 1 : lerp(BIKE.offroadTop, 1, this.def.offroad));
       if (!B.air) {
-        // F1: aero drag makes acceleration fade toward top speed
-        const dragFade = F ? 1 - clamp(B.v / top, 0, 1) ** 2 * 0.8 : 1;
         // mid-wheelie the throttle stays on (holding C = gas) and ↓ only lowers the front instead of braking
         const inWheelie = B.wheelie > WHEELIE.active;
         const gas = up || (inWheelie && active && c.is('trick'));
-        if (gas) B.v +=(B.v < 0 ? 40 : st.accel * (boosting ? (F ? 1.25 : BIKE.nitroAccelMul) : 1) * dragFade * this.f1.accelMul) * dt;
-        else if (boosting) B.v += st.accel * BIKE.nitroAccelMul * dt; // nitro drives by itself: Space + ←/→ is enough
-        if (down && !inWheelie) B.v -= (B.v > 0 ? (F ? F.brake * this.f1.gripMul : BIKE.brake) : BIKE.reverse) * dt;
-        if (!gas && !down && !boosting) B.v *= 1 - BIKE.coastDrag * dt;
-        if (!onRoad) B.v *= 1 - BIKE.offroadDrag * (1 - this.def.offroad) * dt;
+        if (F) this.f1Longitudinal(dt, gas || boosting, down, boosting, onRoad);
+        else {
+          if (gas) B.v += (B.v < 0 ? 40 : st.accel * (boosting ? BIKE.nitroAccelMul : 1)) * dt;
+          else if (boosting) B.v += st.accel * BIKE.nitroAccelMul * dt; // nitro drives by itself: Space + ←/→ is enough
+          if (down && !inWheelie) B.v -= (B.v > 0 ? BIKE.brake : BIKE.reverse) * dt;
+          if (!gas && !down && !boosting) B.v *= 1 - BIKE.coastDrag * dt;
+          if (!onRoad) B.v *= 1 - BIKE.offroadDrag * (1 - this.def.offroad) * dt;
+          if (B.v > top) B.v -= Math.min(B.v - top, 30 * dt);
+        }
         if (g.env.grip < 1 && Math.abs(B.steer) > 0.6 && Math.abs(B.v) > 20) B.v *= 1 - (1 - g.env.grip) * dt; // wet roads scrub speed in corners
-        if (B.v > top) B.v -= Math.min(B.v - top, 30 * dt);
         B.v = Math.max(B.v, -BIKE.maxReverse);
         // steering eases in and re-centres smoothly instead of snapping
         const want = (left ? 1 : 0) - (right ? 1 : 0);
@@ -235,7 +236,8 @@ export class Player {
         // F1: the cornering limit (lateral g) grows with downforce ~ v², so yaw rate is capped at aLat / v
         let yawGoal = yawTarget;
         if (F) {
-          const v = Math.max(Math.abs(B.v), 6), aLat = F.aLat * (1 + F.downforce * (v / 50) ** 2 * (this.f1.aeroOpen ? 0.7 : 1)) * this.f1.gripMul * g.env.grip;
+          // lateral limit = μ·g·(1 + downforce/weight); turning faster than aLat / v just washes wide (understeer)
+          const v = Math.max(Math.abs(B.v), 6), aLat = F.mu * 9.81 * (1 + this.downforceRatio(v)) * this.f1.gripMul * g.env.grip * (onRoad ? 1 : 0.55);
           yawGoal = clamp(yawTarget, -aLat / v, aLat / v);
         }
         B.yawV = lerp(B.yawV, yawGoal, damp(dt, this.isCar ? DRIFT.yawInertia.car : DRIFT.yawInertia.bike));
@@ -736,11 +738,56 @@ export class Player {
     return { gear: this.engine?.gear ?? 1, rpm: this.engine?.rpm ?? 0, redline: this.def.engine.redline };
   }
 
+  /** Seconds to the nearest car ahead (AI or local players), for overtake mode. */
+  private gapAhead() {
+    const B = this.B, fx = Math.sin(B.moveH), fz = Math.cos(B.moveH), v = Math.max(10, Math.abs(B.v));
+    let best = 1e9;
+    const consider = (x: number, z: number) => {
+      const dx = x - B.x, dz = z - B.z, along = dx * fx + dz * fz;
+      if (along > 2 && Math.abs(dx * fz - dz * fx) < 8) best = Math.min(best, along / v);
+    };
+    this.game.ai?.list.forEach((r) => consider(r.x, r.z));
+    for (const o of this.game.players) if (o !== this) consider(o.B.x, o.B.z);
+    return best;
+  }
+
   /** Starting tyres for F1 sessions. */
   setTyres(c: TyreCompound) {
     this.f1.compound = c;
     this.f1.wear = 0;
     this.bike.tyreBands?.color.setHex(F1.tyres[c].color);
+  }
+
+  /** Downforce as a multiple of the car's weight at speed v: ½ρ·ClA·v² / (m·g). Straight mode sheds some. */
+  private downforceRatio(v: number) {
+    const F = this.def.f1!;
+    return (0.5 * F1.rho * F.cla * v * v * (this.f1.aeroOpen ? F1.straightDown : 1)) / (F.mass * 9.81);
+  }
+
+  /**
+   * Real longitudinal dynamics: drive = min(power/v, traction), minus aero drag ½ρ·CdA·v² and rolling resistance.
+   * Braking = μ·g·(1 + downforce ratio) so F1 cars brake harder from high speed. ERS adds electric power that fades
+   * at very high speed; top speed is simply where power meets drag.
+   */
+  private f1Longitudinal(dt: number, gas: boolean, brake: boolean, ers: boolean, onRoad: boolean) {
+    const B = this.B, F = this.def.f1!, f = this.f1, v = Math.max(0, B.v), g = 9.81, dr = this.downforceRatio(v);
+    const grip = f.gripMul * this.game.env.grip;
+    const cda = F.cda * (f.aeroOpen ? F1.straightDrag : 1) * (f.slip ? F1.slipDrag : 1);
+    const drag = (0.5 * F1.rho * cda * v * v) / F.mass + F1.rolling * g;
+    let a = -drag;
+    if (gas && B.v >= -0.5) {
+      const taper = clamp((F1.ersTaperTo - v) / (F1.ersTaperTo - F1.ersTaperFrom), 0, 1);
+      const kw = F.power + (ers && F.ers ? F.ers * taper * (f.overtake ? F1.overtakeErs : 1) : 0);
+      const traction = F.muLong * g * (1 + dr) * grip;
+      a += Math.min((kw * 1000 * F1.drivetrain) / (F.mass * Math.max(v, 4)), traction);
+    } else if (!brake) a -= F1.engineBrake;
+    if (brake) {
+      if (B.v > 0.5) a -= Math.min(F.muBrake * g * (1 + dr) * grip, 6.5 * g);
+      else a -= BIKE.reverse; // creep backwards
+    }
+    if (!onRoad) a -= (this.game.terrain.layout.roadDist(B.x, B.z) > ROAD.shoulder + 3 ? F1.gravelDrag : F1.grassDrag) * v * 0.2;
+    B.v = Math.max(B.v + a * dt, B.v > 0 && !brake ? 0 : -BIKE.maxReverse);
+    if (B.v > 0 && B.v < 0.05 && !gas) B.v = 0;
   }
 
   /** F1 per-step: tyre grip, straight-mode wing (DRS), slipstream, pit limiter and pit stops. */
@@ -751,15 +798,24 @@ export class Player {
     // straight mode / DRS: only inside DRS zones, closes the moment you brake
     const idx = lay.nearest ? lay.nearest(B.x, B.z).i : -1;
     const zone = idx >= 0 && !!lay.inDrs?.(idx);
-    if (zone && wingKey && !braking) f.aeroOpen = true;
-    if (!zone || braking) f.aeroOpen = false;
-    f.slip = !!g.ai?.slipstreamFor(B.x, B.z, B.moveH) || g.players.some((o) => o !== this && Math.hypot(o.B.x - B.x, o.B.z - B.z) < F1.slipDist && Math.hypot(o.B.x - B.x, o.B.z - B.z) > 3);
-    const F = this.def.f1!;
-    f.topMul = (f.aeroOpen ? F.dragCut : 1) * (f.slip ? F1.slipTop : 1);
-    f.accelMul = f.slip ? F1.slipAccel : 1;
+    const canWing = this.def.f1!.aero === 'active';
+    if (canWing && zone && wingKey && !braking) f.aeroOpen = true;
+    if (!canWing || !zone || braking) f.aeroOpen = false;
+    f.overtake = this.gapAhead() < F1.overtakeGap;
+    f.slip = Math.abs(B.v) > 25 && (!!g.ai?.slipstreamFor(B.x, B.z, B.moveH) || g.players.some((o) => o !== this && Math.hypot(o.B.x - B.x, o.B.z - B.z) < F1.slipDist && Math.hypot(o.B.x - B.x, o.B.z - B.z) > 3)); // only at racing speed
     const wing = this.bike.rearFlap;
     if (wing) wing.rotation.x = lerp(wing.rotation.x, f.aeroOpen ? 0.5 : 0, Math.min(1, dt * 10));
     if (this.bike.frontFlap) this.bike.frontFlap.rotation.x = lerp(this.bike.frontFlap.rotation.x, f.aeroOpen ? 0.25 : 0, Math.min(1, dt * 10));
+    // track limits: all four wheels well beyond the white line at racing speed = warning, then +5 s
+    const off = !f.inPit && g.layout.roadDist(B.x, B.z) > ROAD.asphalt + 1.5 && Math.abs(B.v) > 25 && !!g.race?.started;
+    f.offT = off ? f.offT + dt : 0;
+    f.limitT = Math.max(0, f.limitT - dt);
+    if (f.offT > 0.4 && f.limitT <= 0) {
+      f.limits++;
+      f.limitT = 3;
+      if (f.limits > F1.trackLimits) { f.penalty += F1.trackLimitPenalty; this.hud.banner('TRACK LIMITS', `+${F1.trackLimitPenalty}s time penalty`, '#ff4d5e'); }
+      else this.hud.banner(f.limits === F1.trackLimits ? 'BLACK & WHITE FLAG' : 'TRACK LIMITS', `Warning ${f.limits}/${F1.trackLimits}`, '#ffd23f');
+    }
     // pit lane: speed limiter, stop in the box for fresh tyres
     f.inPit = !!lay.isPit?.(B.x, B.z);
     if (f.inPit) {

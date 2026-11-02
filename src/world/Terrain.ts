@@ -24,6 +24,8 @@ export class Terrain {
   readonly pads: Pad[] = [];
 
   private th: (typeof THEME_DEFS)['mixed'];
+  /** F1 circuits: the land around follows the nearest track height (mown parkland), cached on a coarse grid. */
+  private circuitGround: Map<number, number> | null = null;
   private mul: number;
   private ridge: number;
   private sea: number;
@@ -37,6 +39,26 @@ export class Terrain {
     this.sea = GEN.water[gen.water].sea + this.th.heightAdd;
     this.rivers = GEN.water[gen.water].rivers;
     this.flora = GEN.flora[gen.flora].mul;
+    if (layout.kind === 'f1') this.circuitGround = new Map();
+  }
+
+  private groundCell(cx: number, cz: number) {
+    const key = (cx + 4096) * 8192 + (cz + 4096), m = this.circuitGround!;
+    let h = m.get(key);
+    if (h === undefined) {
+      const L = this.layout as unknown as { nearest(x: number, z: number, e?: boolean): { i: number }; px: Float32Array; pz: Float32Array };
+      const { i } = L.nearest(cx * 40, cz * 40, true);
+      h = this.layout.roadHeight(L.px[i], L.pz[i]) - 0.25;
+      m.set(key, h);
+    }
+    return h;
+  }
+
+  /** Smooth field around an F1 circuit: bilinear over 40 m cells + a few cm of natural undulation. */
+  private circuitHeight(x: number, z: number) {
+    const cx = Math.floor(x / 40), cz = Math.floor(z / 40), fx = x / 40 - cx, fz = z / 40 - cz;
+    const a = this.groundCell(cx, cz), b = this.groundCell(cx + 1, cz), c = this.groundCell(cx, cz + 1), d = this.groundCell(cx + 1, cz + 1);
+    return lerp(lerp(a, b, fx), lerp(c, d, fx), fz) + (this.noise.fbm(x / 60, z / 60, 2) - 0.5) * 0.8;
   }
 
   biome(x: number, z: number) {
@@ -44,6 +66,7 @@ export class Terrain {
   }
 
   rawHeight(x: number, z: number) {
+    if (this.circuitGround) return this.circuitHeight(x, z);
     const n = this.noise;
     // domain warping: bend the input space so coasts and valleys flow instead of looking like blobs
     const wx = x + (n.fbm(x / 320 + 5, z / 320 + 9, 2) - 0.5) * 170, wz = z + (n.fbm(x / 320 - 7, z / 320 + 3, 2) - 0.5) * 170;
@@ -62,6 +85,7 @@ export class Terrain {
 
   /** Local snow line: colder regions get snow lower down. */
   snowAt(x: number, z: number) {
+    if (this.circuitGround) return 999; // no snow or bare rock at a race circuit
     return this.th.snowLine + (this.noise.fbm(x / 700 + 90, z / 700 - 40, 2) - 0.5) * 34;
   }
 

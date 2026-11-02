@@ -285,7 +285,14 @@ export const F1 = {
   wornGrip: 0.72, // grip multiplier at 100% wear
   pitLimit: 22, // m/s (80 km/h)
   pitStop: 2.6, // seconds stationary
-  slipDist: 34, slipAngle: 0.3, slipTop: 1.06, slipAccel: 1.2, // slipstream behind another car
+  slipDist: 34, slipAngle: 0.3, slipDrag: 0.7, // slipstream: drag x this within slipDist behind a car
+  straightDrag: 0.72, straightDown: 0.6, // 2026 straight mode: drag x 0.72, downforce x 0.6
+  overtakeGap: 1, overtakeErs: 1.35, // 2026 overtake mode: within 1 s of a car ahead, extra electric deployment
+  ersTaperFrom: 80, ersTaperTo: 95, // m/s: electric power fades out between these (2026 rules taper deployment at high speed)
+  rho: 1.225, rolling: 0.012, engineBrake: 1.6, drivetrain: 0.82, // 82% of engine power reaches the road
+  gravelDrag: 1.4, grassDrag: 0.6, // extra decel factor off track
+  trackLimits: 3, trackLimitPenalty: 5, // warnings before a 5 s penalty
+  mandatoryStopPenalty: 10, // dry races of 3+ laps: no pit stop = +10 s
   ersRegen: 22, ersIdle: 0.6, // nitro (ERS) recharge: per second under braking / otherwise
   lightsGap: 1, lightsHoldMin: 0.4, lightsHoldMax: 2.6, jumpPenalty: 5,
   aiNames: ['M. Verstappo', 'L. Hamiltone', 'C. Leclair', 'L. Norrison', 'O. Piastro', 'G. Russo', 'F. Alonzo', 'C. Sainte', 'P. Gaslee', 'Y. Tsunami', 'A. Albone', 'E. Ocone'],

@@ -31,9 +31,26 @@ export interface VehicleDef {
    * Open-wheel aero cars: downforce grows with speed², so the cornering limit (aLat, m/s² at low speed)
    * rises at speed; F1 brakes hard (m/s²), ERS adds acceleration, straight-mode wings cut drag.
    */
-  f1?: { downforce: number; aLat: number; brake: number; ersTop: number; dragCut: number };
+  f1?: F1Spec;
   /** Fluff for the garage card. */
   spec: { power: string; weight: string; layout: string };
+}
+
+/**
+ * Real-world-style F1 numbers. Physics derives everything from these:
+ * drive force = min(power / v, traction), drag = ½ρ·CdA·v², downforce = ½ρ·ClA·v² (adds grip for cornering,
+ * braking and traction). Top speed is wherever power meets drag — there is no artificial cap.
+ */
+export interface F1Spec {
+  mass: number; // kg incl. driver
+  power: number; // kW combustion engine
+  ers: number; // kW electric deploy (0 = none)
+  cda: number; // drag area m²
+  cla: number; // downforce (lift) area m²
+  mu: number; // tyre friction coefficient (lateral)
+  muLong: number; // traction coefficient (drive)
+  muBrake: number; // braking friction (carbon brakes + tyre)
+  aero: 'active' | 'none'; // 2026 straight mode; older eras have fixed wings
 }
 
 export const VEHICLES: VehicleDef[] = [
@@ -83,20 +100,20 @@ export const VEHICLES: VehicleDef[] = [
     top: 31, accel: 14, grip: 1.8, traction: 6, slideTraction: 1.4, hp: 20, offroad: 0.1, wheelie: false, engine: { type: 'i6', cyl: 6, idle: 800, redline: 6500, gears: 4, crackle: 0.3 },
     spec: { power: '265 hp', weight: '1,150 kg', layout: 'FR · I6' } },
   // Formula cars: real-scale speeds for the 1:1 F1 circuits (HUD shows true km/h)
-  { id: 'f1_2026', name: 'Formula 2026', kind: 'car', cls: 'Formula 1', era: '2026', desc: '768 kg, 3.4 m wheelbase, active front and rear wings, ~50% electric power. Brutal braking and downforce.',
+  { id: 'f1_2026', name: 'Formula 2026', kind: 'car', cls: 'Formula 1', era: '2026', desc: '768 kg + driver, 3.4 m wheelbase, active aero straight mode, 400 kW engine + 350 kW electric (tapers above ~290 km/h).',
     top: 90, accel: 30, grip: 2.6, traction: 16, slideTraction: 4, hp: 20, offroad: 0, wheelie: false,
     engine: { type: 'hybrid', cyl: 6, idle: 4000, redline: 15000, gears: 8, turbo: true, crackle: 0.2 },
-    f1: { downforce: 1.6, aLat: 16, brake: 48, ersTop: 1.07, dragCut: 1.08 },
+    f1: { mass: 800, power: 400, ers: 350, cda: 1.25, cla: 3.4, mu: 1.75, muLong: 1.05, muBrake: 1.9, aero: 'active' },
     spec: { power: '~1,000 hp (V6 hybrid)', weight: '768 kg', layout: 'MR · 1.6 V6 turbo + ERS' } },
-  { id: 'f1_v10', name: 'Formula V10', kind: 'car', cls: 'Formula 1', era: '2004', desc: 'The screaming V10 era: 19,000 rpm, huge mechanical grip, grooved tyres.',
+  { id: 'f1_v10', name: 'Formula V10', kind: 'car', cls: 'Formula 1', era: '2004', desc: 'The screaming V10 era: 19,000 rpm, 670 kW, peak downforce, no DRS (it came in 2011).',
     top: 92, accel: 29, grip: 2.5, traction: 15, slideTraction: 3.6, hp: 15, offroad: 0, wheelie: false,
     engine: { type: 'v10', cyl: 10, idle: 5000, redline: 19000, gears: 7, crackle: 0.5, pitch: 0.8 },
-    f1: { downforce: 1.5, aLat: 15, brake: 46, ersTop: 1.03, dragCut: 1.05 },
+    f1: { mass: 690, power: 670, ers: 0, cda: 1.2, cla: 4.2, mu: 1.75, muLong: 1.0, muBrake: 1.9, aero: 'none' },
     spec: { power: '~900 hp (3.0 V10)', weight: '605 kg', layout: 'MR · 3.0 V10' } },
   { id: 'f1_classic', name: 'Formula 1976', kind: 'car', cls: 'Formula 1', era: '1970s', desc: 'Cigar-shaped wedge with a tall airbox. Less downforce, more slide, all heart.',
     top: 78, accel: 22, grip: 2.2, traction: 9, slideTraction: 2.4, hp: 10, offroad: 0.1, wheelie: false,
     engine: { type: 'v8', cyl: 8, idle: 3000, redline: 11000, gears: 5, crackle: 0.8, lope: 0.1 },
-    f1: { downforce: 0.8, aLat: 13, brake: 36, ersTop: 1, dragCut: 1.03 },
+    f1: { mass: 650, power: 370, ers: 0, cda: 1.1, cla: 1.6, mu: 1.45, muLong: 0.85, muBrake: 1.5, aero: 'none' },
     spec: { power: '~480 hp (3.0 V8)', weight: '575 kg', layout: 'MR · 3.0 V8' } },
 ];
 

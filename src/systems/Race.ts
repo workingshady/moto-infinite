@@ -29,7 +29,6 @@ export class Race {
 
   /** F1 start: 5 red lights one per second, random hold, lights out. */
   private f1Start: { lit: number; t: number; hold: number } | null = null;
-  private jumped = new Set<number>();
 
   constructor(private game: Game, private track: TrackLine, readonly laps: number, private trackId: string) {
     const n = track.n;
@@ -43,7 +42,7 @@ export class Race {
       this.ghost.visible = false;
       game.scene.add(this.ghost);
     }
-    for (const p of game.players) p.controlsLocked = !this.f1Start; // F1: free to move, but rolling before lights out is a jump start
+    for (const p of game.players) p.controlsLocked = true; // everyone waits on the grid until GO / lights out
   }
 
   private gate(idx: number, start: boolean) {
@@ -123,7 +122,10 @@ export class Race {
           if (p.index === 0) this.lapDone(lapTime);
           if (r.lap >= this.laps) {
             r.finished = true;
-            r.finishTime = g.time - this.startTime + (this.jumped.has(p.index) ? F1.jumpPenalty : 0);
+            // F1 regulations at the flag: time penalties, and a dry race of 3+ laps needs at least one tyre change
+            const noStop = this.f1Start && this.laps >= 3 && p.f1.stops === 0 && g.opts.weather !== 'rain' && g.opts.session !== 'quali';
+            r.finishTime = g.time - this.startTime + p.f1.penalty + (noStop ? F1.mandatoryStopPenalty : 0);
+            if (noStop) p.hud.banner('NO PIT STOP', `+${F1.mandatoryStopPenalty}s: both compounds are mandatory`, '#ff4d5e');
             p.controlsLocked = false;
             g.audio.play('challenge');
             p.hud.banner('FINISHED!', `${fmt(r.finishTime)} · P${r.place}`, '#7cffb2');
@@ -155,14 +157,6 @@ export class Race {
       st.lit = lit;
       lights.setLights?.(lit, false);
       if (lit > 0) { g.audio.play('count'); g.players.forEach((p) => p.hud.countdown('🔴'.repeat(lit) + '⚫'.repeat(5 - lit))); }
-    }
-    for (const p of g.players) {
-      // the clutch is in: you can rev but any roll before lights out is a jump start
-      if (Math.abs(p.B.v) > 2 && !this.jumped.has(p.index)) {
-        this.jumped.add(p.index);
-        p.hud.banner('JUMP START', `+${F1.jumpPenalty}s penalty`, '#ff4d5e');
-        g.audio.play('fail');
-      }
     }
     if (st.t >= 5 * F1.lightsGap + st.hold) {
       lights.setLights?.(0, true);

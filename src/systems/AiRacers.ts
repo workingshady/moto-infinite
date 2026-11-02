@@ -58,19 +58,20 @@ export class AiRacers {
   /** Max speed at each sample: cornering limit from curvature, then a backwards braking pass. */
   private speedProfile(r: AiRacer) {
     const t = this.track, n = t.n, out = new Float32Array(n), def = r.def, F = def.f1;
-    const top = def.top * r.skill * (F ? F.ersTop : 1);
-    const aLat0 = (F ? F.aLat : def.grip * 4.8) * (0.9 + r.skill * 0.1), D = F ? F.downforce : 0;
+    // F1: top speed where power meets drag; cornering μ·g·(1 + k·v²) with k from the downforce area
+    const top = F ? Math.cbrt(((F.power + F.ers * 0.6) * 1000 * F1.drivetrain) / (0.5 * 1.225 * F.cda)) * r.skill : def.top * r.skill;
+    const aLat0 = (F ? F.mu * 9.81 : def.grip * 4.8) * (0.9 + r.skill * 0.1), K = F ? (0.5 * 1.225 * F.cla) / (F.mass * 9.81) : 0;
     for (let i = 0; i < n; i++) {
       let k = 0;
       for (let j = -4; j <= 4; j++) k = Math.max(k, Math.abs(Math.asin(clamp(t.curvature((i + j + n) % n), -1, 1))) / (6 * t.spacing));
-      const denom = k - (aLat0 * D) / 2500; // downforce: grip grows with v², so fast corners open up
+      const denom = k - aLat0 * K; // downforce: grip grows with v², so fast corners open up
       out[i] = denom <= 0 ? top : Math.min(top, Math.sqrt(aLat0 / denom));
     }
-    const brake = (F ? F.brake : 18) * 0.9;
+    // braking pass: decel grows with downforce at speed (μ_brake·g·(1 + k·v²)), capped at 6 g
     for (let pass = 0; pass < 2; pass++)
       for (let i = n - 1; i >= 0; i--) {
-        const nx = out[(i + 1) % n];
-        out[i] = Math.min(out[i], Math.sqrt(nx * nx + 2 * brake * t.spacing));
+        const nx = out[(i + 1) % n], dec = F ? Math.min(F.muBrake * 9.81 * (1 + K * nx * nx), 58) * 0.88 : 16;
+        out[i] = Math.min(out[i], Math.sqrt(nx * nx + 2 * dec * t.spacing));
       }
     return out;
   }
@@ -96,8 +97,13 @@ export class AiRacers {
       const idx = (((Math.floor(r.s / t.spacing)) % n) + n) % n;
       if (started && raceTime > r.react && !r.finished) {
         const target = r.vmax[idx], F = r.def.f1;
-        if (r.v < target) r.v += r.def.accel * r.skill * (1 - (r.v / (r.def.top * 1.1)) ** 2 * 0.7) * dt;
-        else r.v = Math.max(target, r.v - (F ? F.brake : 18) * dt);
+        if (r.v < target) {
+          if (F) {
+            // same longitudinal model as the player: power-limited, traction-limited, minus drag
+            const K = (0.5 * 1.225 * F.cla) / (F.mass * 9.81), drive = Math.min(((F.power + F.ers * 0.6) * 1000 * F1.drivetrain) / (F.mass * Math.max(r.v, 4)), F.muLong * 9.81 * (1 + K * r.v * r.v));
+            r.v += (drive * r.skill - (0.5 * 1.225 * F.cda * r.v * r.v) / F.mass) * dt;
+          } else r.v += r.def.accel * r.skill * (1 - (r.v / (r.def.top * 1.1)) ** 2 * 0.7) * dt;
+        } else r.v = Math.max(target, r.v - (F ? 40 : 18) * dt);
         r.v = Math.min(r.v, target + 2);
       } else if (r.finished) r.v *= 1 - 0.6 * dt;
       // racing line: inside of the next corner, unless someone is in the way
