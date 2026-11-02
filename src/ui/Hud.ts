@@ -36,6 +36,7 @@ const TEMPLATE = `
 <div class="story" data-k="story"><b data-k="storyT"></b><span data-k="storyX"></span></div>
 <div class="objective" data-k="objective"></div>
 <div class="countdown" data-k="countdown"></div>
+<div class="driftmeter" data-k="driftm"><b data-k="driftPts"></b><span data-k="driftInfo"></span></div>
 <div class="levelup" data-k="levelup"><div class="lu-head"><b>CHOOSE AN UPGRADE</b><span data-k="luHint"></span></div><div class="cards" data-k="cards"></div></div>
 <div class="upbadge" data-k="upbadge"></div>
 <div class="lvlburst" data-k="lvlburst"><div class="rays"></div><div class="lvl-num" data-k="lvlNum"></div><div class="lvl-sub" data-k="lvlSub"></div></div>
@@ -223,6 +224,13 @@ export class Hud {
       e.cross.style.transform = `translate(${q.x}px,${q.y}px) translate(-50%,-50%)`;
     }
 
+    // live drift meter (every frame so it feels responsive)
+    const dr = p.drift;
+    e.driftm.style.display = dr.on && dr.pts > 20 ? 'block' : 'none';
+    if (dr.on) {
+      e.driftPts.textContent = Math.round(dr.pts * p.driftMult).toLocaleString();
+      e.driftInfo.textContent = `x${p.driftMult.toFixed(1)} · ${Math.round((dr.angle * 180) / Math.PI)}°${dr.zone ? ' · ' + dr.zone : ''}`;
+    }
     if (frame % 3) return;
     // text (every 3rd frame)
     e.speed.textContent = String(Math.round(p.riding ? speedKmh : 0));
@@ -236,7 +244,7 @@ export class Hud {
     e.xpBar.style.width = (s.xp / p.xpNeed()) * 100 + '%';
     e.score.textContent = s.score + (s.combo > 1 ? ` (x${s.combo})` : '');
     e.gems.textContent = String(s.gems);
-    e.weapon.textContent = WEAPONS[s.weapon].name + (p.nitroLatched ? ' · NOS ON' : '');
+    e.weapon.textContent = g.opts.mode === 'drift' ? `Drift ${p.drift.total.toLocaleString()} · best ${p.drift.best.toLocaleString()}` : WEAPONS[s.weapon].name + (p.nitroLatched ? ' · NOS ON' : '');
     e.dist.textContent = (s.dist / 1000).toFixed(2) + ' km';
     e.clock.textContent = g.env.label;
     e.buffs.innerHTML = (Object.keys(p.buffs) as PowerupKind[])

@@ -9,7 +9,7 @@ export interface Pose { x: number; z: number; h: number }
 export type RoadPointFn = (x: number, z: number, tx: number, tz: number, along: number) => void;
 
 export interface RoadLayout {
-  readonly kind: 'grid' | 'circuit';
+  readonly kind: 'grid' | 'circuit' | 'drift';
   roadDist(x: number, z: number): number;
   roadHeight(x: number, z: number): number;
   nearestRoad(x: number, z: number): Pose;

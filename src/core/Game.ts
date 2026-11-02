@@ -9,6 +9,7 @@ import type { NetClient } from '../net/NetClient';
 import type { ChallengeId } from '../data/challenges';
 import { Noise } from '../utils/noise';
 import { Circuit, GridRoads, type Pose, type RoadLayout } from '../world/layout';
+import { DriftTrack, type DriftTrackId } from '../world/DriftTrack';
 import { Terrain } from '../world/Terrain';
 import { ChunkManager } from '../world/Chunks';
 import { Environment } from '../world/Environment';
@@ -23,7 +24,7 @@ import { Tutorial } from '../systems/Tutorial';
 import { GEN, LEVELING, NET, PHYS, QUALITY, TRACKS, WORLD, type QualityName } from '../config';
 import { STORY } from '../data/story';
 
-export interface LocalPlayerSpec { name: string; color: number; controller: Controller }
+export interface LocalPlayerSpec { name: string; color: number; controller: Controller; vehicle: string }
 
 export interface SessionOptions {
   mode: GameMode;
@@ -84,7 +85,9 @@ export class Game {
   constructor(readonly opts: SessionOptions, readonly input: Input, readonly audio: Audio, readonly hooks: GameHooks) {
     this.net = opts.net;
     const noise = new Noise(opts.seed);
-    this.layout = opts.mode === 'race' ? new Circuit(noise, opts.seed) : new GridRoads(noise, opts.seed, opts.gen.roads, GEN.poi[opts.gen.poi].chance);
+    this.layout = opts.mode === 'race' ? new Circuit(noise, opts.seed)
+      : opts.mode === 'drift' ? new DriftTrack(noise, opts.trackId as DriftTrackId, opts.seed)
+      : new GridRoads(noise, opts.seed, opts.gen.roads, GEN.poi[opts.gen.poi].chance);
     this.terrain = new Terrain(noise, this.layout, opts.theme, opts.gen);
     this.renderer = new Renderer(opts.quality, document.body);
     input.attachCanvas(this.renderer.gl.domElement);
@@ -111,7 +114,7 @@ export class Game {
       this.attractCam = new THREE.PerspectiveCamera(55, 1, 0.3, 900);
     } else {
       const first = this.net ? this.netSlot() : 0;
-      opts.locals.forEach((l, i) => this.players.push(new Player(this, i, l.controller, l.name, l.color, this.spawnPoints[first + i], opts.mode === 'race' || opts.locals.length > 1 || !!this.net)));
+      opts.locals.forEach((l, i) => this.players.push(new Player(this, i, l.controller, l.name, l.color, this.spawnPoints[first + i], opts.mode !== 'open' || opts.locals.length > 1 || !!this.net, l.vehicle)));
       if (opts.mode === 'race' && this.layout instanceof Circuit) this.race = new Race(this, this.layout, opts.laps, opts.trackId);
       if (this.net) this.wireNet(this.net);
       if (opts.tutorial) this.tutorial = new Tutorial(this);
@@ -144,7 +147,9 @@ export class Game {
     this.raf = requestAnimationFrame(this.loop);
     if (this.opts.attract) return;
     const track = TRACKS.find((t) => t.id === this.opts.trackId);
-    const beat = this.opts.tutorial ? { title: 'TRAINING RIDE', text: 'Follow the checklist on the right. Each step teaches one skill.' } : this.opts.mode === 'open' ? STORY.spawn : { title: `${STORY.race.title} · ${(track?.name ?? 'RANDOM').toUpperCase()}`, text: `${this.opts.laps} lap${this.opts.laps > 1 ? 's' : ''}. ${STORY.race.text}` };
+    const beat = this.opts.tutorial ? { title: 'TRAINING RIDE', text: 'Follow the checklist on the right. Each step teaches one skill.' }
+      : this.opts.mode === 'drift' ? { title: 'DRIFT SESSION', text: 'Hold X (handbrake) into corners, steer against the slide to hold the angle. Chain drifts for a bigger multiplier.' }
+      : this.opts.mode === 'open' ? STORY.spawn : { title: `${STORY.race.title} · ${(track?.name ?? 'RANDOM').toUpperCase()}`, text: `${this.opts.laps} lap${this.opts.laps > 1 ? 's' : ''}. ${STORY.race.text}` };
     setTimeout(() => this.players.forEach((p) => p.storyBeat(beat.title, beat.text)), 700);
   }
 

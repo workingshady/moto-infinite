@@ -28,13 +28,13 @@ export class NetClient {
     return `${location.origin}${location.pathname}?room=${this.code}`;
   }
 
-  connect(name: string, color: number): Promise<void> {
+  connect(name: string, color: number, vehicle: string): Promise<void> {
     return new Promise((resolve, reject) => {
       const proto = location.protocol === 'https:' ? 'wss' : 'ws';
       const ws = new WebSocket(`${proto}://${location.host}/api/room/${this.code}`);
       this.ws = ws;
       let welcomed = false;
-      ws.onopen = () => this.send({ t: 'hello', name, color });
+      ws.onopen = () => this.send({ t: 'hello', name, color, vehicle });
       ws.onmessage = (ev) => {
         let msg: ServerMsg;
         try {

@@ -1,7 +1,7 @@
 // Messages exchanged between the game client (src/net) and the room server (worker/Room.ts).
 // Shared by both sides so a change here is type-checked everywhere.
 
-export type GameMode = 'open' | 'race';
+export type GameMode = 'open' | 'race' | 'drift';
 export type TimeOfDay = 'day' | 'dawn' | 'sunset' | 'night' | 'cycle';
 export type Weather = 'clear' | 'cloudy' | 'rain' | 'fog' | 'snow' | 'storm' | 'dynamic';
 export type WorldTheme = 'mixed' | 'desert' | 'forest' | 'alpine' | 'islands';
@@ -30,6 +30,8 @@ export interface PlayerInfo {
   id: string;
   name: string;
   color: number;
+  /** Vehicle id from src/data/vehicles.ts. */
+  vehicle: string;
   host: boolean;
   /** Ready in the lobby (the host always counts as ready). */
   ready: boolean;
@@ -49,8 +51,8 @@ export interface NetState {
 }
 
 export type ClientMsg =
-  | { t: 'hello'; name: string; color: number }
-  | { t: 'profile'; name: string; color: number }
+  | { t: 'hello'; name: string; color: number; vehicle: string }
+  | { t: 'profile'; name: string; color: number; vehicle: string }
   | { t: 'kick'; id: string }
   | { t: 'ready'; ready: boolean }
   | { t: 'settings'; settings: LobbySettings }

@@ -9,6 +9,8 @@ import { PLAYER_COLORS, TRACKS, type QualityName } from './config';
 import { DEFAULT_GEN, ROOM_CODE_RE, type LobbySettings } from '../shared/protocol';
 import type { Standing } from './systems/Race';
 import { prefs } from './core/prefs';
+import { DRIFT_TRACKS } from './world/DriftTrack';
+import { driftSeed } from './ui/Preview';
 
 const store = {
   get<T>(k: string, fallback: T): T {
@@ -62,11 +64,12 @@ export class App {
       startTraining: () => this.startTraining(),
       createRoom: () => void this.join(newRoomCode()),
       joinRoom: (code: string) => void this.join(code),
-      updateProfile: (name: string, color: number) => {
+      updateProfile: (name: string, color: number, vehicle?: string) => {
         this.menu.profile.name = name;
         this.menu.profile.color = color;
+        if (vehicle) this.menu.profile.vehicle = vehicle;
         store.set('profile', this.menu.profile);
-        this.net?.send({ t: 'profile', name, color });
+        this.net?.send({ t: 'profile', name, color, vehicle: this.menu.profile.vehicle ?? 'street' });
       },
       kick: (id: string) => this.net?.send({ t: 'kick', id }),
       setReady: (ready: boolean) => this.net?.send({ t: 'ready', ready }),
@@ -105,9 +108,10 @@ export class App {
   /** Turn menu/lobby settings into a game session (named tracks bring their own seed and scenery). */
   private session(s: LobbySettings, locals: SessionOptions['locals'], net: NetClient | null): SessionOptions {
     const track = s.mode === 'race' && s.trackId !== 'random' ? TRACKS.find((t) => t.id === s.trackId) : undefined;
+    const dtrack = s.mode === 'drift' ? DRIFT_TRACKS.find((t) => t.id === s.trackId) : undefined;
     return {
-      mode: s.mode, seed: track?.seed ?? s.seed, trackId: s.trackId, laps: s.laps, pvp: s.pvp,
-      time: s.time, weather: s.weather, theme: track?.theme ?? s.theme, gen: track ? { ...DEFAULT_GEN } : { ...DEFAULT_GEN, ...s.gen }, quality: this.quality, locals, net,
+      mode: s.mode, seed: s.mode === 'drift' ? driftSeed(s.trackId, s.seed) : track?.seed ?? s.seed, trackId: s.trackId, laps: s.laps, pvp: s.pvp,
+      time: s.time, weather: s.weather, theme: track?.theme ?? (dtrack && dtrack.id !== 'random' ? dtrack.theme : s.theme), gen: track ? { ...DEFAULT_GEN } : { ...DEFAULT_GEN, ...s.gen }, quality: this.quality, locals, net,
     };
   }
 
@@ -126,8 +130,8 @@ export class App {
     const P = this.menu.profile, C = this.input.controllers;
     this.input.setLayout(s.split);
     const locals = s.split
-      ? [{ name: P.name, color: P.color, controller: C[0] }, { name: P.name2, color: P.color2 === P.color ? PLAYER_COLORS[(PLAYER_COLORS.indexOf(P.color) + 1) % PLAYER_COLORS.length] : P.color2, controller: C[1] }]
-      : [{ name: P.name, color: P.color, controller: C[0] }];
+      ? [{ name: P.name, color: P.color, controller: C[0], vehicle: P.vehicle ?? 'street' }, { name: P.name2, color: P.color2 === P.color ? PLAYER_COLORS[(PLAYER_COLORS.indexOf(P.color) + 1) % PLAYER_COLORS.length] : P.color2, controller: C[1], vehicle: P.vehicle2 ?? 'street' }]
+      : [{ name: P.name, color: P.color, controller: C[0], vehicle: P.vehicle ?? 'street' }];
     this.withLoading(() => {
       this.replaceGame(this.session(s, locals, null));
       this.enterPlay(!s.split);
@@ -144,7 +148,7 @@ export class App {
       this.replaceGame({
         mode: 'open', seed: Math.floor(Math.random() * 1e9), trackId: '', laps: 0, pvp: false, time: 'day', weather: 'clear', theme: 'mixed',
         gen: { terrain: 0, water: 0, flora: 0, roads: 1, poi: 2 }, tutorial: true, quality: this.quality,
-        locals: [{ name: P.name, color: P.color, controller: this.input.controllers[0] }], net: null,
+        locals: [{ name: P.name, color: P.color, controller: this.input.controllers[0], vehicle: P.vehicle ?? 'street' }], net: null,
       });
       this.enterPlay(true);
     });
@@ -164,7 +168,7 @@ export class App {
     this.net?.close();
     const net = new NetClient(code);
     try {
-      await net.connect(this.menu.profile.name, this.menu.profile.color);
+      await net.connect(this.menu.profile.name, this.menu.profile.color, this.menu.profile.vehicle ?? 'street');
     } catch (e) {
       if (new URLSearchParams(location.search).get('room')) this.menu.showJoin(code, (e as Error).message);
       else this.menu.show('online', (e as Error).message);
@@ -193,7 +197,7 @@ export class App {
     const n = this.net!, s = n.settings, P = this.menu.profile;
     this.input.setLayout(false);
     this.withLoading(() => {
-      this.replaceGame(this.session(s, [{ name: P.name, color: P.color, controller: this.input.controllers[0] }], n));
+      this.replaceGame(this.session(s, [{ name: P.name, color: P.color, controller: this.input.controllers[0], vehicle: P.vehicle ?? 'street' }], n));
       this.enterPlay(true);
     });
   }

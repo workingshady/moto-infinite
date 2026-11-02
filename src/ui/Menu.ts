@@ -7,6 +7,24 @@ import { fmt } from '../systems/Race';
 import { escapeHtml, hex } from '../utils/math';
 import { STORY } from '../data/story';
 import { CharacterPreview, LobbyShowcase, drawMapPreview } from './Preview';
+import { VEHICLES, vehicleById, type VehicleKind } from '../data/vehicles';
+import { DRIFT_TRACKS } from '../world/DriftTrack';
+import { clamp } from '../utils/math';
+
+const bar = (v: number) => `<i style="width:${Math.round(clamp(v, 0.05, 1) * 100)}%"></i>`;
+/** Garage card grid: bikes or cars, stat bars, the selected one highlighted. */
+function garageCards(sel: string, attr: string, kind: VehicleKind) {
+  return VEHICLES.filter((v) => v.kind === kind).map((v) => `
+    <button class="veh ${v.id === sel ? 'on' : ''}" data-${attr}="${v.id}">
+      <div class="veh-head"><b>${escapeHtml(v.name)}</b><span>${v.cls} · ${v.era}</span></div>
+      <div class="stat"><span>Speed</span><div class="sbar">${bar(v.top / 46)}</div></div>
+      <div class="stat"><span>Accel</span><div class="sbar">${bar(v.accel / 25)}</div></div>
+      <div class="stat"><span>Handling</span><div class="sbar">${bar(v.grip / 2.3)}</div></div>
+      <div class="stat"><span>Drift</span><div class="sbar drift">${bar(1 - v.traction / 13)}</div></div>
+      <div class="veh-spec">${v.spec.power} · ${v.spec.weight} · ${v.spec.layout}</div>
+    </button>`).join('');
+}
+
 import { prefs, savePrefs } from '../core/prefs';
 
 const K = (k: string) => `<kbd class="key">${k}</kbd>`;
@@ -42,6 +60,12 @@ const SLIDES: { title: string; art: string; body: string; result?: string }[] = 
     result: 'BACKFLIP + 360 SPIN + CORKSCREW · +1890 XP · COMBO x3',
   },
   {
+    title: 'Drift, wheelies & the garage',
+    art: `<div class="trick-row"><div>${K('X')}<small>handbrake drift</small></div><div>${K('C')}<small>wheelie (ground)</small></div><div><span class="big-emoji" style="font-size:40px">🏎️</span><small>15 vehicles</small></div></div>`,
+    body: `Pick from <b>5 motorcycles and 10 cars</b> in the 🏁 Garage, each with real-world-style handling. Tap ${K('X')} (handbrake) into a corner to kick the tail out, then steer <b>against</b> the slide to hold the angle. Angle × speed = points, longer chains = bigger multiplier, hitting a wall loses the chain. On a bike, hold ${K('C')} on the ground for a wheelie: ${K('↑')} lifts, ${K('↓')} lowers, too far and you loop out.`,
+    result: 'DRIFT 4,820 · x2.5 · 6.1s · Crane Corner',
+  },
+  {
     title: 'Weapons & drones',
     art: `<div class="scene night"><span class="reticle-demo"></span><span class="big-emoji">🛸</span><span class="hit-demo">✕</span></div>`,
     body: `${K('F')} or left click fires. Shots <b>auto-aim</b> at the red reticle and lead moving drones. ✕ = hit, red ✕ = kill. ${K('Q')} switches weapon. Level up to unlock Rocket, Railgun, Swarm and Mines. Scouts are fast, gunners shoot, bombers drop bombs.`,
@@ -60,7 +84,7 @@ const SLIDES: { title: string; art: string; body: string; result?: string }[] = 
 ];
 
 
-export interface Profile { name: string; color: number; name2: string; color2: number }
+export interface Profile { name: string; color: number; name2: string; color2: number; vehicle?: string; vehicle2?: string }
 export type Setup = LobbySettings & { split: boolean };
 
 export interface MenuActions {
@@ -68,7 +92,7 @@ export interface MenuActions {
   startTraining(): void;
   createRoom(): void;
   joinRoom(code: string): void;
-  updateProfile(name: string, color: number): void;
+  updateProfile(name: string, color: number, vehicle?: string): void;
   kick(id: string): void;
   setReady(ready: boolean): void;
   leaveRoom(): void;
@@ -82,7 +106,7 @@ export interface MenuActions {
   saveProfile(p: Profile): void;
 }
 
-type Screen = 'onboard' | 'joinroom' | 'home' | 'mode' | 'online' | 'lobby' | 'settings' | 'howto' | 'pause' | 'results' | 'loading';
+type Screen = 'garage' | 'onboard' | 'joinroom' | 'home' | 'mode' | 'online' | 'lobby' | 'settings' | 'howto' | 'pause' | 'results' | 'loading';
 interface LobbyView { code: string; link: string; players: PlayerInfo[]; settings: LobbySettings; host: boolean; you: string }
 
 const TIME_LABEL: Record<TimeOfDay, string> = { day: '☀️ Day', dawn: '🌅 Dawn', sunset: '🌇 Sunset', night: '🌙 Night', cycle: '🔄 Live cycle' };
@@ -106,6 +130,9 @@ export class Menu {
   /** Where onboarding returns to (home, or back into a room). */
   private obBack: Screen = 'home';
   private joinCode = '';
+  private garageBack: Screen = 'home';
+  private garageFor: 1 | 2 = 1;
+  private garageKind: VehicleKind = 'bike';
   private preview = new CharacterPreview();
   private lineup = new LobbyShowcase();
   inGame = false;
@@ -134,7 +161,7 @@ export class Menu {
     this.root.style.display = '';
     this.screen = s;
     this.root.className = s === 'pause' || s === 'results' ? 'overlay dim' : 'overlay';
-    const wide = s === 'home' || s === 'mode' || s === 'lobby' || s === 'onboard';
+    const wide = s === 'home' || s === 'mode' || s === 'lobby' || s === 'onboard' || s === 'garage';
     this.root.innerHTML = `<div class="card-wrap ${wide ? 'wide' : ''}">${this.render(s, data)}</div>`;
     this.afterRender();
   }
@@ -167,7 +194,8 @@ export class Menu {
   private afterRender() {
     const host = this.root.querySelector<HTMLElement>('#charHost');
     if (host) {
-      this.preview.setColor(this.profile.color);
+      const p2 = this.screen === 'garage' && this.garageFor === 2;
+      this.preview.setLook((p2 ? this.profile.vehicle2 : this.profile.vehicle) ?? 'street', p2 ? this.profile.color2 : this.profile.color);
       this.preview.mount(host);
     }
     const lineHost = this.root.querySelector<HTMLElement>('#lineupHost');
@@ -200,8 +228,12 @@ export class Menu {
         <div class="modes">
           <button class="mode ${s.mode === 'open' ? 'on' : ''}" data-opt="mode" data-val="open"><b>🌄 Open world</b><span>Endless roads, story chapters, drones, challenges, level-ups</span></button>
           <button class="mode ${s.mode === 'race' ? 'on' : ''}" data-opt="mode" data-val="race"><b>🏁 Circuit race</b><span>Closed loop, checkpoint gates, laps, positions, best-lap ghost</span></button>
+          <button class="mode ${s.mode === 'drift' ? 'on' : ''}" data-opt="mode" data-val="drift"><b>🌀 Drift</b><span>Container docks, mountain pass, skidpad, gymkhana. Score angle × speed, chain combos</span></button>
         </div>
-        ${s.mode === 'open' ? `
+        ${s.mode === 'drift' ? `
+        <div class="opt"><span>Venue</span><div class="chips">${chips('trackId', DRIFT_TRACKS.map((t) => t.id), s.trackId, (id) => DRIFT_TRACKS.find((t) => t.id === id)!.name)}</div></div>
+        <p class="hint">${escapeHtml(DRIFT_TRACKS.find((t) => t.id === s.trackId)?.blurb ?? '')} <b>Tip:</b> drift cars (Kitsune, Panda 86, Brute V8, Kaze 7R) slide easiest. X = handbrake.</p>` : ''}
+        ${s.mode === 'drift' ? '' : s.mode === 'open' ? `
         <div class="opt"><span>World</span><div class="chips">${chips('theme', THEMES, s.theme, (t) => THEME_DEFS[t].label)}</div></div>
         <p class="hint">${THEME_DEFS[s.theme].blurb}</p>
         <details class="gen" open><summary>🛠 World generator</summary>
@@ -227,6 +259,25 @@ export class Menu {
   private render(s: Screen, data?: unknown): string {
     const P = this.profile;
     switch (s) {
+      case 'garage': {
+        const sel = (this.garageFor === 2 ? P.vehicle2 : P.vehicle) ?? 'street', v = vehicleById(sel), k = this.garageKind;
+        return `
+        <h2>🏁 Garage${this.garageFor === 2 ? ' · Player 2' : ''}</h2>
+        <div class="garage">
+          <div class="garage-show">
+            <div id="charHost" class="char-host"></div>
+            <h3>${escapeHtml(v.name)}</h3>
+            <div class="dim small">${v.cls} · ${v.era} · ${v.spec.layout}</div>
+            <p class="hint">${escapeHtml(v.desc)}</p>
+            <div class="spec-grid"><span>Top speed</span><b>${Math.round(v.top * 3.6)} km/h (${Math.round(v.top * 3.6 * 1.6)} with nitro)</b><span>Power</span><b>${v.spec.power}</b><span>Weight</span><b>${v.spec.weight}</b><span>Off-road</span><b>${Math.round(v.offroad * 100)}%</b><span>Wheelies</span><b>${v.wheelie ? 'Yes (C)' : 'No'}</b></div>
+          </div>
+          <div class="garage-list">
+            <div class="tabs"><button class="chip ${k === 'bike' ? 'on' : ''}" data-gkind="bike">🏍 Motorcycles (5)</button><button class="chip ${k === 'car' ? 'on' : ''}" data-gkind="car">🏎 Cars (10)</button></div>
+            <div class="veh-grid">${garageCards(sel, 'veh', k)}</div>
+          </div>
+        </div>
+        <div class="row-buttons"><span></span><button class="btn primary" data-go="garageDone">Ride this →</button></div>`;
+      }
       case 'onboard': {
         const sl = SLIDES[this.slide], last = this.slide === SLIDES.length - 1;
         return `
@@ -258,6 +309,7 @@ export class Menu {
               <label>Rider name <input id="pname" maxlength="16" value="${escapeHtml(P.name)}"></label>
               <div class="dots">${colorDots(P.color, 'color')}</div>
             </div>
+            <div class="ride-line">Your ride: <b>${escapeHtml(vehicleById(P.vehicle ?? 'street').name)}</b> <span>${vehicleById(P.vehicle ?? 'street').cls}</span> <button class="chip hot" data-go="garage">🏁 Garage · 15 vehicles</button></div>
             <div class="big-buttons">
               <button class="btn primary" data-go="solo">▶ Play solo</button>
               <button class="btn" data-go="split">👥 2 players · split screen</button>
@@ -277,6 +329,8 @@ export class Menu {
         return `
         <h2>${st.split ? '👥 2 players · split screen' : '▶ Solo'}</h2>
         ${st.split ? `<div class="profile"><label>Player 2 <input id="pname2" maxlength="16" value="${escapeHtml(P.name2)}"></label><div class="dots">${colorDots(P.color2, 'color2')}</div></div>` : ''}
+        <div class="ride-line">P1 ride: <b>${escapeHtml(vehicleById(P.vehicle ?? 'street').name)}</b> <button class="chip" data-go="garage">Change</button>
+          ${st.split ? ` &nbsp; P2 ride: <b>${escapeHtml(vehicleById(P.vehicle2 ?? 'street').name)}</b> <button class="chip" data-go="garage2">Change</button>` : ''}</div>
         ${this.optionsPanel(st, true, st.split)}
         ${st.split ? `<p class="hint">P1: WASD · Space/Shift nitro · F fire · E ride · Q weapon &nbsp;|&nbsp; P2: Arrows · Right Shift nitro · / fire · Enter ride · . weapon · Gamepads work too.</p>` : ''}
         <div class="row-buttons"><button class="btn ghost" data-go="home">← Back</button><button class="btn primary" data-go="start">Ride →</button></div>`;
@@ -313,7 +367,7 @@ export class Menu {
           </div>
         </div>
         <div id="lineupHost" class="lineup-host" title="Drag to spin"></div>
-        <div class="me-row"><label>Your name <input id="lname" maxlength="16" value="${escapeHtml(v.players.find((p) => p.id === v.you)?.name ?? P.name)}"></label><div class="dots">${colorDots(v.players.find((p) => p.id === v.you)?.color ?? P.color, 'lcolor')}</div></div>
+        <div class="me-row"><label>Your name <input id="lname" maxlength="16" value="${escapeHtml(v.players.find((p) => p.id === v.you)?.name ?? P.name)}"></label><div class="dots">${colorDots(v.players.find((p) => p.id === v.you)?.color ?? P.color, 'lcolor')}</div><div class="ride-line">Ride: <b>${escapeHtml(vehicleById(P.vehicle ?? 'street').name)}</b> <button class="chip" data-go="garage">Change</button></div></div>
         <div class="share"><input readonly value="${escapeHtml(v.link)}" id="link"><button class="btn" data-go="copy">Copy link</button>${'share' in navigator ? '<button class="btn" data-go="share">Share</button>' : ''}</div>
         ${this.optionsPanel(v.settings, v.host, true)}
         <div class="opt room-opts ${v.host ? '' : 'disabled'}"><span>Room</span><div class="chips">${chips('maxPlayers', Array.from({ length: MAX_PLAYERS - 1 }, (_, i) => i + 2), v.settings.maxPlayers, (n) => `${n} max`)}</div>
@@ -347,7 +401,8 @@ export class Menu {
           <tr><td>Q / 1-3</td><td>Next weapon / pick a level-up card</td></tr>
           <tr><td>E</td><td>Get on / off the bike</td></tr>
           <tr><td>In the air</td><td>Release, then ↑↓ to flip and ←→ to spin. Hands off = bike levels itself</td></tr>
-          <tr><td>C</td><td>Style trick in the air (+↑ Superman, +↓ Heel Clicker)</td></tr>
+          <tr><td>C</td><td>Style trick in the air (+↑ Superman, +↓ Heel Clicker) · wheelie on the ground (bikes)</td></tr>
+          <tr><td>X</td><td>Handbrake: start a drift, steer against the slide to hold it</td></tr>
           <tr><td>R</td><td>Respawn on the nearest road</td></tr>
           <tr><td>Right drag · wheel</td><td>Look around · zoom</td></tr>
           <tr><td>Esc / Start</td><td>Pause menu</td></tr>
@@ -396,10 +451,22 @@ export class Menu {
     if (editingLobby && !this.lobby!.host) return;
     const s: LobbySettings = editingLobby ? { ...this.lobby!.settings } : this.setup;
     switch (key) {
-      case 'mode': s.mode = val as GameMode; break;
+      case 'mode': {
+        s.mode = val as GameMode;
+        if (s.mode === 'drift' && !DRIFT_TRACKS.some((t) => t.id === s.trackId)) s.trackId = 'docks';
+        if (s.mode === 'race' && !TRACKS.some((t) => t.id === s.trackId)) s.trackId = 'coast';
+        const dt = DRIFT_TRACKS.find((t) => t.id === s.trackId);
+        if (s.mode === 'drift' && dt && dt.id !== 'random') { s.time = dt.time; s.weather = dt.weather; s.theme = dt.theme; }
+        break;
+      }
       case 'theme': s.theme = val as WorldTheme; break;
       case 'trackId': {
         s.trackId = String(val);
+        const dtr = DRIFT_TRACKS.find((x) => x.id === s.trackId);
+        if (s.mode === 'drift' && dtr) {
+          if (dtr.id !== 'random') { s.time = dtr.time; s.weather = dtr.weather; s.theme = dtr.theme; } else s.seed = newSeed();
+          break;
+        }
         const t = TRACKS.find((x) => x.id === s.trackId);
         if (t && t.id !== 'random') { s.time = t.time; s.weather = t.weather; s.theme = t.theme; }
         if (t?.id === 'random') s.seed = newSeed();
@@ -434,7 +501,7 @@ export class Menu {
     const t = e.target as HTMLInputElement;
     if (t.dataset.opt === 'lapsCustom') this.setOpt('lapsCustom', t.value);
     else if (t.dataset.opt === 'pvp' || t.dataset.opt === 'locked') this.setOpt(t.dataset.opt, t.checked);
-    else if (t.id === 'lname') this.a.updateProfile(t.value.trim().slice(0, 16) || 'Rider', this.myColor());
+    else if (t.id === 'lname') this.a.updateProfile(t.value.trim().slice(0, 16) || 'Rider', this.myColor(), this.profile.vehicle);
   }
 
   private click(e: MouseEvent) {
@@ -446,11 +513,18 @@ export class Menu {
       return this.setOpt(d.opt, d.val ?? '');
     }
     if (d.kick) return this.a.kick(d.kick);
+    if (d.gkind) { this.garageKind = d.gkind as VehicleKind; return this.show('garage'); }
+    if (d.veh) {
+      if (this.garageFor === 2) P.vehicle2 = d.veh;
+      else P.vehicle = d.veh;
+      this.a.saveProfile(P);
+      return this.show('garage');
+    }
     if (d.lcolor) {
       const name = this.root.querySelector<HTMLInputElement>('#lname')?.value.trim().slice(0, 16) || 'Rider';
       P.color = +d.lcolor;
       this.a.saveProfile(P);
-      return this.a.updateProfile(name, P.color);
+      return this.a.updateProfile(name, P.color, P.vehicle);
     }
     if (d.color) { this.readNames(); P.color = +d.color; this.a.saveProfile(P); return this.show(this.screen); }
     if (d.color2) { this.readNames(); P.color2 = +d.color2; this.a.saveProfile(P); return this.show(this.screen); }
@@ -482,6 +556,19 @@ export class Menu {
       case 'tutorial': this.readNames(); this.slide = 0; this.obBack = this.screen === 'lobby' || this.screen === 'joinroom' ? this.screen : 'home'; return this.show('onboard');
       case 'ready': return this.a.setReady(true);
       case 'unready': return this.a.setReady(false);
+      case 'garage': case 'garage2':
+        this.readNames();
+        this.garageFor = d.go === 'garage2' ? 2 : 1;
+        this.garageBack = this.screen;
+        this.garageKind = vehicleById((this.garageFor === 2 ? P.vehicle2 : P.vehicle) ?? 'street').kind;
+        return this.show('garage');
+      case 'garageDone':
+        if (this.garageBack === 'lobby' && this.lobby) {
+          const me = this.lobby.players.find((p) => p.id === this.lobby!.you);
+          this.a.updateProfile(me?.name ?? P.name, me?.color ?? P.color, P.vehicle);
+          return this.show('lobby');
+        }
+        return this.show(this.garageBack);
       case 'joinnow': this.readNames(); return this.a.joinRoom(this.joinCode);
       case 'tnext': this.slide = Math.min(SLIDES.length - 1, this.slide + 1); return this.show('onboard');
       case 'tprev': this.slide = Math.max(0, this.slide - 1); return this.show('onboard');

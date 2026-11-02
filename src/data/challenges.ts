@@ -2,7 +2,7 @@ import type { EntityType } from '../entities/EntityManager';
 
 export type ChallengeId =
   | 'gem' | 'air' | 'speed' | 'crate' | 'drone' | 'flip' | 'barrel' | 'dist'
-  | 'pad' | 'combo' | 'spin' | 'nohit' | 'powerup' | 'ramp' | 'style';
+  | 'pad' | 'combo' | 'spin' | 'nohit' | 'powerup' | 'ramp' | 'style' | 'drift' | 'wheelie';
 
 export interface ChallengeDef {
   id: ChallengeId;
@@ -31,5 +31,7 @@ export const CHALLENGES: ChallengeDef[] = [
   { id: 'nohit', mode: 'max', text: (n) => `Survive ${n}s without damage`, target: () => pick(25, 3, 5), time: 60, fmt: (v) => Math.floor(v) + 's' },
   { id: 'powerup', mode: 'sum', text: (n) => `Grab ${n} power-up${n > 1 ? 's' : ''}`, target: () => 1, time: 50, spawn: { type: 'powerup', extra: 1 } },
   { id: 'style', mode: 'sum', text: (n) => `Land ${n} style trick${n > 1 ? 's' : ''} (C in the air)`, target: () => pick(1, 2), time: 60 },
+  { id: 'drift', mode: 'max', text: (n) => `Bank a ${n} point drift (X = handbrake)`, target: () => pick(1500, 3, 500), time: 60 },
+  { id: 'wheelie', mode: 'max', text: (n) => `Hold a ${n}s wheelie (C on the ground)`, target: () => pick(2, 3), time: 50, fmt: (v) => v.toFixed(1) + 's' },
   { id: 'ramp', mode: 'sum', text: (n) => `Launch off ${n} ramps`, target: () => pick(2, 2), time: 60 },
 ];

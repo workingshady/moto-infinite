@@ -1,6 +1,9 @@
 // Menu previews: a spinning 3D rider+bike in your colours, and a top-down map of the world/track you're about to play.
 import * as THREE from 'three';
-import { buildBike, buildRider, nameTag, seatRider } from '../entities/models';
+import { buildRider, nameTag, seatRider } from '../entities/models';
+import { buildVehicleModel } from '../entities/vehicleModels';
+import { vehicleById } from '../data/vehicles';
+import { DriftTrack, DRIFT_TRACKS, type DriftTrackId } from '../world/DriftTrack';
 import { canvasTex } from '../entities/assets';
 import { Noise } from '../utils/noise';
 import { Circuit, GridRoads } from '../world/layout';
@@ -50,14 +53,21 @@ export class CharacterPreview {
     this.canvas.addEventListener('pointerup', () => { this.drag = null; this.spin = 0.5; });
   }
 
-  setColor(color: number) {
-    if (color === this.color) return;
+  private vehicle = '';
+  /** Show a vehicle in the player's colour (bikes get the rider, cars have their own driver). */
+  setLook(vehicle: string, color: number) {
+    if (color === this.color && vehicle === this.vehicle) return;
     this.color = color;
+    this.vehicle = vehicle;
     if (this.model) this.scene.remove(this.model);
-    const b = buildBike(color), r = buildRider(color);
+    const def = vehicleById(vehicle), b = buildVehicleModel(def.id, color), r = buildRider(color);
     seatRider(r, b);
+    r.root.visible = def.kind === 'bike';
     this.model = b.root;
     this.scene.add(b.root);
+    // frame bikes and longer cars equally
+    this.camera.position.set(0, def.kind === 'car' ? 2.8 : 2.4, def.kind === 'car' ? 8.6 : 7.2);
+    this.camera.lookAt(0, def.kind === 'car' ? 0.8 : 1.2, 0);
   }
 
   /** Put the canvas into a placeholder element and start the render loop. */
@@ -86,19 +96,24 @@ export class CharacterPreview {
   }
 }
 
+/** Named drift venues have a fixed seed so everyone gets the same layout; 'random' uses the session seed. */
+export const driftSeed = (id: string, seed: number) => (id === 'random' ? seed : 9000 + DRIFT_TRACKS.findIndex((t) => t.id === id));
+
 export interface MapInfo { lengthKm: number | null; climb: number; seed: number }
 
 /** Draw a top-down terrain map of a world or circuit onto a canvas. Returns stats for the info line. */
 export function drawMapPreview(canvas: HTMLCanvasElement, s: LobbySettings): MapInfo {
-  const track = TRACKS.find((t) => t.id === s.trackId);
-  const seed = s.mode === 'race' ? (s.trackId === 'random' || !track ? s.seed : track.seed) : s.seed;
-  const theme = s.mode === 'race' && track && s.trackId !== 'random' ? track.theme : s.theme;
+  const track = TRACKS.find((t) => t.id === s.trackId), dtrack = DRIFT_TRACKS.find((t) => t.id === s.trackId);
+  const seed = s.mode === 'race' ? (s.trackId === 'random' || !track ? s.seed : track.seed) : s.mode === 'drift' ? driftSeed(s.trackId, s.seed) : s.seed;
+  const theme = s.mode === 'race' && track && s.trackId !== 'random' ? track.theme : s.mode === 'drift' && dtrack && s.trackId !== 'random' ? dtrack.theme : s.theme;
   const noise = new Noise(seed);
-  const layout = s.mode === 'race' ? new Circuit(noise, seed) : new GridRoads(noise, seed, s.gen.roads, GEN.poi[s.gen.poi].chance);
+  const layout = s.mode === 'race' ? new Circuit(noise, seed)
+    : s.mode === 'drift' ? new DriftTrack(noise, (dtrack?.id ?? 'docks') as DriftTrackId, seed)
+    : new GridRoads(noise, seed, s.gen.roads, GEN.poi[s.gen.poi].chance);
   const T = new Terrain(noise, layout, theme, s.gen);
   const W = canvas.width, H = canvas.height, ctx = canvas.getContext('2d')!;
   let cx = 0, cz = 0, span = 700;
-  if (layout instanceof Circuit) {
+  if (layout instanceof Circuit || layout instanceof DriftTrack) {
     let minX = 1e9, maxX = -1e9, minZ = 1e9, maxZ = -1e9;
     for (let i = 0; i < layout.n; i++) {
       minX = Math.min(minX, layout.px[i]); maxX = Math.max(maxX, layout.px[i]);
@@ -127,7 +142,7 @@ export function drawMapPreview(canvas: HTMLCanvasElement, s: LobbySettings): Map
   ctx.putImageData(img, 0, 0);
   const toC = (x: number, z: number): [number, number] => [((x - cx) / span + 0.5) * W, ((z - cz) / span + 0.5) * H];
   ctx.lineCap = ctx.lineJoin = 'round';
-  if (layout instanceof Circuit) {
+  if (layout instanceof Circuit || layout instanceof DriftTrack) {
     ctx.strokeStyle = 'rgba(0,0,0,.55)';
     ctx.lineWidth = 7;
     layout.drawRoads(ctx, toC);
@@ -226,18 +241,19 @@ export class LobbyShowcase {
     this.canvas.addEventListener('pointerup', () => (this.drag = null));
   }
 
-  setPlayers(players: { id: string; name: string; color: number; host: boolean; ready: boolean }[], you: string) {
+  setPlayers(players: { id: string; name: string; color: number; vehicle: string; host: boolean; ready: boolean }[], you: string) {
     const ids = new Set(players.map((p) => p.id));
     for (const [id, s] of this.slots) if (!ids.has(id)) { this.scene.remove(s.root); this.slots.delete(id); }
-    const gap = 3.1;
+    const gap = players.some((p) => vehicleById(p.vehicle).kind === 'car') ? 3.8 : 3.1;
     this.span = Math.max(4, players.length * gap);
     players.forEach((p, i) => {
-      const label = `${p.host ? '👑 ' : ''}${p.name}${p.id === you ? ' (you)' : ''}${p.ready ? ' ✓' : ''}`, key = `${p.color}|${label}`;
+      const label = `${p.host ? '👑 ' : ''}${p.name}${p.id === you ? ' (you)' : ''}${p.ready ? ' ✓' : ''}`, key = `${p.color}|${p.vehicle}|${label}`;
       let s = this.slots.get(p.id);
       if (s && s.key !== key) { this.scene.remove(s.root); this.slots.delete(p.id); s = undefined; }
       if (!s) {
-        const b = buildBike(p.color), r = buildRider(p.color), tag = nameTag(label, p.color), root = new THREE.Group();
+        const def = vehicleById(p.vehicle), b = buildVehicleModel(def.id, p.color), r = buildRider(p.color), tag = nameTag(label, p.color), root = new THREE.Group();
         seatRider(r, b);
+        r.root.visible = def.kind === 'bike';
         b.root.rotation.y = 0.5; // 3/4 view, riding towards the camera
         tag.position.set(0, 3.6, 0);
         tag.scale.set(3.6, 0.9, 1);

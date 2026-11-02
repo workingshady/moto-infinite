@@ -100,6 +100,7 @@ export const DRONES = {
 /** Cumulative probabilities for what appears at each road sample point (every ~8 m). */
 export const FEATURES: Record<GameMode, { ramp: number; pad: number; gem: number; cones: number; crate: number; barrel: number; pile: number; powerup: number }> = {
   open: { ramp: 0.05, pad: 0.085, gem: 0.3, cones: 0.33, crate: 0.355, barrel: 0.37, pile: 0.42, powerup: 0.432 },
+  drift: { ramp: 0, pad: 0.02, gem: 0.12, cones: 0.16, crate: 0.16, barrel: 0.16, pile: 0.16, powerup: 0.17 },
   race: { ramp: 0.065, pad: 0.12, gem: 0.32, cones: 0.335, crate: 0.34, barrel: 0.345, pile: 0.345, powerup: 0.36 },
 };
 
@@ -110,6 +111,20 @@ export const POWERUPS = {
   xp2: { color: 0xff7ad9, label: 'DOUBLE XP', amount: 0, time: 20 },
 };
 export type PowerupKind = keyof typeof POWERUPS;
+
+/** Drift scoring: points/s = angle * speed * rate, multiplier grows with chain time, banked after a short straight. */
+export const DRIFT = {
+  minAngle: 0.22, // radians of slip before it counts
+  minSpeed: 10,
+  rate: 9,
+  multStep: 2, // seconds of continuous drift per +0.5 multiplier
+  multMax: 5,
+  bankAfter: 0.7, // seconds without sliding before points are banked
+  xpDiv: 8, // XP = points / xpDiv
+  scrub: 0.55, // speed lost while sideways
+};
+/** Wheelies (bikes): hold the trick key on the ground. */
+export const WHEELIE = { balance: 0.5, up: 0.28, down: 0.32, loopOut: 1.05, minSpeed: 6, minTime: 0.8, xpPerSec: 60 };
 
 export const RACE = { checkpoints: 8, countdown: 3, ghostHz: 10, resultsDelay: 2.5 };
 

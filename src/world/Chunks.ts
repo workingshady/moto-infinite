@@ -8,6 +8,7 @@ import { FEATURES, DRONES, QUALITY, ROAD, WORLD } from '../config';
 import { G, MAT, mesh } from '../entities/assets';
 import { buildPoi, dressCircuit, type Spinner, type Zone } from './Landmarks';
 import { Circuit, type Poi } from './layout';
+import { DriftTrack } from './DriftTrack';
 import { mulberry32, PI, TAU } from '../utils/math';
 
 export interface Obstacle { x: number; z: number; r: number; top: number }
@@ -108,6 +109,7 @@ export class ChunkManager {
       this.poiChunk.set(poi, ch);
     }
     if (g.layout instanceof Circuit) dressCircuit(g, ch, g.layout, x0, z0, CH);
+    if (g.layout instanceof DriftTrack) g.layout.dress(g, ch, x0, z0, CH);
     const F = FEATURES[g.opts.mode];
     g.layout.forEachRoadPoint(x0, z0, CH, (x, z, tx, tz, along) => {
       if (along >= 0 && along < 60) return; // keep the race start straight clear

@@ -2,13 +2,15 @@
 import * as THREE from 'three';
 import type { Game } from '../core/Game';
 import type { NetState, PlayerInfo } from '../../shared/protocol';
-import { buildBike, buildRider, nameTag, seatRider, type BikeModel, type RiderModel } from '../entities/models';
+import { buildRider, nameTag, seatRider, type RiderModel } from '../entities/models';
+import { buildVehicleModel, type VehicleModel } from '../entities/vehicleModels';
+import { vehicleById } from '../data/vehicles';
 import { NET } from '../config';
 import { lerp, lerpAngle } from '../utils/math';
 
 export interface Remote {
   id: string; name: string; color: number;
-  bike: BikeModel; rider: RiderModel; tag: THREE.Sprite;
+  bike: VehicleModel; rider: RiderModel; tag: THREE.Sprite; vehicle: string;
   buf: { t: number; s: NetState }[];
   state: NetState | null;
   seated: boolean;
@@ -26,13 +28,14 @@ export class RemotePlayers {
     for (const [id, r] of this.map) if (!ids.has(id)) { this.removeModels(r); this.map.delete(id); }
     for (const p of players) {
       const old = this.map.get(p.id);
-      if (old && (old.name !== p.name || old.color !== p.color)) { this.removeModels(old); this.map.delete(p.id); } // renamed / recoloured
+      if (old && (old.name !== p.name || old.color !== p.color || old.vehicle !== p.vehicle)) { this.removeModels(old); this.map.delete(p.id); } // renamed / recoloured
       if (p.id === selfId || this.map.has(p.id)) continue;
-      const bike = buildBike(p.color), rider = buildRider(p.color), tag = nameTag(p.name, p.color);
+      const def = vehicleById(p.vehicle), bike = buildVehicleModel(def.id, p.color), rider = buildRider(p.color), tag = nameTag(p.name, p.color);
       seatRider(rider, bike);
+      rider.root.visible = def.kind === 'bike';
       bike.root.visible = false;
       this.game.scene.add(bike.root, tag);
-      this.map.set(p.id, { id: p.id, name: p.name, color: p.color, bike, rider, tag, buf: [], state: null, seated: true, x: 0, y: -999, z: 0, wheel: 0 });
+      this.map.set(p.id, { id: p.id, name: p.name, color: p.color, vehicle: p.vehicle, bike, rider, tag, buf: [], state: null, seated: true, x: 0, y: -999, z: 0, wheel: 0 });
     }
   }
 
@@ -62,14 +65,15 @@ export class RemotePlayers {
       r.bike.root.visible = !s.dead;
       r.bike.root.position.set(bx, by, bz);
       r.bike.root.rotation.set(lerp(a.bp, s.bp, f), lerpAngle(a.bh, s.bh, f), lerp(a.bl, s.bl, f));
-      r.wheel += (s.v * dt) / 0.62;
+      r.wheel += (s.v * dt) / r.bike.wheelRadius;
       r.bike.wheels.forEach((w) => (w.rotation.x = r.wheel));
       r.bike.flame.scale.y = s.boost > 0.1 ? 1.4 + Math.random() : 0.01;
       if (s.riding !== r.seated) {
         r.seated = s.riding;
-        if (s.riding) seatRider(r.rider, r.bike);
+        if (s.riding) { seatRider(r.rider, r.bike); r.rider.root.visible = r.bike.kind === 'bike'; }
         else {
           this.game.scene.add(r.rider.root);
+          r.rider.root.visible = true;
           r.rider.helmet.visible = false;
           r.rider.hair.visible = true;
           r.rider.torso.rotation.x = 0;

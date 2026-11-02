@@ -7,9 +7,11 @@ import type { Engine } from '../core/Audio';
 import type { Entity } from './EntityManager';
 import type { Pose } from '../world/layout';
 import type { NetState } from '../../shared/protocol';
-import { ASSIST, BIKE, LEVELING, CONTROL, LANDING, PHYS, PLAYER, POWERUPS, ROAD, type PowerupKind } from '../config';
+import { ASSIST, BIKE, DRIFT, LEVELING, CONTROL, LANDING, PHYS, PLAYER, POWERUPS, ROAD, WHEELIE, type PowerupKind } from '../config';
 import { clamp, damp, lerp, rnd, TAU, wrapPi } from '../utils/math';
-import { buildBike, buildRider, seatRider, type BikeModel, type RiderModel } from './models';
+import { buildRider, seatRider, type RiderModel } from './models';
+import { buildVehicleModel, type VehicleModel } from './vehicleModels';
+import { vehicleById, type VehicleDef } from '../data/vehicles';
 import { WEAPONS } from '../data/weapons';
 import { MILESTONES, TIERS, UPGRADES, type Card } from '../data/upgrades';
 import { Hud } from '../ui/Hud';
@@ -24,7 +26,9 @@ const xpNeed = (level: number) => Math.round(LEVELING.base * Math.pow(level, LEV
 
 export class Player {
   readonly camera = new THREE.PerspectiveCamera(62, 1, 0.3, 900);
-  readonly bike: BikeModel;
+  /** The ride: motorbike or car model (name kept as `bike` for history). */
+  readonly bike: VehicleModel;
+  readonly def: VehicleDef;
   readonly rider: RiderModel;
   readonly hud: Hud;
   readonly challenges: PlayerChallenges | null;
@@ -33,7 +37,10 @@ export class Player {
     x: 0, z: 0, y: 0, h: 0, moveH: 0, v: 0, vy: 0, lean: 0, pitch: 0, pitchV: 0, steer: 0,
     air: false, airT: 0, lastG: 0, wheel: 0, flipAcc: 0, spinAcc: 0, pad: 0, wasN: false, impact: 0, fromRamp: false,
     latch: { up: false, down: false, left: false, right: false },
+    wheelie: 0, wheelieT: 0,
   };
+  /** Live drift chain: points build while sliding, banked after a short straight. */
+  readonly drift = { on: false, pts: 0, t: 0, cool: 0, angle: 0, total: 0, best: 0, zone: '' };
   readonly W = { x: 0, z: 0, y: 0, h: 0, vy: 0, ground: true, phase: 0, amt: 0 };
   readonly stats = {
     top: BIKE.top, accel: BIKE.accel, nitroMax: BIKE.nitroMax, nitroRegen: BIKE.nitroRegen, grip: BIKE.grip,
@@ -68,8 +75,12 @@ export class Player {
   private styleT = 0;
   private styleDone: Style[] = [];
 
-  constructor(readonly game: Game, readonly index: number, readonly ctrl: Controller, readonly name: string, readonly color: number, spawn: Pose, mounted: boolean) {
-    this.bike = buildBike(color);
+  constructor(readonly game: Game, readonly index: number, readonly ctrl: Controller, readonly name: string, readonly color: number, spawn: Pose, mounted: boolean, vehicle = 'street') {
+    this.def = vehicleById(vehicle);
+    this.bike = buildVehicleModel(this.def.id, color);
+    const d = this.def, st = this.stats;
+    Object.assign(st, { top: d.top, accel: d.accel, grip: d.grip, hpMax: PLAYER.hpMax + d.hp });
+    this.s.hp = st.hpMax;
     this.rider = buildRider(color);
     game.scene.add(this.bike.root, this.rider.root);
     this.hud = new Hud(game, this);
@@ -136,6 +147,10 @@ export class Player {
     for (const k of Object.keys(this.buffs) as PowerupKind[]) if (this.buffs[k] > 0) this.buffs[k] = Math.max(0, this.buffs[k] - dt);
   }
 
+  get isCar() {
+    return this.def.kind === 'car';
+  }
+
   private syncP() {
     const P = this.P;
     if (this.riding) Object.assign(P, { x: this.B.x, y: this.B.y, z: this.B.z, h: this.B.moveH, v: this.B.v });
@@ -159,24 +174,37 @@ export class Player {
       }
       B.wasN = wantN;
       if (B.pad > 0) boosting = true;
-      const top = st.top * (boosting ? BIKE.nitroTopMul : 1) * (onRoad ? 1 : BIKE.offroadTop);
+      const top = st.top * (boosting ? BIKE.nitroTopMul : 1) * (onRoad ? 1 : lerp(BIKE.offroadTop, 1, this.def.offroad));
       if (!B.air) {
         if (up) B.v += (B.v < 0 ? 40 : st.accel * (boosting ? BIKE.nitroAccelMul : 1)) * dt;
         else if (boosting) B.v += st.accel * BIKE.nitroAccelMul * dt; // nitro drives by itself: Space + ←/→ is enough
         if (down) B.v -= (B.v > 0 ? BIKE.brake : BIKE.reverse) * dt;
         if (!up && !down && !boosting) B.v *= 1 - BIKE.coastDrag * dt;
-        if (!onRoad) B.v *= 1 - BIKE.offroadDrag * dt;
+        if (!onRoad) B.v *= 1 - BIKE.offroadDrag * (1 - this.def.offroad) * dt;
         if (g.env.grip < 1 && Math.abs(B.steer) > 0.6 && Math.abs(B.v) > 20) B.v *= 1 - (1 - g.env.grip) * dt; // wet roads scrub speed in corners
         if (B.v > top) B.v -= Math.min(B.v - top, 30 * dt);
         B.v = Math.max(B.v, -BIKE.maxReverse);
         // steering eases in and re-centres smoothly instead of snapping
         const want = (left ? 1 : 0) - (right ? 1 : 0);
         B.steer = lerp(B.steer, want, damp(dt, want ? CONTROL.steerIn : CONTROL.steerOut));
-        // full steering at any speed (it used to fade out at nitro speed), a little extra while boosting
-        B.h += B.steer * st.grip * g.env.grip * clamp(Math.abs(B.v) / 6, 0, 1) * Math.sign(B.v) * dt * (boosting ? CONTROL.boostSteer : 1);
-        this.assistSteer(dt, want);
-        B.moveH = B.h;
-        B.lean = lerp(B.lean, -B.steer * clamp(Math.abs(B.v) / 22, 0, 1) * 0.55, damp(dt, 6));
+        const handbrake = active && c.is('drift') && Math.abs(B.v) > 6;
+        const wheelie = this.updateWheelie(dt, active && c.is('trick'), up, down);
+        // full steering at any speed, a little extra while boosting, more yaw on the handbrake (swing the tail out)
+        B.h += B.steer * st.grip * g.env.grip * clamp(Math.abs(B.v) / 6, 0, 1) * Math.sign(B.v) * dt
+          * (boosting ? CONTROL.boostSteer : 1) * (handbrake ? 1.55 : 1) * (wheelie ? 0.5 : 1);
+        const slip = wrapPi(B.h - B.moveH);
+        if (!handbrake && Math.abs(slip) < 0.15) this.assistSteer(dt, want);
+        // drift model: the travel direction chases the heading at the vehicle's traction rate.
+        // Handbrake and power oversteer (throttle on a low-traction car) let the tail step out;
+        // counter-steering (steering against the slide) catches it faster.
+        let trac = (handbrake ? this.def.slideTraction : this.def.traction) * g.env.grip;
+        if (this.isCar && (up || boosting) && Math.abs(slip) > 0.1 && this.def.traction < 6) trac *= 0.75;
+        if (Math.sign(B.steer) === -Math.sign(slip) && Math.abs(B.steer) > 0.3) trac *= 1.6;
+        B.moveH += wrapPi(B.h - B.moveH) * Math.min(1, dt * trac);
+        if (handbrake) B.v -= Math.sign(B.v) * 6 * dt;
+        B.v *= 1 - Math.abs(Math.sin(slip)) * DRIFT.scrub * dt; // sideways = slower
+        if (this.isCar) B.lean = lerp(B.lean, -B.steer * clamp(Math.abs(B.v) / 30, 0, 1) * 0.06, damp(dt, 5)); // body roll
+        else B.lean = lerp(B.lean, -B.steer * clamp(Math.abs(B.v) / 22, 0, 1) * 0.55, damp(dt, 6));
         // keys held while leaving the ground must be released before they do tricks
         B.latch.up = up; B.latch.down = down; B.latch.left = left; B.latch.right = right;
       } else {
@@ -185,7 +213,7 @@ export class Player {
         if (!down) L.down = false;
         if (!left) L.left = false;
         if (!right) L.right = false;
-        const trick = active && c.is('trick') && B.airT > 0.15;
+        const trick = active && !this.isCar && c.is('trick') && B.airT > 0.15;
         if (trick) {
           // C in the air: ↑ = Superman, ↓ = Heel Clicker, nothing = No-Hander (↑↓ pick the pose instead of flipping)
           const want: Style = up ? 'SUPERMAN' : down ? 'HEEL CLICKER' : 'NO-HANDER';
@@ -194,8 +222,9 @@ export class Player {
           if (this.styleT > 0.35 && !this.styleDone.includes(want)) this.styleDone.push(want);
         } else this.style = null;
         this.poseStyle();
-        const pitchIn = trick ? 0 : (up && !L.up ? 1 : 0) - (down && !L.down ? 1 : 0);
-        const spinIn = (left && !L.left ? 1 : 0) - (right && !L.right ? 1 : 0);
+        const pitchIn = trick || this.isCar ? 0 : (up && !L.up ? 1 : 0) - (down && !L.down ? 1 : 0);
+        const spinIn = this.isCar ? 0 : (left && !L.left ? 1 : 0) - (right && !L.right ? 1 : 0);
+        B.wheelie = lerp(B.wheelie, 0, damp(dt, 6));
         B.pitchV += pitchIn * BIKE.flipAccel * dt;
         B.pitchV *= 1 - 1.8 * dt;
         const dp = B.pitchV * dt;
@@ -208,7 +237,7 @@ export class Player {
           B.pitchV *= 1 - Math.min(1, dt * 3);
         }
         // small hops and the start of a jump: ←/→ keeps steering the bike's direction (air control)
-        const airSteer = !B.fromRamp || B.airT < CONTROL.airSteerTime;
+        const airSteer = this.isCar || !B.fromRamp || B.airT < CONTROL.airSteerTime;
         if (airSteer) {
           const want = (left ? 1 : 0) - (right ? 1 : 0);
           B.steer = lerp(B.steer, want, damp(dt, want ? CONTROL.steerIn : CONTROL.steerOut));
@@ -240,14 +269,15 @@ export class Player {
     // horizontal move + collisions
     const nx = B.x + Math.sin(B.moveH) * B.v * dt, nz = B.z + Math.cos(B.moveH) * B.v * dt;
     if (B.v !== 0) {
-      const blk = g.chunks.blocked(nx, nz, 1, B.y, B.air ? 99 : 1.3);
+      const rad = this.isCar ? 1.5 : 1;
+      const blk = g.chunks.blocked(nx, nz, rad, B.y, B.air ? 99 : 1.3);
       let glanced = false;
       if (blk === 'tree' || blk === 'wall') {
         // try sliding past at a small angle before treating it as a head-on hit
         const A = ASSIST[prefs.assist] ?? ASSIST[1];
         for (const turn of [0.35, -0.35, 0.7, -0.7]) {
           const h2 = B.moveH + turn, sx = B.x + Math.sin(h2) * B.v * dt, sz = B.z + Math.cos(h2) * B.v * dt;
-          if (!g.chunks.blocked(sx, sz, 1, B.y, B.air ? 99 : 1.3)) {
+          if (!g.chunks.blocked(sx, sz, rad, B.y, B.air ? 99 : 1.3)) {
             B.h += turn * 0.5;
             B.moveH = B.h;
             B.v *= A.glance;
@@ -266,6 +296,7 @@ export class Player {
       if (glanced) {
         // slid past the obstacle, position already updated
       } else if (blk) {
+        this.failDrift();
         if (Math.abs(B.v) > LANDING.wallDamageSpeed) {
           this.cam.shake = 0.5;
           g.audio.play('crash');
@@ -274,7 +305,7 @@ export class Player {
         }
         B.v *= -0.25;
       } else {
-        const e = g.entities.hitTest(nx, B.y, nz, 0.9);
+        const e = g.entities.hitTest(nx, B.y, nz, this.isCar ? 1.4 : 0.9);
         if (e) {
           if (e.type === 'cone') { g.entities.destroy(e, this); B.v *= 0.97; }
           else if (e.type === 'barrel') g.entities.destroy(e, this);
@@ -315,10 +346,15 @@ export class Player {
     if (B.air) B.airT += dt;
     B.lastG = gy;
     if (!B.air) B.pitch = lerp(wrapPi(B.pitch), this.slopePitch(), damp(dt, 12));
-    B.wheel += (B.v * dt) / 0.62;
-    this.bike.wheels.forEach((w) => (w.rotation.x = B.wheel));
-    this.bike.root.position.set(B.x, B.y, B.z);
-    this.bike.root.rotation.set(B.pitch, B.h, B.lean);
+    const M = this.bike;
+    B.wheel += (B.v * dt) / M.wheelRadius;
+    M.wheels.forEach((w) => (w.rotation.x = B.wheel));
+    M.steer.forEach((w) => (w.rotation.y = B.steer * 0.45));
+    const wl = B.wheelie, rear = 1.05; // lift the nose around the rear axle
+    M.root.position.set(B.x - Math.sin(B.h) * rear * (1 - Math.cos(wl)), B.y + Math.sin(wl) * rear, B.z - Math.cos(B.h) * rear * (1 - Math.cos(wl)));
+    M.root.rotation.set(B.pitch - wl, B.h, B.lean);
+    M.brakeMat.emissiveIntensity = active && (down || c.is('drift')) ? 2.6 : 0.6;
+    if (this.riding && !B.air) this.updateDrift(dt);
 
     // boost pads
     for (const pd of T.pads) {
@@ -346,11 +382,95 @@ export class Player {
     }
     if (this.riding && !B.air && Math.abs(B.v) > 8 && !onRoad && Math.random() < 0.8)
       g.fx.emit(B.x - fx * 1.1 + rnd(0.3), B.y + 0.2, B.z - fz * 1.1 + rnd(0.3), -fx * 2 + rnd(1), 1.5, -fz * 2 + rnd(1), 1.1, 0.8, 2.6, T.biome(B.x, B.z) < 0.4 ? 0xd9b47a : 0x8a7a5a, 0.55, -0.5, 1.5, true);
-    // tyre marks when braking hard or leaning hard
-    if (this.riding && !B.air && ((down && B.v > 12) || (Math.abs(B.lean) > 0.3 && Math.abs(B.v) > 18)))
-      g.effects.skid(B.x - fx * 1.05, B.z - fz * 1.05, B.h);
+    // tyre marks when braking hard, leaning hard or sliding
+    const sliding = Math.abs(wrapPi(B.h - B.moveH)) > 0.18 && Math.abs(B.v) > 8;
+    if (this.riding && !B.air && ((down && B.v > 12) || sliding || (!this.isCar && Math.abs(B.lean) > 0.3 && Math.abs(B.v) > 18))) {
+      if (this.isCar) for (const side of [-0.78, 0.78]) g.effects.skid(B.x - fx * 1.3 + fz * side, B.z - fz * 1.3 - fx * side, B.moveH);
+      else g.effects.skid(B.x - fx * 1.05, B.z - fz * 1.05, B.moveH);
+    }
+    // drift smoke from the rear tyres, thicker the wider the angle
+    if (this.riding && !B.air && sliding && onRoad) {
+      const amt = clamp(Math.abs(wrapPi(B.h - B.moveH)) * 1.5, 0.3, 1);
+      for (const side of this.isCar ? [-0.78, 0.78] : [0]) {
+        const sx = B.x - fx * (this.isCar ? 1.35 : 1.1) + fz * side, sz = B.z - fz * (this.isCar ? 1.35 : 1.1) - fx * side;
+        if (Math.random() < amt) g.fx.emit(sx, B.y + 0.3, sz, rnd(1.2), 1.2 + Math.random(), rnd(1.2), 1.6, 1, 4.5, 0xe8e8e8, 0.55 * amt, -0.6, 1.2, true);
+      }
+    }
     if (this.riding && !B.air && Math.abs(B.lean) > 0.35 && Math.abs(B.v) > 20 && onRoad)
       g.fx.emit(B.x - fx * 1.1, B.y + 0.15, B.z - fz * 1.1, rnd(1), 1, rnd(1), 0.9, 0.6, 2.2, 0xdddddd, 0.35, -0.4, 1.5, true);
+  }
+
+  /** Bikes: hold the trick key on the ground to pop a wheelie. ↑ lifts, ↓ lowers; too far = loop out. */
+  private updateWheelie(dt: number, hold: boolean, up: boolean, down: boolean) {
+    const B = this.B;
+    if (!this.def.wheelie || this.isCar) return false;
+    const want = hold && Math.abs(B.v) > WHEELIE.minSpeed ? WHEELIE.balance + (up ? WHEELIE.up : 0) - (down ? WHEELIE.down : 0) : 0;
+    B.wheelie = lerp(B.wheelie, want, damp(dt, want > B.wheelie ? 2.6 : 5));
+    if (B.wheelie > WHEELIE.loopOut) {
+      B.wheelie = 0;
+      this.crash('Looped out! Ease off with ↓ during wheelies');
+      return false;
+    }
+    if (B.wheelie > 0.2) B.wheelieT += dt;
+    else if (B.wheelieT > 0) {
+      const t = B.wheelieT;
+      B.wheelieT = 0;
+      if (t >= WHEELIE.minTime) {
+        const xp = Math.round(t * WHEELIE.xpPerSec * this.stats.trickMul);
+        this.hud.banner(`WHEELIE ${t.toFixed(1)}s`, `+${xp} XP`, '#ffd23f');
+        this.game.audio.play('trick');
+        this.addXP(xp);
+      }
+    }
+    if (B.wheelieT > 0) this.game.events.emit('progress', { player: this, id: 'wheelie', value: B.wheelieT });
+    return B.wheelie > 0.2;
+  }
+
+  /** Drift scoring: angle x speed builds points, the multiplier grows the longer the chain lasts. */
+  private updateDrift(dt: number) {
+    const B = this.B, d = this.drift, g = this.game, angle = Math.abs(wrapPi(B.h - B.moveH));
+    const zone = g.layout.kind === 'drift' ? (g.layout as unknown as { zoneAt(x: number, z: number): { name: string; mult: number } | null }).zoneAt(B.x, B.z) : null;
+    if (angle > DRIFT.minAngle && Math.abs(B.v) > DRIFT.minSpeed && angle < 1.7) {
+      d.on = true;
+      d.cool = 0;
+      d.t += dt;
+      d.angle = angle;
+      d.zone = zone ? zone.name : '';
+      d.pts += angle * Math.abs(B.v) * DRIFT.rate * dt * (zone ? zone.mult : 1);
+    } else if (d.on) {
+      d.cool += dt;
+      if (d.cool > DRIFT.bankAfter) this.bankDrift();
+    }
+  }
+
+  get driftMult() {
+    return Math.min(DRIFT.multMax, 1 + Math.floor(this.drift.t / DRIFT.multStep) * 0.5);
+  }
+
+  private bankDrift() {
+    const d = this.drift, total = Math.round(d.pts * this.driftMult);
+    d.on = false;
+    if (total >= 100) {
+      d.total += total;
+      d.best = Math.max(d.best, total);
+      this.s.score += total;
+      this.hud.banner(`DRIFT ${total.toLocaleString()}`, `x${this.driftMult.toFixed(1)} · ${d.t.toFixed(1)}s${d.zone ? ' · ' + d.zone : ''}`, '#ff7ad9');
+      this.game.audio.play('trick');
+      this.addXP(total / DRIFT.xpDiv);
+      this.game.events.emit('progress', { player: this, id: 'drift', value: total });
+    }
+    d.pts = d.t = d.cool = 0;
+  }
+
+  /** Hitting something mid-drift loses the chain. */
+  private failDrift() {
+    const d = this.drift;
+    if (d.on && d.pts > 200) {
+      this.hud.banner('DRIFT LOST', `${Math.round(d.pts * this.driftMult).toLocaleString()} points gone`, '#ff4d5e');
+      this.game.audio.play('fail');
+    }
+    d.on = false;
+    d.pts = d.t = d.cool = 0;
   }
 
   private slopePitch() {
@@ -473,6 +593,8 @@ export class Player {
 
   private crash(reason: string) {
     const B = this.B, g = this.game;
+    this.failDrift();
+    B.wheelie = 0;
     this.hud.banner('CRASH!', reason, '#ff4d5e');
     g.audio.play('crash');
     this.cam.shake = 0.9;
@@ -518,6 +640,8 @@ export class Player {
   private mount() {
     this.riding = true;
     seatRider(this.rider, this.bike);
+    this.rider.root.visible = !this.isCar;
+    if (this.bike.driver) this.bike.driver.visible = true;
   }
 
   private toggleRide() {
@@ -527,10 +651,12 @@ export class Player {
       g.audio.play('mount');
     } else if (this.riding) {
       for (const side of [1, -1]) {
-        const rx = Math.cos(B.moveH) * side, rz = -Math.sin(B.moveH) * side, nx = B.x - rx * 2, nz = B.z - rz * 2;
+        const rx = Math.cos(B.moveH) * side, rz = -Math.sin(B.moveH) * side, out = this.isCar ? 2.6 : 2, nx = B.x - rx * out, nz = B.z - rz * out;
         if (!g.chunks.blocked(nx, nz, 0.5, B.y, 1.5) || side === -1) {
           this.riding = false;
           g.scene.add(this.rider.root);
+          this.rider.root.visible = true;
+          if (this.bike.driver) this.bike.driver.visible = false;
           Object.assign(W, { x: nx, z: nz, y: Math.max(g.terrain.groundAt(nx, nz), B.y), h: B.moveH, vy: 0 });
           this.rider.helmet.visible = false;
           this.rider.hair.visible = true;

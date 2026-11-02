@@ -3,9 +3,10 @@
 import { DurableObject } from 'cloudflare:workers';
 import { DEFAULT_GEN, DEFAULT_SETTINGS, GEN_MAX, MAX_PLAYERS, THEMES, TIMES, WEATHERS, type ClientMsg, type LobbySettings, type Phase, type PlayerInfo, type ServerMsg } from '../shared/protocol';
 
-interface Attachment { id: string; name: string; color: number; joined: number; hello: boolean; ready?: boolean }
+interface Attachment { id: string; name: string; color: number; vehicle?: string; joined: number; hello: boolean; ready?: boolean }
 
 const MAX_MSG = 8 * 1024;
+const cleanId = (s: unknown) => String(s ?? 'street').replace(/[^a-z_]/g, '').slice(0, 16) || 'street';
 const clean = (s: unknown) => [...String(s ?? '')].filter((c) => c >= ' ' && c !== '<' && c !== '>').join('').trim().slice(0, 16) || 'Rider';
 
 export class Room extends DurableObject<Env> {
@@ -46,7 +47,7 @@ export class Room extends DurableObject<Env> {
 
   private players(): PlayerInfo[] {
     const list = this.sockets().map((ws) => this.att(ws)).filter((a): a is Attachment => !!a?.hello).sort((a, b) => a.joined - b.joined);
-    return list.map((a, i) => ({ id: a.id, name: a.name, color: a.color, host: i === 0, ready: i === 0 || !!a.ready }));
+    return list.map((a, i) => ({ id: a.id, name: a.name, color: a.color, vehicle: a.vehicle ?? 'street', host: i === 0, ready: i === 0 || !!a.ready }));
   }
 
   private send(ws: WebSocket, msg: ServerMsg) {
@@ -97,6 +98,7 @@ export class Room extends DurableObject<Env> {
       case 'hello': {
         a.name = this.uniqueName(msg.name, ws);
         a.color = Number(msg.color) & 0xffffff;
+        a.vehicle = cleanId(msg.vehicle);
         a.hello = true;
         ws.serializeAttachment(a);
         this.send(ws, { t: 'welcome', you: a.id, players: this.players(), settings: this.settings, phase: this.phase });
@@ -106,6 +108,7 @@ export class Room extends DurableObject<Env> {
       case 'profile': {
         a.name = this.uniqueName(msg.name, ws);
         a.color = Number(msg.color) & 0xffffff;
+        a.vehicle = cleanId(msg.vehicle);
         ws.serializeAttachment(a);
         this.broadcast({ t: 'players', players: this.players() });
         return;
@@ -129,7 +132,7 @@ export class Room extends DurableObject<Env> {
         if (!this.isHost(ws)) return;
         const s = msg.settings;
         this.settings = {
-          mode: s.mode === 'race' ? 'race' : 'open',
+          mode: s.mode === 'race' || s.mode === 'drift' ? s.mode : 'open',
           trackId: clean(s.trackId).toLowerCase(),
           laps: Math.max(1, Math.min(50, Math.round(Number(s.laps) || 3))),
           pvp: !!s.pvp,
