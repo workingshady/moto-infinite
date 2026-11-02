@@ -165,7 +165,7 @@ export class Menu {
   private garageFor: 1 | 2 = 1;
   private garageKind: VehicleKind = 'bike';
   private preview = new CharacterPreview();
-  private lineup = new LobbyShowcase();
+  private lineup: LobbyShowcase | null | false = null; // created on first lobby view; false = WebGL failed
   /** Settings → keyboard tester: shows live which game keys the browser actually receives (ghosting check). */
   private keyTest = false;
   private keysDown = new Set<string>();
@@ -255,8 +255,17 @@ export class Menu {
     }
     const lineHost = this.root.querySelector<HTMLElement>('#lineupHost');
     if (lineHost && this.lobby) {
-      this.lineup.setPlayers(this.lobby.players, this.lobby.you);
-      this.lineup.mount(lineHost);
+      try {
+        if (this.lineup === null) this.lineup = new LobbyShowcase();
+        if (this.lineup) {
+          this.lineup.setPlayers(this.lobby.players, this.lobby.you);
+          this.lineup.mount(lineHost);
+        }
+      } catch (err) {
+        console.warn('Lobby 3D line-up unavailable:', err);
+        this.lineup = false;
+        lineHost.classList.add('no3d');
+      }
     }
     const map = this.root.querySelector<HTMLCanvasElement>('#mapCanvas');
     if (map) {

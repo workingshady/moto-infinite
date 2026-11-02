@@ -575,3 +575,12 @@ body:has(#touch) .gauges { bottom: 150px; }
 }
 @media (hover: none) { .lineup-hint::after { content: ' (swipe)'; } }
 @media (prefers-reduced-motion: reduce) { #menu *, #menu *::before { animation: none !important; transition: none !important; } }
+
+/* start-up crash screen (instead of a blank page) */
+.fatal { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; padding: 16px; background: #0c101c; }
+.fatal > div { max-width: 520px; background: var(--panel-solid); border-radius: 18px; padding: 24px; }
+.fatal p { color: var(--dim); line-height: 1.5; }
+/* lobby without 3D (WebGL unavailable): keep the gradient panel */
+.lineup-host.no3d::after { content: '3D preview unavailable on this device'; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--dim); font-size: 13px; }
+/* rider rows stay on one line */
+.lobby-side .players li { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
