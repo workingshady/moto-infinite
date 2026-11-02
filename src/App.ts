@@ -77,6 +77,7 @@ export class App {
       lobbySettings: (s: LobbySettings) => this.net?.send({ t: 'settings', settings: s }),
       lobbyStart: () => this.net?.send({ t: 'start' }),
       resume: () => this.resume(),
+      respawn: () => { this.game?.players.forEach((p) => p.respawn()); this.resume(); },
       quit: () => this.quit(),
       raceAgain: () => this.raceAgain(),
       setQuality: (q: QualityName) => { this.quality = q; store.set('quality', q); this.game?.setQuality(q); },

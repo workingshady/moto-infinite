@@ -334,3 +334,13 @@ kbd.key { display: inline-flex; align-items: center; justify-content: center; mi
 .dtags { display: flex; gap: 6px; justify-content: center; margin-top: 4px; }
 .dtags span { padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 900; letter-spacing: 0.08em; color: #111; }
 .dtags .zone { background: #ffd23f; } .dtags .close { background: #ffb03f; } .dtags .tandem { background: #7cffb2; }
+
+/* how-to sections + in-game key card */
+.howto { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 6px 22px; max-height: 64vh; overflow-y: auto; padding-right: 6px; }
+.howto h3 { margin: 14px 0 4px; font-size: 15px; color: var(--accent2); }
+.howto .keys td { font-size: 13px; }
+.keycard { right: 16px; bottom: 16px; width: 270px; font-size: 11.5px; line-height: 1.5; display: none; }
+.split .keycard { transform: scale(0.85); transform-origin: bottom right; }
+.keycard .kr { display: flex; gap: 8px; align-items: center; margin-top: 3px; }
+.keycard .kr span { min-width: 92px; display: flex; gap: 2px; flex-wrap: wrap; }
+.keycard .kr em { font-style: normal; opacity: 0.85; }

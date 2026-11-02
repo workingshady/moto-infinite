@@ -99,6 +99,7 @@ export interface MenuActions {
   lobbySettings(s: LobbySettings): void;
   lobbyStart(): void;
   resume(): void;
+  respawn(): void;
   quit(): void;
   raceAgain(): void;
   setQuality(q: QualityName): void;
@@ -390,33 +391,85 @@ export class Menu {
         <p class="hint">Toggle mode helps keyboards that ignore 3 keys at once: tap nitro once, then only steer.</p>
         <div class="opt"><span>Sound</span><div class="chips"><button class="chip" data-go="mute">${this.muted() ? '🔇 Off' : '🔊 On'}</button></div></div>
         <div class="row-buttons"><button class="btn ghost" data-go="back">← Back</button></div>`;
-      case 'howto':
+      case 'howto': {
+        const row = (k: string, t: string) => `<tr><td>${k}</td><td>${t}</td></tr>`;
         return `
         <h2>How to play</h2>
-        <table class="keys">
-          <tr><td>↑ ↓ / W S</td><td>Throttle · brake/reverse · walk</td></tr>
-          <tr><td>← → / A D</td><td>Steer (wet and snowy roads have less grip)</td></tr>
-          <tr><td>Shift / Space</td><td>Nitro (riding) · Space = jump (walking)</td></tr>
-          <tr><td>F / left click</td><td>Fire. Auto-aims and leads moving targets; ✕ = hit, red ✕ = kill</td></tr>
-          <tr><td>Q / 1-3</td><td>Next weapon / pick a level-up card</td></tr>
-          <tr><td>E</td><td>Get on / off the bike</td></tr>
-          <tr><td>In the air</td><td>Release, then ↑↓ to flip and ←→ to spin. Hands off = bike levels itself</td></tr>
-          <tr><td>C</td><td>Style trick in the air (+↑ Superman, +↓ Heel Clicker) · wheelie on the ground (bikes)</td></tr>
-          <tr><td>X</td><td>Handbrake: start a drift, steer against the slide to hold it</td></tr>
-          <tr><td>R</td><td>Respawn on the nearest road</td></tr>
-          <tr><td>Right drag · wheel</td><td>Look around · zoom</td></tr>
-          <tr><td>Esc / Start</td><td>Pause menu</td></tr>
-          <tr><td>M · H</td><td>Mute · hide help</td></tr>
-        </table>
-        <p class="hint"><b>Open world:</b> ride anywhere, follow the story chapters, finish timed challenges, level up and unlock weapons (Rocket 2, Railgun 3, Swarm 4, Mine 5). Scouts are fast, gunners shoot, bombers drop bombs.<br>
-        <b>Race:</b> pass every blue gate in order, the yellow gate is start/finish. Your best lap is saved as a ghost.<br>
-        <b>Power-ups:</b> green repair · blue shield · yellow magnet · pink double XP.</p>
+        <div class="howto">
+          <section><h3>🏍 Riding</h3><table class="keys">
+            ${row('↑ / W', 'Throttle (walk forward on foot)')}
+            ${row('↓ / S', 'Brake, then reverse')}
+            ${row('← → / A D', 'Steer. Eases in, full grip at any speed. Wet or snowy roads have less grip')}
+            ${row('E', 'Get on / off your bike or car')}
+            ${row('R', 'Respawn on the nearest road')}
+            ${row('Right-drag · wheel', 'Look around · zoom the camera')}
+          </table></section>
+          <section><h3>💨 Nitro</h3><table class="keys">
+            ${row('Space / Shift / N', 'Hold for nitro. It drives the vehicle by itself, so Space + ←/→ is enough')}
+            ${row('Settings → Nitro', '"Tap to toggle": tap once, then only steer (fixes keyboards that drop 3 keys at once)')}
+            ${row('Space (on foot)', 'Jump')}
+          </table></section>
+          <section><h3>🤸 Wheelies (motorcycles)</h3><table class="keys">
+            ${row('1. Speed', 'Ride faster than ~25 km/h on the ground')}
+            ${row('2. Hold C', 'The front wheel lifts and balances on the rear wheel')}
+            ${row('3. ↑ / ↓', 'While holding C: ↑ lifts higher, ↓ brings it down. Steering is softer on one wheel')}
+            ${row('4. Release C', 'The front drops. Over 0.8 s earns XP: "WHEELIE 2.4s"')}
+            ${row('⚠ Loop out', 'Lift too far and you flip backwards: tap ↓ to save it')}
+            ${row('Note', 'Every bike except the Thunder Cruiser can wheelie. Cars cannot')}
+          </table></section>
+          <section><h3>🌀 Drifting (cars and bikes)</h3><table class="keys">
+            ${row('1. Entry', 'Turn in at speed and tap X (handbrake), or flick ← then → quickly (feint), or lift off / brake mid-corner')}
+            ${row('2. Hold it', 'Steer AGAINST the slide (counter-steer) to hold the angle; throttle pushes the tail out, lifting tucks it in')}
+            ${row('3. Score', 'Angle × speed × zone bonus × smoothness. +25% CLOSE to walls, +50% TANDEM next to another driver')}
+            ${row('4. Bank', 'Straighten up for a moment to bank the points (NICE / GREAT / INSANE). Hitting a wall loses the chain')}
+            ${row('Best cars', 'Kitsune S-Spec, Panda 86, Brute V8, Kaze 7R slide easiest; GT3 and Hyper grip hard')}
+            ${row('Assist', 'Settings → Assist: Normal/Easy hold your angle; Pro lets you spin out')}
+          </table></section>
+          <section><h3>🛫 Air tricks</h3><table class="keys">
+            ${row('Hands off', 'The bike levels itself and lands straight')}
+            ${row('↑ / ↓', 'After takeoff let go, then press to flip (backflip / frontflip)')}
+            ${row('← / →', 'Spin (360°). Flip + spin in one jump = CORKSCREW bonus')}
+            ${row('C in the air', 'Style trick: alone = No-Hander, + ↑ = Superman, + ↓ = Heel Clicker. Let go before landing')}
+            ${row('Combo', 'Land tricks within 5 s of each other to multiply the score')}
+          </table></section>
+          <section><h3>🔫 Combat & upgrades</h3><table class="keys">
+            ${row('F / left click', 'Fire. Auto-aims at the red reticle and leads moving drones. ✕ hit, red ✕ kill')}
+            ${row('Q', 'Next weapon. Rocket unlocks at Lv2, Railgun 3, Swarm 4, Mine 5')}
+            ${row('Level up', 'Cards appear and time slows. 1 / 2 / 3 picks, T rerolls (2 per run)')}
+            ${row('Tab', 'Put cards away / open them again later ("upgrade ready" badge)')}
+          </table></section>
+          <section><h3>👥 Player 2 (split screen)</h3><table class="keys">
+            ${row('Arrows', 'Drive / steer')}
+            ${row('Right Shift / Num0', 'Nitro · jump')}
+            ${row('/ · Enter · .', 'Fire · get on/off · next weapon')}
+            ${row("' · ;", 'Trick / wheelie · handbrake drift')}
+            ${row('8 9 0 · \\ · ]', 'Pick cards · open/close cards · reroll')}
+            ${row('Backspace', 'Respawn')}
+          </table></section>
+          <section><h3>🎮 Gamepad</h3><table class="keys">
+            ${row('A / RT · LT', 'Throttle · brake')}
+            ${row('Left stick / D-pad', 'Steer (and flips/spins in the air)')}
+            ${row('B / RB', 'Nitro · jump')}
+            ${row('X · Y', 'Fire · get on/off')}
+            ${row('LB · L3', 'Handbrake drift · trick / wheelie')}
+            ${row('R3 · Back · Start', 'Cards · next weapon · pause')}
+          </table></section>
+          <section><h3>🗺 Modes</h3><p class="hint">
+            <b>Open world:</b> story chapters, timed challenges, drones, gas stations (refuel), villages, stunt zones.<br>
+            <b>Race:</b> pass every blue gate in order; checkered gate = start/finish; beat your ghost.<br>
+            <b>Drift:</b> 8 venues with zones (×1.5–2.3). Points bank when you straighten.<br>
+            <b>Power-ups:</b> green repair · blue shield · yellow magnet · pink double XP.<br>
+            <b>Esc / Start:</b> pause (resume, settings, controls, respawn, quit) · <b>M</b> mute · <b>H</b> show/hide the key card.
+          </p></section>
+        </div>
         <div class="row-buttons"><button class="btn ghost" data-go="back">← Back</button></div>`;
+      }
       case 'pause':
         return `
         <h2>Paused</h2>
         <div class="big-buttons">
           <button class="btn primary" data-go="resume">Resume</button>
+          <button class="btn" data-go="respawn">Respawn on road</button>
           <button class="btn" data-go="settings">Settings</button>
           <button class="btn" data-go="howto">Controls</button>
           <button class="btn ghost" data-go="quit">Quit to menu</button>
@@ -584,6 +637,7 @@ export class Menu {
       case 'lstart': return this.a.lobbyStart();
       case 'mute': this.a.toggleMute(); return this.show('settings');
       case 'resume': return this.a.resume();
+      case 'respawn': return this.a.respawn();
       case 'quit': return this.a.quit();
       case 'again': return this.a.raceAgain();
     }

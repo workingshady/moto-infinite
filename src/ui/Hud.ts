@@ -10,7 +10,6 @@ import { POI_KINDS, POWERUPS, type PoiKind, type PowerupKind } from '../config';
 const POI_COLOR = Object.fromEntries(POI_KINDS.map((k) => [k.kind, k.color])) as Record<PoiKind, string>;
 import { clamp, escapeHtml, hex, TAU } from '../utils/math';
 import { fmt } from '../systems/Race';
-import { STEPS } from '../systems/Tutorial';
 
 const TEMPLATE = `
 <canvas class="lines"></canvas>
@@ -41,6 +40,7 @@ const TEMPLATE = `
 <div class="upbadge" data-k="upbadge"></div>
 <div class="lvlburst" data-k="lvlburst"><div class="rays"></div><div class="lvl-num" data-k="lvlNum"></div><div class="lvl-sub" data-k="lvlSub"></div></div>
 <div class="ptag" data-k="tag"></div>
+<div class="panel keycard" data-k="keycard"></div>
 `;
 
 type Els = Record<string, HTMLElement>;
@@ -69,11 +69,28 @@ export class Hud {
     this.lctx = this.lines.getContext('2d')!;
     this.els.race.style.display = game.opts.mode === 'race' ? '' : 'none';
     this.els.rideKey.textContent = p.ctrl.bindings.ride[0].replace('Key', '');
+    this.buildKeycard();
     if (game.opts.locals.length > 1) {
       this.els.tag.textContent = `P${p.index + 1} · ${p.name}`;
       this.els.tag.style.color = hex(p.color);
     }
     game.hudLayer.appendChild(this.root);
+  }
+
+  /** Compact key list for this player's vehicle and bindings. */
+  private buildKeycard() {
+    const b = this.p.ctrl.bindings, k = (l: string[]) => `<kbd>${this.key(l)}</kbd>`, car = this.p.def.kind === 'car';
+    const rows = [
+      [`${k(b.up)} ${k(b.down)} ${k(b.left)} ${k(b.right)}`, 'drive · brake · steer'],
+      [k(b.nitro), 'nitro (drives itself)'],
+      [k(b.drift), 'handbrake → drift, counter-steer to hold'],
+      car ? null : [k(b.trick), 'ground: wheelie (↑↓ balance) · air: style trick'],
+      car ? null : ['air', 'let go, then ↑↓ flip · ←→ spin'],
+      [`${k(b.fire)} ${k(b.weapon)}`, 'fire · next weapon'],
+      [k(b.ride), 'get on / off'],
+      ['<kbd>Esc</kbd> <kbd>H</kbd>', 'pause · hide this card'],
+    ].filter(Boolean) as string[][];
+    this.els.keycard.innerHTML = `<div class="label">KEYS · ${escapeHtml(this.p.def.name)}</div>` + rows.map(([a, c]) => `<div class="kr"><span>${a}</span><em>${c}</em></div>`).join('');
   }
 
   setRect(vp: Viewport, split: boolean) {
@@ -233,6 +250,8 @@ export class Hud {
       e.dneedle.style.transform = `rotate(${clamp((dr.angle * 180) / Math.PI, 0, 90) * 2 - 90}deg)`;
       e.dtags.innerHTML = (dr.zone ? `<span class="zone">${escapeHtml(dr.zone)} x${dr.zoneMult}</span>` : '') + (p.B.close ? '<span class="close">CLOSE!</span>' : '') + (p.B.tandem ? '<span class="tandem">TANDEM</span>' : '');
     }
+    // key card: shown for the first 20 s of a session, H flips it either way
+    e.keycard.style.display = (g.time < 20) !== document.body.classList.contains('nohelp') && !g.tutorial ? 'block' : 'none';
     if (frame % 3) return;
     // text (every 3rd frame)
     e.speed.textContent = String(Math.round(p.riding ? speedKmh : 0));
@@ -275,8 +294,8 @@ export class Hud {
       const key = tut.complete ? 'done' : String(tut.step);
       if (key !== this.tutKey) {
         this.tutKey = key;
-        e.tut.innerHTML = `<div class="label">TRAINING ${Math.min(tut.step, STEPS.length)}/${STEPS.length}</div>` +
-          STEPS.map((st, i) => i < tut.step ? `<div class="ok">✓ ${escapeHtml(st.title)}</div>`
+        e.tut.innerHTML = `<div class="label">TRAINING ${Math.min(tut.step, tut.steps.length)}/${tut.steps.length}</div>` +
+          tut.steps.map((st, i) => i < tut.step ? `<div class="ok">✓ ${escapeHtml(st.title)}</div>`
             : i === tut.step ? `<div class="cur"><b>▸ ${escapeHtml(st.title)}</b><kbd>${escapeHtml(st.keys)}</kbd><span>${escapeHtml(st.hint)}</span></div>`
             : `<div class="todo">${escapeHtml(st.title)}</div>`).join('') +
           (tut.complete ? '<div class="cur"><b>🏁 All done!</b><span>Free ride: challenges are live now.</span></div>' : '');
