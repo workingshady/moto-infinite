@@ -123,6 +123,30 @@ export class Audio {
     }
   }
 
+  /** Looping tyre screech (band-passed noise); gain and pitch follow slip angle and speed. */
+  createScreech(): Engine | null {
+    const ac = this.ac;
+    if (!ac || !this.master || !this.noiseBuf) return null;
+    const src = ac.createBufferSource(), filt = ac.createBiquadFilter(), gain = ac.createGain();
+    src.buffer = this.noiseBuf;
+    src.loop = true;
+    filt.type = 'bandpass';
+    filt.Q.value = 6;
+    filt.frequency.value = 1800;
+    gain.gain.value = 0;
+    src.connect(filt).connect(gain).connect(this.master);
+    src.start();
+    return {
+      set(freq, _filter, g) {
+        filt.frequency.setTargetAtTime(freq, ac.currentTime, 0.05);
+        gain.gain.setTargetAtTime(g, ac.currentTime, 0.06);
+      },
+      stop() {
+        try { src.stop(); gain.disconnect(); } catch { /* already stopped */ }
+      },
+    };
+  }
+
   createEngine(): Engine | null {
     const ac = this.ac;
     if (!ac || !this.master) return null;

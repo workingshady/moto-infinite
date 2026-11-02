@@ -37,10 +37,10 @@ export class Player {
     x: 0, z: 0, y: 0, h: 0, moveH: 0, v: 0, vy: 0, lean: 0, pitch: 0, pitchV: 0, steer: 0,
     air: false, airT: 0, lastG: 0, wheel: 0, flipAcc: 0, spinAcc: 0, pad: 0, wasN: false, impact: 0, fromRamp: false,
     latch: { up: false, down: false, left: false, right: false },
-    wheelie: 0, wheelieT: 0,
+    wheelie: 0, wheelieT: 0, yawV: 0, flick: 0, lastSteerSign: 0, lastSteerT: 0, wasUp: false, close: false, tandem: false,
   };
   /** Live drift chain: points build while sliding, banked after a short straight. */
-  readonly drift = { on: false, pts: 0, t: 0, cool: 0, angle: 0, total: 0, best: 0, zone: '' };
+  readonly drift = { on: false, pts: 0, t: 0, cool: 0, angle: 0, total: 0, best: 0, zone: '', zoneMult: 1, jitter: 0, prevAngle: 0 };
   readonly W = { x: 0, z: 0, y: 0, h: 0, vy: 0, ground: true, phase: 0, amt: 0 };
   readonly stats = {
     top: BIKE.top, accel: BIKE.accel, nitroMax: BIKE.nitroMax, nitroRegen: BIKE.nitroRegen, grip: BIKE.grip,
@@ -69,6 +69,7 @@ export class Player {
   private flame = 0x66ccff;
   private respawnT = 0;
   private engine: Engine | null = null;
+  private screech: Engine | null = null;
   private _v = new THREE.Vector3();
   private nitroOn = false;
   private style: Style | null = null;
@@ -189,20 +190,42 @@ export class Player {
         B.steer = lerp(B.steer, want, damp(dt, want ? CONTROL.steerIn : CONTROL.steerOut));
         const handbrake = active && c.is('drift') && Math.abs(B.v) > 6;
         const wheelie = this.updateWheelie(dt, active && c.is('trick'), up, down);
-        // full steering at any speed, a little extra while boosting, more yaw on the handbrake (swing the tail out)
-        B.h += B.steer * st.grip * g.env.grip * clamp(Math.abs(B.v) / 6, 0, 1) * Math.sign(B.v) * dt
+        // yaw with inertia: the yaw rate eases toward what the steering asks for (heavier cars respond slower)
+        const yawTarget = B.steer * st.grip * g.env.grip * clamp(Math.abs(B.v) / 6, 0, 1) * Math.sign(B.v)
           * (boosting ? CONTROL.boostSteer : 1) * (handbrake ? 1.55 : 1) * (wheelie ? 0.5 : 1);
+        B.yawV = lerp(B.yawV, yawTarget, damp(dt, this.isCar ? DRIFT.yawInertia.car : DRIFT.yawInertia.bike));
+        B.h += B.yawV * dt;
+        // weight transfer: a quick left-right flick, lifting off, or braking mid-turn makes the rear light
+        const steerSign = Math.sign(want);
+        if (steerSign && steerSign !== B.lastSteerSign) {
+          if (B.lastSteerSign && g.time - B.lastSteerT < DRIFT.flickWindow && Math.abs(B.v) > 16 && this.isCar) B.flick = DRIFT.flickTime;
+          B.lastSteerSign = steerSign;
+          B.lastSteerT = g.time;
+        } else if (steerSign) B.lastSteerT = g.time;
+        B.flick = Math.max(0, B.flick - dt);
         const slip = wrapPi(B.h - B.moveH);
         if (!handbrake && Math.abs(slip) < 0.15) this.assistSteer(dt, want);
         // drift model: the travel direction chases the heading at the vehicle's traction rate.
         // Handbrake and power oversteer (throttle on a low-traction car) let the tail step out;
         // counter-steering (steering against the slide) catches it faster.
         let trac = (handbrake ? this.def.slideTraction : this.def.traction) * g.env.grip;
-        if (this.isCar && (up || boosting) && Math.abs(slip) > 0.1 && this.def.traction < 6) trac *= 0.75;
-        if (Math.sign(B.steer) === -Math.sign(slip) && Math.abs(B.steer) > 0.3) trac *= 1.6;
+        const turning = Math.abs(B.steer) > 0.4 && Math.abs(B.v) > 14;
+        if (this.isCar && (up || boosting) && Math.abs(slip) > 0.1 && this.def.traction < 6) trac *= 0.75; // power oversteer
+        if (B.flick > 0) trac *= DRIFT.flickTraction; // feint / Scandinavian flick
+        if (this.isCar && turning && B.wasUp && !up && !down) trac *= DRIFT.liftTraction; // lift-off oversteer
+        if (this.isCar && turning && down && B.v > 0) trac *= DRIFT.brakeTraction; // trail braking
+        if (Math.sign(B.steer) === -Math.sign(slip) && Math.abs(B.steer) > 0.3) trac *= 1.6; // counter-steer catches it
+        B.wasUp = up;
         B.moveH += wrapPi(B.h - B.moveH) * Math.min(1, dt * trac);
+        // throttle steers the angle mid-drift: power pushes the tail out, lifting tucks it in
+        const slip2 = wrapPi(B.h - B.moveH);
+        if (Math.abs(slip2) > DRIFT.minAngle && this.isCar) B.h += Math.sign(slip2) * (up || boosting ? 1 : -0.6) * DRIFT.throttleAngle * 0.12 * dt;
+        // angle limit: assist holds the slide, on Pro you spin out past the limit
+        const hold = DRIFT.holdAngle[prefs.assist] ?? DRIFT.holdAngle[1], sl = wrapPi(B.h - B.moveH);
+        if (Math.abs(sl) > DRIFT.spinAngle && prefs.assist === 0 && Math.abs(B.v) > 10) this.spinOut();
+        else if (Math.abs(sl) > hold) B.h = B.moveH + Math.sign(sl) * lerp(Math.abs(sl), hold, damp(dt, 6));
         if (handbrake) B.v -= Math.sign(B.v) * 6 * dt;
-        B.v *= 1 - Math.abs(Math.sin(slip)) * DRIFT.scrub * dt; // sideways = slower
+        B.v *= 1 - Math.abs(Math.sin(slip)) * DRIFT.scrub * (up || boosting ? 0.5 : 1) * dt; // sideways = slower, power holds speed
         if (this.isCar) B.lean = lerp(B.lean, -B.steer * clamp(Math.abs(B.v) / 30, 0, 1) * 0.06, damp(dt, 5)); // body roll
         else B.lean = lerp(B.lean, -B.steer * clamp(Math.abs(B.v) / 22, 0, 1) * 0.55, damp(dt, 6));
         // keys held while leaving the ground must be released before they do tricks
@@ -388,9 +411,17 @@ export class Player {
       if (this.isCar) for (const side of [-0.78, 0.78]) g.effects.skid(B.x - fx * 1.3 + fz * side, B.z - fz * 1.3 - fx * side, B.moveH);
       else g.effects.skid(B.x - fx * 1.05, B.z - fz * 1.05, B.moveH);
     }
-    // drift smoke from the rear tyres, thicker the wider the angle
+    // tyre screech: louder and higher with angle and speed
+    const slipA = Math.abs(wrapPi(B.h - B.moveH));
+    if (!this.screech) this.screech = g.audio.createScreech();
+    this.screech?.set(1200 + Math.abs(B.v) * 30, 0, this.riding && !B.air && slipA > 0.15 && Math.abs(B.v) > 8 ? clamp(slipA * 0.12, 0, 0.09) / g.players.length : 0);
+    // sparks when sliding right next to a wall
+    if (this.drift.on && B.close && Math.random() < 0.5) {
+      for (let i = 0; i < 3; i++) g.fx.emit(B.x + fz * rnd(1.2), B.y + 0.4, B.z - fx * rnd(1.2), rnd(5), 2 + Math.random() * 3, rnd(5), 0.35, 0.25, 0.05, 0xffb03f, 1, 14, 1);
+    }
+    // drift smoke from the rear tyres, thicker the wider the angle and the faster you go
     if (this.riding && !B.air && sliding && onRoad) {
-      const amt = clamp(Math.abs(wrapPi(B.h - B.moveH)) * 1.5, 0.3, 1);
+      const amt = clamp(slipA * 1.5 * clamp(Math.abs(B.v) / 20, 0.5, 1.4), 0.3, 1);
       for (const side of this.isCar ? [-0.78, 0.78] : [0]) {
         const sx = B.x - fx * (this.isCar ? 1.35 : 1.1) + fz * side, sz = B.z - fz * (this.isCar ? 1.35 : 1.1) - fx * side;
         if (Math.random() < amt) g.fx.emit(sx, B.y + 0.3, sz, rnd(1.2), 1.2 + Math.random(), rnd(1.2), 1.6, 1, 4.5, 0xe8e8e8, 0.55 * amt, -0.6, 1.2, true);
@@ -434,9 +465,16 @@ export class Player {
       d.on = true;
       d.cool = 0;
       d.t += dt;
+      // fluidity: smooth angle changes score more than see-sawing
+      d.jitter = lerp(d.jitter, Math.abs(angle - d.prevAngle) / dt, damp(dt, 3));
+      d.prevAngle = angle;
       d.angle = angle;
       d.zone = zone ? zone.name : '';
-      d.pts += angle * Math.abs(B.v) * DRIFT.rate * dt * (zone ? zone.mult : 1);
+      d.zoneMult = zone ? zone.mult : 1;
+      B.close = this.nearWall();
+      B.tandem = this.nearDrifter();
+      const speed = Math.min(Math.abs(B.v), DRIFT.speedCap), fluid = 1.15 - clamp(d.jitter / 4, 0, 0.35);
+      d.pts += angle * speed * DRIFT.rate * dt * d.zoneMult * fluid * (1 + (B.close ? DRIFT.closeBonus : 0) + (B.tandem ? DRIFT.tandemBonus : 0));
     } else if (d.on) {
       d.cool += dt;
       if (d.cool > DRIFT.bankAfter) this.bankDrift();
@@ -454,12 +492,48 @@ export class Player {
       d.total += total;
       d.best = Math.max(d.best, total);
       this.s.score += total;
-      this.hud.banner(`DRIFT ${total.toLocaleString()}`, `x${this.driftMult.toFixed(1)} · ${d.t.toFixed(1)}s${d.zone ? ' · ' + d.zone : ''}`, '#ff7ad9');
+      const [, grade, col] = DRIFT.grades.find(([min]) => total >= min)!;
+      this.hud.banner(`${grade} ${total.toLocaleString()}`, `x${this.driftMult.toFixed(1)} · ${d.t.toFixed(1)}s${d.zone ? ' · ' + d.zone : ''}`, col);
+      if (total >= 4000) this.game.fx.burst(this.B.x, this.B.y + 1, this.B.z, { n: 60, speed: 14, life: 1, size: [0.6, 0.1], colors: [0xff7ad9, 0xffd23f, 0xffffff], gravity: 6 });
       this.game.audio.play('trick');
       this.addXP(total / DRIFT.xpDiv);
       this.game.events.emit('progress', { player: this, id: 'drift', value: total });
     }
     d.pts = d.t = d.cool = 0;
+  }
+
+  /** Within a few metres of a wall, container or the edge of a drift venue. */
+  private nearWall() {
+    const B = this.B, g = this.game, r = DRIFT.closeDist;
+    let close = false;
+    g.chunks.forNear(B.x, B.z, (c) => {
+      for (const o of c.obs) if ((B.x - o.x) ** 2 + (B.z - o.z) ** 2 < (o.r + r) ** 2) return (close = true);
+    });
+    if (!close && g.layout.kind === 'drift') close = g.layout.roadDist(B.x, B.z) > ROAD.asphalt - r && g.layout.roadDist(B.x, B.z) < ROAD.asphalt + 1;
+    return close;
+  }
+
+  /** Another rider (local or online) drifting close by: tandem bonus. */
+  private nearDrifter() {
+    const B = this.B, g = this.game, r2 = DRIFT.tandemDist ** 2;
+    for (const o of g.players) if (o !== this && o.drift.on && (o.B.x - B.x) ** 2 + (o.B.z - B.z) ** 2 < r2) return true;
+    let t = false;
+    // online snapshots don't carry slip angle, so a fast rider right next to you counts as a tandem partner
+    g.remotes?.forEach((r) => { if (!t && r.state && Math.abs(r.state.v) > 10 && (r.x - B.x) ** 2 + (r.z - B.z) ** 2 < r2) t = true; });
+    return t;
+  }
+
+  /** Pro assist: over-rotating spins the car out. */
+  private spinOut() {
+    const B = this.B;
+    this.failDrift();
+    B.v *= 0.35;
+    B.yawV = 0;
+    B.h = B.moveH + Math.PI * 0.9 * Math.sign(wrapPi(B.h - B.moveH));
+    B.moveH = B.h;
+    this.hud.banner('SPUN OUT!', 'Counter-steer earlier (steer against the slide)', '#ff4d5e');
+    this.game.audio.play('crash');
+    this.cam.shake = Math.max(this.cam.shake, 0.4);
   }
 
   /** Hitting something mid-drift loses the chain. */
@@ -889,6 +963,7 @@ export class Player {
 
   dispose() {
     this.engine?.stop();
+    this.screech?.stop();
     this.hud.dispose();
   }
 }

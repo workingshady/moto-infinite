@@ -121,7 +121,19 @@ export const DRIFT = {
   multMax: 5,
   bankAfter: 0.7, // seconds without sliding before points are banked
   xpDiv: 8, // XP = points / xpDiv
-  scrub: 0.55, // speed lost while sideways
+  scrub: 0.55, // speed lost while sideways (halved on throttle: power keeps the drift alive)
+  speedCap: 31, // speed bonus stops growing here (~70 mph, like Forza)
+  yawInertia: { car: 5.5, bike: 9 }, // how fast the yaw rate follows the steering (lower = heavier)
+  flickWindow: 0.35, // seconds: left-right reversal within this starts a weight-transfer flick
+  flickTime: 0.45, flickTraction: 0.45, // rear goes light for this long, traction x this
+  liftTraction: 0.7, // lifting off the throttle mid-corner
+  brakeTraction: 0.75, // trail braking mid-corner
+  throttleAngle: 0.9, // throttle pushes the angle out, lifting brings it back
+  /** Max slip angle per assist level before the assist holds it (Pro: beyond spinAngle you spin out). */
+  holdAngle: [1.25, 1.05, 0.9], spinAngle: 1.45,
+  closeDist: 3, closeBonus: 0.25, // within this many metres of a wall/obstacle while drifting
+  tandemDist: 12, tandemBonus: 0.5,
+  grades: [[8000, 'INSANE!', '#ff3355'], [4000, 'GREAT!', '#ff7ad9'], [1500, 'NICE', '#ffd23f'], [0, 'DRIFT', '#ffffff']] as [number, string, string][],
 };
 /** Wheelies (bikes): hold the trick key on the ground. */
 export const WHEELIE = { balance: 0.5, up: 0.28, down: 0.32, loopOut: 1.05, minSpeed: 6, minTime: 0.8, xpPerSec: 60 };

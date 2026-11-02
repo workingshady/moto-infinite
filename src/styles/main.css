@@ -326,3 +326,11 @@ kbd.key { display: inline-flex; align-items: center; justify-content: center; mi
 .veh-spec { font-size: 10px; color: var(--dim); margin-top: 6px; }
 .modes { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
 @media (max-width: 820px) { .garage { grid-template-columns: 1fr; } }
+
+.dgauge { position: relative; width: 120px; height: 60px; margin: 0 auto -6px; border-radius: 120px 120px 0 0; overflow: hidden;
+  background: conic-gradient(from -90deg at 50% 100%, #3cc8ff 0deg, #7cffb2 60deg, #ffd23f 110deg, #ff3355 180deg, transparent 180deg); opacity: 0.85; }
+.dgauge::after { content: ''; position: absolute; left: 12px; right: 12px; top: 12px; bottom: -48px; border-radius: 50%; background: rgba(12, 16, 28, 0.85); }
+.dgauge i { position: absolute; left: 50%; bottom: 0; width: 3px; height: 54px; margin-left: -1.5px; background: #fff; transform-origin: 50% 100%; z-index: 1; border-radius: 2px; box-shadow: 0 0 8px #fff; }
+.dtags { display: flex; gap: 6px; justify-content: center; margin-top: 4px; }
+.dtags span { padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 900; letter-spacing: 0.08em; color: #111; }
+.dtags .zone { background: #ffd23f; } .dtags .close { background: #ffb03f; } .dtags .tandem { background: #7cffb2; }

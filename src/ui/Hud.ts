@@ -36,7 +36,7 @@ const TEMPLATE = `
 <div class="story" data-k="story"><b data-k="storyT"></b><span data-k="storyX"></span></div>
 <div class="objective" data-k="objective"></div>
 <div class="countdown" data-k="countdown"></div>
-<div class="driftmeter" data-k="driftm"><b data-k="driftPts"></b><span data-k="driftInfo"></span></div>
+<div class="driftmeter" data-k="driftm"><div class="dgauge"><i data-k="dneedle"></i></div><b data-k="driftPts"></b><span data-k="driftInfo"></span><div class="dtags" data-k="dtags"></div></div>
 <div class="levelup" data-k="levelup"><div class="lu-head"><b>CHOOSE AN UPGRADE</b><span data-k="luHint"></span></div><div class="cards" data-k="cards"></div></div>
 <div class="upbadge" data-k="upbadge"></div>
 <div class="lvlburst" data-k="lvlburst"><div class="rays"></div><div class="lvl-num" data-k="lvlNum"></div><div class="lvl-sub" data-k="lvlSub"></div></div>
@@ -229,7 +229,9 @@ export class Hud {
     e.driftm.style.display = dr.on && dr.pts > 20 ? 'block' : 'none';
     if (dr.on) {
       e.driftPts.textContent = Math.round(dr.pts * p.driftMult).toLocaleString();
-      e.driftInfo.textContent = `x${p.driftMult.toFixed(1)} · ${Math.round((dr.angle * 180) / Math.PI)}°${dr.zone ? ' · ' + dr.zone : ''}`;
+      e.driftInfo.textContent = `x${p.driftMult.toFixed(1)} · ${Math.round((dr.angle * 180) / Math.PI)}°`;
+      e.dneedle.style.transform = `rotate(${clamp((dr.angle * 180) / Math.PI, 0, 90) * 2 - 90}deg)`;
+      e.dtags.innerHTML = (dr.zone ? `<span class="zone">${escapeHtml(dr.zone)} x${dr.zoneMult}</span>` : '') + (p.B.close ? '<span class="close">CLOSE!</span>' : '') + (p.B.tandem ? '<span class="tandem">TANDEM</span>' : '');
     }
     if (frame % 3) return;
     // text (every 3rd frame)
