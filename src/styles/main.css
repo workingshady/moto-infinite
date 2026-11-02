@@ -385,11 +385,95 @@ kbd.key { display: inline-flex; align-items: center; justify-content: center; mi
 .gauges { position: absolute; right: 12px; bottom: 10px; width: 236px; height: 150px; display: none; pointer-events: none; filter: drop-shadow(0 6px 18px rgba(0, 0, 0, 0.35)); }
 .gcanvas { display: block; width: 236px; height: 150px; }
 .split .gauges { transform: scale(0.75); transform-origin: bottom right; }
-.gauges-on .keycard { bottom: 170px; }
-.split.gauges-on .keycard { bottom: 124px; }
+
+
 .camtag { position: absolute; left: 50%; top: 112px; transform: translateX(-50%); padding: 6px 14px; border-radius: 999px; background: var(--panel); backdrop-filter: blur(8px);
   font-weight: 800; font-size: 14px; opacity: 0; pointer-events: none; white-space: nowrap; }
 .camtag.show { animation: camtag 1.8s ease-out forwards; }
 @keyframes camtag { 0% { opacity: 0; transform: translate(-50%, -8px); } 12% { opacity: 1; transform: translate(-50%, 0); } 75% { opacity: 1; } 100% { opacity: 0; } }
 @media (max-width: 640px) { .gauges { transform: scale(0.72); transform-origin: bottom right; } }
 body:has(#touch) .gauges { bottom: 150px; }
+
+/* ================================================================ HUD layout zones (no overlaps)
+   tl: status + objective + leaderboard | tc: race/challenge/drift | tr: map + checklist
+   bl: key help | bc: prompts, meters, F1 dash | br: gauges. Children are laid out by the zone, not absolutely. */
+.hud .zone { position: absolute; display: flex; flex-direction: column; gap: 10px; pointer-events: none; z-index: 2; }
+.hud .zone > * { position: relative !important; left: auto !important; right: auto !important; top: auto !important; bottom: auto !important; transform: none !important; margin: 0; }
+.hud .zone .panel { pointer-events: auto; }
+.z-tl { left: 16px; top: 16px; width: 220px; max-height: calc(100% - 200px); }
+.z-tc { left: 50%; top: 16px; transform: translateX(-50%); align-items: center; }
+.z-tr { right: 16px; top: 16px; align-items: flex-end; }
+.z-bl { left: 16px; bottom: 16px; align-items: flex-start; }
+.z-bc { left: 50%; bottom: 16px; transform: translateX(-50%); align-items: center; flex-direction: column; }
+.z-br { right: 12px; bottom: 10px; }
+.z-tl .stats { width: auto; }
+.z-tl .objective { max-width: 220px; }
+.z-tl .tower { width: auto; overflow: hidden; }
+.z-bl .keycard { width: 290px; }
+.z-bc .f1dash { width: 320px; }
+.hud .camtag { margin-top: 2px; }
+/* stories and countdowns sit mid-screen so they never cover the dash or the gauges */
+.hud .story { bottom: auto; top: 58%; }
+.hud .countdown { top: 40%; }
+/* per mode: F1 shows racing info only (ERS lives in the dash), races hide open-world stats */
+.hud.mode-f1 .xp-row, .hud.mode-f1 .open-row, .hud.mode-f1 .nitro-row, .hud.mode-f1 .buffs { display: none; }
+.hud.mode-race .open-row, .hud.mode-drift .open-row { display: none; }
+/* cards open: clear the bottom of the screen */
+.hud.cards-open .z-bc, .hud.cards-open .z-bl { opacity: 0; }
+/* split screen: smaller panels, tighter margins */
+.hud.split .zone { gap: 6px; }
+.hud.split .z-tl { left: 10px; top: 10px; width: 186px; transform: scale(0.9); transform-origin: top left; }
+.hud.split .z-tr { right: 10px; top: 10px; transform: scale(0.82); transform-origin: top right; }
+.hud.split .z-bl { display: none; }
+.hud.split .z-bc { transform: translateX(-50%) scale(0.85); transform-origin: bottom center; }
+/* small screens */
+@media (max-width: 760px) {
+  .z-tl { transform: scale(0.82); transform-origin: top left; }
+  .z-tr { transform: scale(0.72); transform-origin: top right; }
+  .z-bl { display: none; }
+}
+
+/* ================================================================ HUD layout zones (no overlaps)
+   tl: status + objective + leaderboard | tc: race/challenge/drift | tr: map + checklist
+   bl: key help | bc: prompts, meters, F1 dash | br: gauges. Children are laid out by the zone, not absolutely. */
+.hud .zone { position: absolute; display: flex; flex-direction: column; gap: 10px; pointer-events: none; z-index: 2; }
+.hud .zone > * { position: relative !important; left: auto !important; right: auto !important; top: auto !important; bottom: auto !important; transform: none !important; margin: 0; }
+.hud .zone .panel { pointer-events: auto; }
+.z-tl { left: 16px; top: 16px; width: 220px; max-height: calc(100% - 200px); }
+.z-tc { left: 50%; top: 16px; transform: translateX(-50%); align-items: center; }
+.z-tr { right: 16px; top: 16px; align-items: flex-end; }
+.z-bl { left: 16px; bottom: 16px; align-items: flex-start; }
+.z-bc { left: 50%; bottom: 16px; transform: translateX(-50%); align-items: center; flex-direction: column; }
+.z-br { right: 12px; bottom: 10px; }
+.z-tl .stats { width: auto; }
+.z-tl .objective { max-width: 220px; }
+.z-tl .tower { width: auto; overflow: hidden; }
+.z-bl .keycard { width: 290px; }
+.z-bc .f1dash { width: 320px; }
+.hud .camtag { margin-top: 2px; }
+/* stories and countdowns sit mid-screen so they never cover the dash or the gauges */
+.hud .story { bottom: auto; top: 58%; }
+.hud .countdown { top: 40%; }
+/* per mode: F1 shows racing info only (ERS lives in the dash), races hide open-world stats */
+.hud.mode-f1 .xp-row, .hud.mode-f1 .open-row, .hud.mode-f1 .nitro-row, .hud.mode-f1 .buffs { display: none; }
+.hud.mode-race .open-row, .hud.mode-drift .open-row { display: none; }
+/* cards open: clear the bottom of the screen */
+.hud.cards-open .z-bc, .hud.cards-open .z-bl { opacity: 0; }
+/* split screen: smaller panels, tighter margins */
+.hud.split .zone { gap: 6px; }
+.hud.split .z-tl { left: 10px; top: 10px; width: 186px; transform: scale(0.9); transform-origin: top left; }
+.hud.split .z-tr { right: 10px; top: 10px; transform: scale(0.82); transform-origin: top right; }
+.hud.split .z-bl { display: none; }
+.hud.split .z-bc { transform: translateX(-50%) scale(0.85); transform-origin: bottom center; }
+/* small screens */
+@media (max-width: 760px) {
+  .z-tl { transform: scale(0.82); transform-origin: top left; }
+  .z-tr { transform: scale(0.72); transform-origin: top right; }
+  .z-bl { display: none; }
+}
+
+/* minimap: round local map, square overview for circuits */
+.mapwrap { padding: 5px; border-radius: 50%; }
+.hud.mode-race .mapwrap, .hud.mode-f1 .mapwrap { border-radius: 14px; }
+.minimap { width: 190px; height: 190px; border-radius: 50%; }
+.hud.mode-race .minimap, .hud.mode-f1 .minimap { border-radius: 10px; }

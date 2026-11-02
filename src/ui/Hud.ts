@@ -4,12 +4,13 @@ import type { Game } from '../core/Game';
 import type { Player } from '../entities/Player';
 import { TIERS, type Card } from '../data/upgrades';
 import type { Viewport } from '../core/Renderer';
+import type { TrackLine } from '../world/layout';
 import { WEAPONS } from '../data/weapons';
-import { F1, POI_KINDS, POWERUPS, WHEELIE, type PoiKind, type PowerupKind } from '../config';
+import { F1, POI_KINDS, POWERUPS, ROAD, WHEELIE, type PoiKind, type PowerupKind } from '../config';
 import { prefs } from '../core/prefs';
 
 const POI_COLOR = Object.fromEntries(POI_KINDS.map((k) => [k.kind, k.color])) as Record<PoiKind, string>;
-import { clamp, escapeHtml, hex, TAU } from '../utils/math';
+import { clamp, escapeHtml, hex, lerpAngle, TAU } from '../utils/math';
 import { fmt } from '../systems/Race';
 import { Gauges } from './Gauges';
 import { CAM_LABEL } from '../core/cameraViews';
@@ -18,37 +19,54 @@ const TEMPLATE = `
 <canvas class="lines"></canvas>
 <div class="vignette" data-k="vig"></div><div class="hurtfx" data-k="hurtfx"></div><div class="flashfx" data-k="flashfx"></div>
 <div class="floaters" data-k="floaters"></div><div class="reticle" data-k="reticle"><i data-k="tbar"></i></div><div class="cross" data-k="cross"></div><div class="hitmark" data-k="hitmark">✕</div>
-<div class="panel stats">
-  <div class="row"><b data-k="mode">On foot</b><span class="dim" data-k="camName"></span></div>
-  <div class="row mt"><span>Health</span><span data-k="hpTxt"></span></div><div class="bar"><i class="hp" data-k="hpBar"></i></div>
-  <div class="row"><span>Nitro</span><span data-k="nTxt"></span></div><div class="bar"><i class="nitro" data-k="nBar"></i></div>
-  <div class="row"><span>Level <b data-k="lvl">1</b></span><span data-k="xpTxt"></span></div><div class="bar"><i class="xp" data-k="xpBar"></i></div>
-  <div class="row"><span>Score <b data-k="score">0</b></span><span>Gems <b data-k="gems">0</b></span></div>
-  <div class="row"><span>Weapon</span><span class="weapon" data-k="weapon"></span></div>
-  <div class="row"><span>Distance</span><span data-k="dist"></span></div>
-  <div class="row"><span>World</span><span data-k="clock"></span></div>
-  <div class="buffs" data-k="buffs"></div>
+<!-- top-left: player status, objective, leaderboard (stacked, never overlapping) -->
+<div class="zone z-tl">
+  <div class="panel stats">
+    <div class="row"><b data-k="mode">On foot</b><span class="dim" data-k="camName"></span></div>
+    <div class="row mt"><span>Health</span><span data-k="hpTxt"></span></div><div class="bar"><i class="hp" data-k="hpBar"></i></div>
+    <div class="nitro-row"><div class="row"><span>Nitro</span><span data-k="nTxt"></span></div><div class="bar"><i class="nitro" data-k="nBar"></i></div></div>
+    <div class="xp-row"><div class="row"><span>Level <b data-k="lvl">1</b></span><span data-k="xpTxt"></span></div><div class="bar"><i class="xp" data-k="xpBar"></i></div></div>
+    <div class="row open-row"><span>Score <b data-k="score">0</b></span><span>Gems <b data-k="gems">0</b></span></div>
+    <div class="row"><span data-k="weaponLbl">Weapon</span><span class="weapon" data-k="weapon"></span></div>
+    <div class="row open-row"><span>Distance</span><span data-k="dist"></span></div>
+    <div class="row"><span>World</span><span data-k="clock"></span></div>
+    <div class="buffs" data-k="buffs"></div>
+  </div>
+  <div class="objective" data-k="objective"></div>
+  <div class="panel tower" data-k="tower"></div>
 </div>
-<div class="panel challenge" data-k="ch"><div class="label">CHALLENGE</div><b data-k="cTxt"></b><div class="bar"><i class="cbar" data-k="cBar"></i></div><div data-k="cTime" class="dim"></div></div>
-<div class="panel f1dash" data-k="f1dash"><div class="f1top"><b data-k="f1speed">0</b><span>km/h</span><i data-k="f1gear">N</i></div><div class="rpm"><i data-k="f1rpm"></i></div><div class="f1row"><span class="tyre" data-k="f1tyre">M</span><span data-k="f1wear">0%</span><span class="lbl">ERS</span><div class="bar ers"><i data-k="f1ers"></i></div></div><div class="f1flags"><span data-k="f1drs">DRS</span><span data-k="f1slip">SLIP</span><span data-k="f1pit">PIT 80</span></div></div>
-<div class="panel tower" data-k="tower"></div>
-<div class="panel racebox" data-k="race"><div class="place" data-k="place"></div><div data-k="lap"></div><div class="dim" data-k="times"></div></div>
-<div class="panel tut" data-k="tut"></div>
-<div class="panel mapwrap"><canvas class="minimap" width="160" height="160"></canvas></div>
-<div class="panel prompt" data-k="prompt">Press <b data-k="rideKey">E</b> to ride</div>
+<!-- top-centre: race position / challenge / drift score -->
+<div class="zone z-tc">
+  <div class="panel racebox" data-k="race"><div class="place" data-k="place"></div><div data-k="lap"></div><div class="dim" data-k="times"></div></div>
+  <div class="panel challenge" data-k="ch"><div class="label">CHALLENGE</div><b data-k="cTxt"></b><div class="bar"><i class="cbar" data-k="cBar"></i></div><div data-k="cTime" class="dim"></div></div>
+  <div class="driftmeter" data-k="driftm"><div class="dgauge"><i data-k="dneedle"></i></div><b data-k="driftPts"></b><span data-k="driftInfo"></span><div class="dtags" data-k="dtags"></div></div>
+  <div class="camtag" data-k="camtag"></div>
+</div>
+<!-- top-right: map, training checklist -->
+<div class="zone z-tr">
+  <div class="panel mapwrap"><canvas class="minimap" width="190" height="190"></canvas></div>
+  <div class="panel tut" data-k="tut"></div>
+</div>
+<!-- bottom-left: key help + player tag -->
+<div class="zone z-bl">
+  <div class="panel keycard" data-k="keycard"></div>
+  <div class="ptag" data-k="tag"></div>
+</div>
+<!-- bottom-centre: prompts and live meters above the F1 dash -->
+<div class="zone z-bc">
+  <div class="panel prompt" data-k="prompt">Press <b data-k="rideKey">E</b> to ride</div>
+  <div class="wmeter" data-k="wmeter"><div class="wtrack"><i class="wzone" data-k="wzone"></i><i class="wneedle" data-k="wneedle"></i></div><span data-k="wtxt"></span></div>
+  <div class="upbadge" data-k="upbadge"></div>
+  <div class="panel f1dash" data-k="f1dash"><div class="f1top"><b data-k="f1speed">0</b><span>km/h</span><i data-k="f1gear">N</i></div><div class="rpm"><i data-k="f1rpm"></i></div><div class="f1row"><span class="tyre" data-k="f1tyre">M</span><span data-k="f1wear">0%</span><span class="lbl">ERS</span><div class="bar ers"><i data-k="f1ers"></i></div></div><div class="f1flags"><span data-k="f1drs">DRS</span><span data-k="f1slip">SLIP</span><span data-k="f1pit">PIT 80</span></div></div>
+</div>
+<!-- bottom-right: speedometer + tachometer -->
+<div class="zone z-br"><div class="gauges" data-k="gauges"></div></div>
+<!-- centre overlays -->
 <div class="banner" data-k="banner"></div>
 <div class="story" data-k="story"><b data-k="storyT"></b><span data-k="storyX"></span></div>
-<div class="objective" data-k="objective"></div>
 <div class="countdown" data-k="countdown"></div>
-<div class="wmeter" data-k="wmeter"><div class="wtrack"><i class="wzone" data-k="wzone"></i><i class="wneedle" data-k="wneedle"></i></div><span data-k="wtxt"></span></div>
-<div class="driftmeter" data-k="driftm"><div class="dgauge"><i data-k="dneedle"></i></div><b data-k="driftPts"></b><span data-k="driftInfo"></span><div class="dtags" data-k="dtags"></div></div>
 <div class="levelup" data-k="levelup"><div class="lu-head"><b>CHOOSE AN UPGRADE</b><span data-k="luHint"></span></div><div class="cards" data-k="cards"></div></div>
-<div class="upbadge" data-k="upbadge"></div>
 <div class="lvlburst" data-k="lvlburst"><div class="rays"></div><div class="lvl-num" data-k="lvlNum"></div><div class="lvl-sub" data-k="lvlSub"></div></div>
-<div class="ptag" data-k="tag"></div>
-<div class="panel keycard" data-k="keycard"></div>
-<div class="gauges" data-k="gauges"></div>
-<div class="camtag" data-k="camtag"></div>
 `;
 
 type Els = Record<string, HTMLElement>;
@@ -77,7 +95,7 @@ export class Hud {
     this.mm = this.root.querySelector<HTMLCanvasElement>('.minimap')!.getContext('2d')!;
     this.lines = this.root.querySelector<HTMLCanvasElement>('.lines')!;
     this.lctx = this.lines.getContext('2d')!;
-    this.els.race.style.display = game.opts.mode === 'race' ? '' : 'none';
+    this.els.race.style.display = game.opts.mode === 'race' || game.opts.mode === 'f1' ? '' : 'none';
     this.els.rideKey.textContent = p.ctrl.bindings.ride[0].replace('Key', '');
     this.buildKeycard();
     this.els.gauges.appendChild(this.gauges.canvas);
@@ -85,6 +103,8 @@ export class Hud {
       this.els.tag.textContent = `P${p.index + 1} · ${p.name}`;
       this.els.tag.style.color = hex(p.color);
     }
+    this.root.classList.add('mode-' + game.opts.mode);
+    this.root.classList.add('mode-' + game.opts.mode);
     game.hudLayer.appendChild(this.root);
   }
 
@@ -356,6 +376,8 @@ export class Hud {
     e.xpBar.style.width = (s.xp / p.xpNeed()) * 100 + '%';
     e.score.textContent = s.score + (s.combo > 1 ? ` (x${s.combo})` : '');
     e.gems.textContent = String(s.gems);
+    e.weaponLbl.textContent = g.opts.mode === 'f1' ? 'Tyres' : g.opts.mode === 'drift' ? 'Drift' : 'Weapon';
+    e.weaponLbl.textContent = g.opts.mode === 'f1' ? 'Tyres' : g.opts.mode === 'drift' ? 'Drift' : 'Weapon';
     e.weapon.textContent = g.opts.mode === 'f1' ? `${p.f1.compound} tyres · ${p.f1.stops} stop${p.f1.stops === 1 ? '' : 's'}` : g.opts.mode === 'drift' ? `Drift ${p.drift.total.toLocaleString()} · best ${p.drift.best.toLocaleString()}` : WEAPONS[s.weapon].name + (p.nitroLatched ? ' · NOS ON' : '');
     e.dist.textContent = (s.dist / 1000).toFixed(2) + ' km';
     e.clock.textContent = g.env.label;
@@ -416,55 +438,150 @@ export class Hud {
     }
   }
 
+  /** Static track artwork for the overview map (drawn once, reused every frame). */
+  private trackArt: { canvas: HTMLCanvasElement; toM: (x: number, z: number) => [number, number] } | null = null;
+  private mapH = 0;
+
   private minimap() {
-    const mm = this.mm, p = this.p, g = this.game, P = p.P, W2 = 160, R = g.opts.mode === 'race' ? 320 : 200, sc = W2 / (2 * R);
-    mm.clearRect(0, 0, W2, W2);
-    mm.fillStyle = 'rgba(40,70,45,.9)';
-    mm.fillRect(0, 0, W2, W2);
-    const toM = (x: number, z: number): [number, number] => [W2 / 2 - (x - P.x) * sc, W2 / 2 - (z - P.z) * sc];
-    mm.strokeStyle = '#d8d8d8';
-    mm.lineWidth = 3;
-    g.layout.drawRoads(mm, toM, P.x, P.z, R);
+    const g = this.game, L = g.layout as unknown as Partial<TrackLine>;
+    const overview = (g.opts.mode === 'race' || g.opts.mode === 'f1') && !!L.px && !!L.n;
+    if (overview) this.overviewMap(L as TrackLine);
+    else this.localMap();
+  }
+
+  /** Race / F1: the whole circuit fitted in the box (north up), every car as a dot, like a TV track map. */
+  private overviewMap(t: TrackLine) {
+    const mm = this.mm, p = this.p, g = this.game, W = mm.canvas.width, H = mm.canvas.height;
+    if (!this.trackArt) {
+      let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
+      for (let i = 0; i < t.n; i++) { x0 = Math.min(x0, t.px[i]); x1 = Math.max(x1, t.px[i]); z0 = Math.min(z0, t.pz[i]); z1 = Math.max(z1, t.pz[i]); }
+      const pad = 14, sc = Math.min((W - pad * 2) / (x1 - x0 || 1), (H - pad * 2) / (z1 - z0 || 1)), cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
+      const toM = (x: number, z: number): [number, number] => [W / 2 + (x - cx) * sc, H / 2 + (z - cz) * sc];
+      const c = document.createElement('canvas');
+      c.width = W;
+      c.height = H;
+      const a = c.getContext('2d')!;
+      a.fillStyle = 'rgba(16,22,34,.92)';
+      a.fillRect(0, 0, W, H);
+      const path = (from: number, to: number) => {
+        a.beginPath();
+        for (let k = 0, i = from; k <= ((to - from + t.n) % t.n || t.n); k += 2, i = (from + k) % t.n) {
+          const [u, v] = toM(t.px[i], t.pz[i]);
+          if (k === 0) a.moveTo(u, v); else a.lineTo(u, v);
+        }
+      };
+      a.lineCap = a.lineJoin = 'round';
+      a.strokeStyle = 'rgba(0,0,0,.6)'; a.lineWidth = 7; path(0, 0); a.closePath(); a.stroke();
+      a.strokeStyle = '#d7dce4'; a.lineWidth = 3.5; path(0, 0); a.closePath(); a.stroke();
+      const f1 = g.layout as unknown as { drsZones?: { i0: number; i1: number }[]; pit?: { i0: number; i1: number; side: number } };
+      a.strokeStyle = '#39c46a'; a.lineWidth = 3.5;
+      for (const z of f1.drsZones ?? []) { path(z.i0, z.i1); a.stroke(); }
+      if (f1.pit) {
+        a.strokeStyle = '#3c8dff'; a.lineWidth = 2;
+        a.beginPath();
+        const span = (f1.pit.i1 - f1.pit.i0 + t.n) % t.n;
+        for (let k = 0; k <= span; k += 2) {
+          const i = (f1.pit.i0 + k) % t.n, [u, v] = toM(t.px[i] + t.tz[i] * f1.pit.side * 14, t.pz[i] - t.tx[i] * f1.pit.side * 14);
+          if (k === 0) a.moveTo(u, v); else a.lineTo(u, v);
+        }
+        a.stroke();
+      }
+      // start/finish line across the track
+      const [sx, sz] = toM(t.px[0], t.pz[0]);
+      a.save();
+      a.translate(sx, sz);
+      a.rotate(Math.atan2(t.pz[1] - t.pz[0], t.px[1] - t.px[0]));
+      a.fillStyle = '#fff'; a.fillRect(-1.5, -6, 3, 12);
+      a.fillStyle = '#111'; a.fillRect(-1.5, -6, 3, 3); a.fillRect(-1.5, 0, 3, 3);
+      a.restore();
+      a.fillStyle = 'rgba(255,255,255,.75)'; a.font = 'bold 10px system-ui'; a.fillText('N ↑', 6, 13);
+      this.trackArt = { canvas: c, toM };
+    }
+    const { canvas, toM } = this.trackArt;
+    mm.clearRect(0, 0, W, H);
+    mm.drawImage(canvas, 0, 0);
+    // next checkpoint
+    if (g.race && !p.race.finished) {
+      const n = g.race.nextGate(p), [a, b] = toM(n.x, n.z);
+      mm.strokeStyle = '#7cffb2'; mm.lineWidth = 2;
+      mm.beginPath(); mm.arc(a, b, 5, 0, TAU); mm.stroke();
+    }
+    const car = (x: number, z: number, color: number, label?: string) => {
+      const [a, b] = toM(x, z);
+      mm.fillStyle = hex(color);
+      mm.strokeStyle = 'rgba(0,0,0,.8)';
+      mm.lineWidth = 1.5;
+      mm.beginPath(); mm.arc(a, b, 3.6, 0, TAU); mm.fill(); mm.stroke();
+      if (label) { mm.fillStyle = '#fff'; mm.font = 'bold 9px system-ui'; mm.fillText(label, a + 5, b - 4); }
+    };
+    const order = g.race ? g.race.standings() : [];
+    const pos = (id: string) => { const i = order.findIndex((r) => r.id === id); return i >= 0 ? String(i + 1) : undefined; };
+    g.ai?.list.forEach((r) => car(r.x, r.z, r.color, pos(r.id)));
+    g.remotes?.forEach((r) => car(r.x, r.z, r.color, pos(r.id)));
+    for (const o of g.players) if (o !== p) car(o.P.x, o.P.z, o.color, pos(String(o.index)));
+    // me: bigger marker with heading
+    const [mx, mz] = toM(p.P.x, p.P.z);
+    mm.save();
+    mm.translate(mx, mz);
+    mm.rotate(Math.atan2(Math.cos(p.P.h), Math.sin(p.P.h)) - Math.PI / 2 + Math.PI);
+    mm.fillStyle = '#ffd23f'; mm.strokeStyle = '#000'; mm.lineWidth = 1.5;
+    mm.beginPath(); mm.moveTo(0, -7); mm.lineTo(5, 5); mm.lineTo(-5, 5); mm.closePath(); mm.fill(); mm.stroke();
+    mm.restore();
+  }
+
+  /**
+   * Open world / drift: heading-up local map (the road ahead is always up), round, with a compass "N" on the rim.
+   * Screen x = −(d·left), screen y = −(d·forward): exactly what you see from behind the vehicle.
+   */
+  private localMap() {
+    const mm = this.mm, p = this.p, g = this.game, P = p.P, W = mm.canvas.width, H = mm.canvas.height;
+    const R = g.opts.mode === 'drift' ? 260 : 220, sc = W / (2 * R), cx = W / 2, cy = H * 0.6;
+    this.mapH = lerpAngle(this.mapH, P.h, 0.35);
+    const h = this.mapH, fx = Math.sin(h), fz = Math.cos(h), lx = Math.cos(h), lz = -Math.sin(h);
+    const toM = (x: number, z: number): [number, number] => {
+      const dx = x - P.x, dz = z - P.z;
+      return [cx - (dx * lx + dz * lz) * sc, cy - (dx * fx + dz * fz) * sc];
+    };
+    mm.clearRect(0, 0, W, H);
+    mm.save();
+    mm.beginPath(); mm.arc(W / 2, H / 2, W / 2 - 1, 0, TAU); mm.clip();
+    mm.fillStyle = 'rgba(34,58,42,.94)';
+    mm.fillRect(0, 0, W, H);
+    mm.lineCap = mm.lineJoin = 'round';
+    mm.strokeStyle = 'rgba(0,0,0,.45)'; mm.lineWidth = Math.max(5, ROAD.asphalt * 2 * sc + 2);
+    g.layout.drawRoads(mm, toM, P.x, P.z, R * 1.5);
+    mm.strokeStyle = '#d8dde4'; mm.lineWidth = Math.max(3, ROAD.asphalt * 2 * sc);
+    g.layout.drawRoads(mm, toM, P.x, P.z, R * 1.5);
+    const inMap = (a: number, b: number) => (a - W / 2) ** 2 + (b - H / 2) ** 2 < (W / 2) ** 2;
+    for (const poi of g.chunks.pois) {
+      const [a, b] = toM(poi.x, poi.z);
+      if (!inMap(a, b)) continue;
+      mm.fillStyle = POI_COLOR[poi.kind]; mm.strokeStyle = 'rgba(0,0,0,.7)'; mm.lineWidth = 1.5;
+      mm.fillRect(a - 4, b - 4, 8, 8); mm.strokeRect(a - 4, b - 4, 8, 8);
+    }
+    for (const r of g.terrain.ramps) { const [a, b] = toM(r.x, r.z); if (inMap(a, b)) { mm.fillStyle = '#f2a33a'; mm.fillRect(a - 2.5, b - 2.5, 5, 5); } }
     g.entities.forEachVisible((en) => {
       const [a, b] = toM(en.x, en.z);
-      if (a < 0 || b < 0 || a > W2 || b > W2) return;
+      if (!inMap(a, b)) return;
       if (en.type === 'gem') { mm.fillStyle = '#46e3ff'; mm.fillRect(a - 1.5, b - 1.5, 3, 3); }
       else { mm.fillStyle = en.type === 'drone' ? '#ff3355' : '#ffd23f'; mm.beginPath(); mm.arc(a, b, 3.5, 0, TAU); mm.fill(); }
     });
-    for (const poi of g.chunks.pois) {
-      const [a, b] = toM(poi.x, poi.z);
-      if (a < -6 || b < -6 || a > W2 + 6 || b > W2 + 6) continue;
-      mm.fillStyle = POI_COLOR[poi.kind];
-      mm.fillRect(a - 4, b - 4, 8, 8);
-      mm.strokeStyle = 'rgba(0,0,0,.7)';
-      mm.lineWidth = 1.5;
-      mm.strokeRect(a - 4, b - 4, 8, 8);
-    }
-    for (const r of g.terrain.ramps) { const [a, b] = toM(r.x, r.z); mm.fillStyle = '#f2a33a'; mm.fillRect(a - 2.5, b - 2.5, 5, 5); }
-    if (g.race && !p.race.finished) {
-      const n = g.race.nextGate(p), [a, b] = toM(n.x, n.z);
-      mm.strokeStyle = '#7cffb2';
-      mm.lineWidth = 2;
-      mm.beginPath();
-      mm.arc(clamp(a, 6, W2 - 6), clamp(b, 6, W2 - 6), 5, 0, TAU);
-      mm.stroke();
-    }
-    const dot = (x: number, z: number, color: number) => { const [a, b] = toM(x, z); mm.fillStyle = hex(color); mm.beginPath(); mm.arc(a, b, 4, 0, TAU); mm.fill(); };
+    const dot = (x: number, z: number, color: number) => { const [a, b] = toM(x, z); if (!inMap(a, b)) return; mm.fillStyle = hex(color); mm.strokeStyle = '#000'; mm.lineWidth = 1.5; mm.beginPath(); mm.arc(a, b, 4, 0, TAU); mm.fill(); mm.stroke(); };
     for (const o of g.players) if (o !== p) dot(o.P.x, o.P.z, o.color);
     g.remotes?.forEach((r) => dot(r.x, r.z, r.color));
-    if (!p.riding) dot(p.B.x, p.B.z, 0x4d8dff);
-    mm.save();
-    mm.translate(W2 / 2, W2 / 2);
-    mm.rotate(-P.h);
-    mm.fillStyle = '#ffd23f';
-    mm.beginPath();
-    mm.moveTo(0, -7); mm.lineTo(5, 6); mm.lineTo(-5, 6);
-    mm.closePath();
-    mm.fill();
+    g.ai?.list.forEach((r) => dot(r.x, r.z, r.color));
+    if (!p.riding) dot(p.B.x, p.B.z, 0x4d8dff); // where you parked
     mm.restore();
-    mm.fillStyle = 'rgba(255,255,255,.7)';
-    mm.font = 'bold 10px system-ui';
-    mm.fillText('N', W2 / 2 - 3, 11);
+    // me: fixed arrow pointing up
+    mm.fillStyle = '#ffd23f'; mm.strokeStyle = '#000'; mm.lineWidth = 1.5;
+    mm.beginPath(); mm.moveTo(cx, cy - 8); mm.lineTo(cx + 6, cy + 6); mm.lineTo(cx, cy + 3); mm.lineTo(cx - 6, cy + 6); mm.closePath(); mm.fill(); mm.stroke();
+    // compass: "N" on the rim where north (-z in world) lies
+    const [nx, nz] = toM(P.x, P.z - 10000), ang = Math.atan2(nz - cy, nx - cx), rr = W / 2 - 10;
+    mm.fillStyle = '#ff5a6a'; mm.font = 'bold 11px system-ui'; mm.textAlign = 'center'; mm.textBaseline = 'middle';
+    mm.fillText('N', W / 2 + Math.cos(ang) * rr, H / 2 + Math.sin(ang) * rr);
+    mm.textAlign = 'start'; mm.textBaseline = 'alphabetic';
+    mm.strokeStyle = 'rgba(255,255,255,.25)'; mm.lineWidth = 2;
+    mm.beginPath(); mm.arc(W / 2, H / 2, W / 2 - 1, 0, TAU); mm.stroke();
   }
 
   dispose() {
