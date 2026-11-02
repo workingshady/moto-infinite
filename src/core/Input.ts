@@ -3,32 +3,33 @@
 
 export type Action =
   | 'up' | 'down' | 'left' | 'right' | 'nitro' | 'jump' | 'fire'
-  | 'ride' | 'weapon' | 'respawn' | 'trick' | 'drift' | 'upgrade' | 'reroll' | 'pick1' | 'pick2' | 'pick3';
+  | 'ride' | 'weapon' | 'respawn' | 'trick' | 'drift' | 'upgrade' | 'reroll' | 'pick1' | 'pick2' | 'pick3' | 'camera';
 
 type Bindings = Record<Action, string[]>;
 
 export const BINDINGS: Record<'solo' | 'p1' | 'p2', Bindings> = {
   solo: {
     up: ['ArrowUp', 'KeyW'], down: ['ArrowDown', 'KeyS'], left: ['ArrowLeft', 'KeyA'], right: ['ArrowRight', 'KeyD'],
-    nitro: ['ShiftLeft', 'ShiftRight', 'Space', 'KeyN'], jump: ['Space'], fire: ['KeyF'], ride: ['KeyE'], weapon: ['KeyQ'],
-    respawn: ['KeyR'], trick: ['KeyC'], drift: ['KeyX'], upgrade: ['Tab'], reroll: ['KeyT'], pick1: ['Digit1'], pick2: ['Digit2'], pick3: ['Digit3'],
+    nitro: ['ShiftLeft', 'ShiftRight', 'Space', 'KeyN', 'KeyB'], jump: ['Space'], fire: ['KeyF'], ride: ['KeyE'], weapon: ['KeyQ'],
+    respawn: ['KeyR'], trick: ['KeyC'], drift: ['KeyX'], upgrade: ['Tab'], reroll: ['KeyT'], pick1: ['Digit1'], pick2: ['Digit2'], pick3: ['Digit3'], camera: ['KeyV'],
   },
   p1: {
     up: ['KeyW'], down: ['KeyS'], left: ['KeyA'], right: ['KeyD'],
     nitro: ['ShiftLeft', 'Space'], jump: ['Space'], fire: ['KeyF'], ride: ['KeyE'], weapon: ['KeyQ'],
-    respawn: ['KeyR'], trick: ['KeyC'], drift: ['KeyX'], upgrade: ['Tab'], reroll: ['KeyT'], pick1: ['Digit1'], pick2: ['Digit2'], pick3: ['Digit3'],
+    respawn: ['KeyR'], trick: ['KeyC'], drift: ['KeyX'], upgrade: ['Tab'], reroll: ['KeyT'], pick1: ['Digit1'], pick2: ['Digit2'], pick3: ['Digit3'], camera: ['KeyV'],
   },
   p2: {
     up: ['ArrowUp'], down: ['ArrowDown'], left: ['ArrowLeft'], right: ['ArrowRight'],
     nitro: ['ShiftRight', 'Numpad0'], jump: ['ShiftRight', 'Numpad0'], fire: ['Slash', 'Numpad1'], ride: ['Enter', 'NumpadEnter'],
-    weapon: ['Period', 'Numpad2'], respawn: ['Backspace', 'Numpad3'], trick: ['Quote', 'Numpad4'], drift: ['Semicolon', 'Numpad5'], upgrade: ['Backslash', 'NumpadAdd'], reroll: ['BracketRight', 'NumpadSubtract'], pick1: ['Digit8', 'Numpad7'], pick2: ['Digit9', 'Numpad8'], pick3: ['Digit0', 'Numpad9'],
+    weapon: ['Period', 'Numpad2'], respawn: ['Backspace', 'Numpad3'], trick: ['Quote', 'Numpad4'], drift: ['Semicolon', 'Numpad5'], upgrade: ['Backslash', 'NumpadAdd'], reroll: ['BracketRight', 'NumpadSubtract'], pick1: ['Digit8', 'Numpad7'], pick2: ['Digit9', 'Numpad8'], pick3: ['Digit0', 'Numpad9'], camera: ['KeyL', 'NumpadDecimal'],
   },
 };
 
 // Standard gamepad layout: 0=A 1=B 2=X 3=Y 4=LB 5=RB 6=LT 7=RT 8=Back 9=Start 12-15=D-pad
+// Every button is taken, so the camera cycles with the right stick pushed up (see poll).
 const PAD: Record<Action, number[]> = {
   up: [0, 7, 12], down: [6, 13], left: [14], right: [15], nitro: [1, 5], jump: [1], fire: [2],
-  ride: [3], weapon: [8], respawn: [], trick: [10], drift: [4], upgrade: [11], reroll: [], pick1: [14], pick2: [12], pick3: [15],
+  ride: [3], weapon: [8], respawn: [], trick: [10], drift: [4], upgrade: [11], reroll: [], pick1: [14], pick2: [12], pick3: [15], camera: [],
 };
 
 export class Controller {
@@ -144,6 +145,7 @@ export class Input {
         if (ay > 0.5) c.held.add('down');
         const rx = pad.axes[2] ?? 0;
         if (Math.abs(rx) > 0.2) c.lookDelta -= rx * 0.05;
+        if ((pad.axes[3] ?? 0) < -0.7) c.held.add('camera');
         if (pad.buttons[9]?.pressed) start = true;
       }
       if (i === 0) {

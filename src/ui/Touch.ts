@@ -3,7 +3,7 @@ import type { Action, Input } from '../core/Input';
 
 const BUTTONS: [string, Action[]][] = [
   ['◀', ['left']], ['▶', ['right']],
-  ['E', ['ride']], ['GUN', ['weapon']], ['JUMP', ['jump']], ['NOS', ['nitro']], ['FIRE', ['fire']], ['▼', ['down']], ['▲', ['up']],
+  ['E', ['ride']], ['🎥', ['camera']], ['GUN', ['weapon']], ['JUMP', ['jump']], ['NOS', ['nitro']], ['FIRE', ['fire']], ['▼', ['down']], ['▲', ['up']],
 ];
 
 export function createTouch(input: Input): HTMLDivElement | null {

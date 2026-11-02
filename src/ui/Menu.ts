@@ -9,6 +9,7 @@ import { STORY } from '../data/story';
 import { CharacterPreview, LobbyShowcase, drawMapPreview } from './Preview';
 import { VEHICLES, vehicleById, type VehicleKind } from '../data/vehicles';
 import { DRIFT_TRACKS } from '../world/DriftTrack';
+import { F1_TRACKS } from '../world/F1Track';
 import { clamp } from '../utils/math';
 
 const bar = (v: number) => `<i style="width:${Math.round(clamp(v, 0.05, 1) * 100)}%"></i>`;
@@ -26,8 +27,14 @@ function garageCards(sel: string, attr: string, kind: VehicleKind) {
 }
 
 import { prefs, savePrefs } from '../core/prefs';
+import { CAM_LABEL, CAM_VIEWS, isCamView } from '../core/cameraViews';
 
 const K = (k: string) => `<kbd class="key">${k}</kbd>`;
+/** Keys shown by the Settings keyboard tester. */
+const KEYTEST: [string, string][] = [
+  ['ArrowUp', '↑'], ['ArrowLeft', '←'], ['ArrowDown', '↓'], ['ArrowRight', '→'], ['Space', 'Space'], ['ShiftLeft', 'Shift'], ['ShiftRight', 'R-Shift'],
+  ['KeyN', 'N'], ['KeyB', 'B'], ['KeyW', 'W'], ['KeyA', 'A'], ['KeyS', 'S'], ['KeyD', 'D'], ['KeyC', 'C'], ['KeyX', 'X'],
+];
 /** Onboarding slides: what to press, and what it looks like when you get it right. */
 const SLIDES: { title: string; art: string; body: string; result?: string }[] = [
   {
@@ -62,7 +69,7 @@ const SLIDES: { title: string; art: string; body: string; result?: string }[] = 
   {
     title: 'Drift, wheelies & the garage',
     art: `<div class="trick-row"><div>${K('X')}<small>handbrake drift</small></div><div>${K('C')}<small>wheelie (ground)</small></div><div><span class="big-emoji" style="font-size:40px">🏎️</span><small>15 vehicles</small></div></div>`,
-    body: `Pick from <b>5 motorcycles and 10 cars</b> in the 🏁 Garage, each with real-world-style handling. Tap ${K('X')} (handbrake) into a corner to kick the tail out, then steer <b>against</b> the slide to hold the angle. Angle × speed = points, longer chains = bigger multiplier, hitting a wall loses the chain. On a bike, hold ${K('C')} on the ground for a wheelie: ${K('↑')} lifts, ${K('↓')} lowers, too far and you loop out.`,
+    body: `Pick from <b>5 motorcycles and 10 cars</b> in the 🏁 Garage, each with real-world-style handling. Tap ${K('X')} (handbrake) into a corner to kick the tail out, then steer <b>against</b> the slide to hold the angle. Angle × speed = points, longer chains = bigger multiplier, hitting a wall loses the chain. On a bike, hold ${K('C')} on the ground for a wheelie at any speed (even with nitro): ${K('↑')}/${K('↓')} adjust the angle without braking, release ${K('C')} to land.`,
     result: 'DRIFT 4,820 · x2.5 · 6.1s · Crane Corner',
   },
   {
@@ -84,7 +91,7 @@ const SLIDES: { title: string; art: string; body: string; result?: string }[] = 
 ];
 
 
-export interface Profile { name: string; color: number; name2: string; color2: number; vehicle?: string; vehicle2?: string }
+export interface Profile { name: string; color: number; name2: string; color2: number; vehicle?: string; vehicle2?: string; f1car?: string }
 export type Setup = LobbySettings & { split: boolean };
 
 export interface MenuActions {
@@ -104,6 +111,7 @@ export interface MenuActions {
   raceAgain(): void;
   setQuality(q: QualityName): void;
   toggleMute(): boolean;
+  hearEngine(vehicle: string): void;
   volumes(): void;
   saveProfile(p: Profile): void;
 }
@@ -125,7 +133,7 @@ export class Menu {
   readonly root: HTMLDivElement;
   private screen: Screen = 'home';
   private back: Screen = 'home';
-  private setup: Setup = { split: false, mode: 'open', trackId: 'coast', laps: 3, pvp: false, seed: newSeed(), time: 'day', weather: 'clear', theme: 'mixed', gen: { ...DEFAULT_GEN }, maxPlayers: 8, locked: false, drones: 2 };
+  private setup: Setup = { split: false, mode: 'open', trackId: 'coast', laps: 3, pvp: false, seed: newSeed(), time: 'day', weather: 'clear', theme: 'mixed', gen: { ...DEFAULT_GEN }, maxPlayers: 8, locked: false, drones: 2, ai: 5, session: 'race', tyre: 'medium' };
   private lobby: LobbyView | null = null;
   private genKey: keyof WorldGen = 'terrain';
   private slide = 0;
@@ -137,6 +145,9 @@ export class Menu {
   private garageKind: VehicleKind = 'bike';
   private preview = new CharacterPreview();
   private lineup = new LobbyShowcase();
+  /** Settings → keyboard tester: shows live which game keys the browser actually receives (ghosting check). */
+  private keyTest = false;
+  private keysDown = new Set<string>();
   inGame = false;
 
   constructor(private a: MenuActions, public profile: Profile, public quality: QualityName, private muted: () => boolean) {
@@ -145,6 +156,23 @@ export class Menu {
     document.body.appendChild(this.root);
     this.root.addEventListener('click', (e) => this.click(e));
     this.root.addEventListener('change', (e) => this.change(e));
+    const track = (e: KeyboardEvent, down: boolean) => {
+      if (down) this.keysDown.add(e.code);
+      else this.keysDown.delete(e.code);
+      if (!this.paintKeyTest()) return;
+      if (KEYTEST.some(([c]) => c === e.code)) e.preventDefault(); // Space/arrows must not click buttons or scroll
+    };
+    addEventListener('keydown', (e) => track(e, true), true);
+    addEventListener('keyup', (e) => track(e, false), true);
+    addEventListener('blur', () => { this.keysDown.clear(); this.paintKeyTest(); });
+  }
+
+  /** Redraws the key tester if it is on screen; returns whether it is. */
+  private paintKeyTest() {
+    const el = this.keyTest && this.visible && this.screen === 'settings' ? this.root.querySelector<HTMLElement>('[data-keytest]') : null;
+    if (!el) return false;
+    el.innerHTML = KEYTEST.map(([c, l]) => `<kbd class="key${this.keysDown.has(c) ? ' on' : ''}">${l}</kbd>`).join('');
+    return true;
   }
 
   get visible() {
@@ -194,6 +222,7 @@ export class Menu {
   }
 
   private afterRender() {
+    this.paintKeyTest();
     const host = this.root.querySelector<HTMLElement>('#charHost');
     if (host) {
       const p2 = this.screen === 'garage' && this.garageFor === 2;
@@ -230,12 +259,22 @@ export class Menu {
         <div class="modes">
           <button class="mode ${s.mode === 'open' ? 'on' : ''}" data-opt="mode" data-val="open"><b>🌄 Open world</b><span>Endless roads, story chapters, drones, challenges, level-ups</span></button>
           <button class="mode ${s.mode === 'race' ? 'on' : ''}" data-opt="mode" data-val="race"><b>🏁 Circuit race</b><span>Closed loop, checkpoint gates, laps, positions, best-lap ghost</span></button>
+          <button class="mode ${s.mode === 'f1' ? 'on' : ''}" data-opt="mode" data-val="f1"><b>🏎 Formula 1</b><span>Real circuits: Monza, Silverstone, Spa, Monaco, Suzuka, Bahrain. Downforce, DRS, tyres, pit stops, AI grid</span></button>
           <button class="mode ${s.mode === 'drift' ? 'on' : ''}" data-opt="mode" data-val="drift"><b>🌀 Drift</b><span>8 venues: port, mountain pass, skidpad, gymkhana, airfield, harbor, car park, street. Score angle × speed, chain combos</span></button>
         </div>
+        ${s.mode === 'f1' ? `
+        <div class="opt"><span>Circuit</span><div class="chips">${chips('trackId', F1_TRACKS.map((t) => t.id), s.trackId, (id) => { const t = F1_TRACKS.find((x) => x.id === id)!; return `${t.name}`; })}</div></div>
+        <p class="hint">${escapeHtml(F1_TRACKS.find((t) => t.id === s.trackId)?.blurb ?? '')} · ${F1_TRACKS.find((t) => t.id === s.trackId)?.lengthKm ?? ''} km · real layout</p>
+        <div class="opt"><span>Session</span><div class="chips">${chips('session', ['race', 'quali'] as const, s.session, (x) => (x === 'race' ? '🏁 Grand Prix' : '⏱ Time trial'))}</div></div>
+        <div class="opt"><span>Laps</span><div class="chips">${chips('laps', [1, 3, 5, 10], LAPS.includes(s.laps) ? s.laps : -1, (n) => `${n}`)}</div></div>
+        ${s.session === 'race' ? `<div class="opt"><span>AI grid</span><div class="chips">${chips('ai', [0, 3, 5, 9, 15], s.ai, (n) => (n ? `${n} rivals` : 'None'))}</div></div>` : ''}
+        <div class="opt"><span>Tyres</span><div class="chips">${chips('tyre', ['soft', 'medium', 'hard'] as const, s.tyre, (x) => ({ soft: '🔴 Soft (fast, short)', medium: '🟡 Medium', hard: '⚪ Hard (lasts long)' })[x])}</div></div>
+        <div class="opt"><span>Car</span><div class="chips">${(['f1_2026', 'f1_v10', 'f1_classic'] as const).map((id) => `<button class="chip ${(this.profile.f1car ?? 'f1_2026') === id ? 'on' : ''}" data-f1car="${id}">${vehicleById(id).name} · ${vehicleById(id).era}</button>`).join('')}</div></div>
+        <p class="hint"><b>Keys:</b> C = DRS / straight mode in DRS zones · Space = ERS deploy (recharges under braking) · stop in the pit box for fresh tyres (80 km/h limiter). Five red lights, then lights out: moving early = +5 s.</p>` : ''}
         ${s.mode === 'drift' ? `
         <div class="opt"><span>Venue</span><div class="chips">${chips('trackId', DRIFT_TRACKS.map((t) => t.id), s.trackId, (id) => DRIFT_TRACKS.find((t) => t.id === id)!.name)}</div></div>
         <p class="hint">${escapeHtml(DRIFT_TRACKS.find((t) => t.id === s.trackId)?.blurb ?? '')} <b>Tip:</b> drift cars (Kitsune, Panda 86, Brute V8, Kaze 7R) slide easiest. X = handbrake.</p>` : ''}
-        ${s.mode === 'drift' ? '' : s.mode === 'open' ? `
+        ${s.mode === 'drift' || s.mode === 'f1' ? '' : s.mode === 'open' ? `
         <div class="opt"><span>World</span><div class="chips">${chips('theme', THEMES, s.theme, (t) => THEME_DEFS[t].label)}</div></div>
         <p class="hint">${THEME_DEFS[s.theme].blurb}</p>
         <div class="opt"><span>Drones</span><div class="chips">${chips('drones', [0, 1, 2, 3], s.drones ?? 2, (i) => (i === 0 ? '🚫 ' : '🛸 ') + DRONE_LEVELS[i].label)}</div></div>
@@ -248,6 +287,7 @@ export class Menu {
         <p class="hint">${track.blurb}${s.trackId === 'random' ? ' <button class="chip" data-opt="seed" data-val="new">🎲 Reroll</button>' : ''}</p>
         <div class="opt"><span>Laps</span><div class="chips">${chips('laps', LAPS, customLaps ? -1 : s.laps, (n) => `${n}`)}
           <label class="custom ${customLaps ? 'on' : ''}">Custom <input type="number" min="1" max="50" value="${s.laps}" data-opt="lapsCustom" ${dis}></label></div></div>
+        <div class="opt"><span>AI rivals</span><div class="chips">${chips('ai', [0, 3, 5, 7], s.ai, (n) => (n ? `${n}` : 'None'))}</div></div>
         ${s.trackId === 'random' ? `<details class="gen"><summary>🛠 Scenery generator</summary>${genRow('terrain', 'Terrain')}${genRow('water', 'Water')}${genRow('flora', 'Nature')}</details>` : ''}`}
         <div class="opt"><span>Time</span><div class="chips">${chips('time', TIMES, s.time, (t) => TIME_LABEL[t])}</div></div>
         <div class="opt"><span>Weather</span><div class="chips">${chips('weather', WEATHERS, s.weather, (w) => `${WEATHER_ICON[w]} ${w === 'dynamic' ? 'Changing' : WEATHER_DEFS[w].label}`)}</div></div>
@@ -273,6 +313,7 @@ export class Menu {
             <h3>${escapeHtml(v.name)}</h3>
             <div class="dim small">${v.cls} · ${v.era} · ${v.spec.layout}</div>
             <p class="hint">${escapeHtml(v.desc)}</p>
+            <button class="chip hot" data-go="hearEngine">▶ Hear engine</button>
             <div class="spec-grid"><span>Top speed</span><b>${Math.round(v.top * 3.6)} km/h (${Math.round(v.top * 3.6 * 1.6)} with nitro)</b><span>Power</span><b>${v.spec.power}</b><span>Weight</span><b>${v.spec.weight}</b><span>Off-road</span><b>${Math.round(v.offroad * 100)}%</b><span>Wheelies</span><b>${v.wheelie ? 'Yes (C)' : 'No'}</b></div>
           </div>
           <div class="garage-list">
@@ -392,6 +433,11 @@ export class Menu {
         <p class="hint">Riding assist keeps the bike on the road when you're not steering, glances you off trees instead of stopping dead, and softens crashes. Pro = no help.</p>
         <div class="opt"><span>Nitro</span><div class="chips"><button class="chip ${prefs.nitroToggle ? '' : 'on'}" data-go="nitroHold">Hold</button><button class="chip ${prefs.nitroToggle ? 'on' : ''}" data-go="nitroToggle">Tap to toggle</button></div></div>
         <p class="hint">Toggle mode helps keyboards that ignore 3 keys at once: tap nitro once, then only steer.</p>
+        <div class="opt"><span>Camera</span><div class="chips">${CAM_VIEWS.map((v) => `<button class="chip ${(prefs.cams?.[0] ?? 'chase') === v ? 'on' : ''}" data-cam="${v}">${CAM_LABEL[v]}</button>`).join('')}</div></div>
+        <p class="hint">Starting view for every player. Switch any time while riding with ${K('V')} (player 2: ${K('L')}, gamepad: right stick ↑). Each player keeps their own last choice.</p>
+        <div class="opt"><span>Keyboard</span><div class="chips"><button class="chip ${this.keyTest ? 'on' : ''}" data-go="keytest">⌨ Test keys</button></div></div>
+        ${this.keyTest ? `<div class="keytest" data-keytest></div>
+        <p class="hint">Hold the keys you play with: each one lights up while the browser receives it. If ${K('←')} goes dark when you also hold ${K('Space')} + ${K('↑')}, your keyboard is <b>ghosting</b> (a hardware limit, many keyboards drop ↑ ← Space together but not ↑ → Space). Fixes: nitro drives by itself so let go of ${K('↑')}; use ${K('W')}${K('A')}${K('S')}${K('D')}; use ${K('N')} or ${K('B')} for nitro; or pick <b>Nitro: Tap to toggle</b> above. Tip: tapping Shift 5× may open Windows Sticky Keys, so prefer ${K('N')}/${K('B')} for tapping.</p>` : ''}
         <div class="opt"><span>Music</span><div class="chips">${([['Off', 0], ['Low', 0.3], ['Med', 0.6], ['High', 1]] as const).map(([l, v]) => `<button class="chip ${prefs.music === v ? 'on' : ''}" data-music="${v}">${l}</button>`).join('')}</div></div>
         <div class="opt"><span>Effects</span><div class="chips">${([['Off', 0], ['Low', 0.4], ['Med', 0.7], ['High', 1]] as const).map(([l, v]) => `<button class="chip ${prefs.sfx === v ? 'on' : ''}" data-sfx="${v}">${l}</button>`).join('')}</div></div>
         <p class="hint">All sound is generated live: each vehicle has its own engine (cylinders, gears, turbo, exhaust crackle) and the soundtrack builds with the action.</p>
@@ -409,18 +455,20 @@ export class Menu {
             ${row('E', 'Get on / off your bike or car')}
             ${row('R', 'Respawn on the nearest road')}
             ${row('Right-drag · wheel', 'Look around · zoom the camera')}
+            ${row('V', 'Next camera view (see 🎥 Camera & HUD)')}
           </table></section>
           <section><h3>💨 Nitro</h3><table class="keys">
-            ${row('Space / Shift / N', 'Hold for nitro. It drives the vehicle by itself, so Space + ←/→ is enough')}
+            ${row('Space / Shift / N / B', 'Hold for nitro. It drives the vehicle by itself, so nitro + ←/→ is enough: no need to hold ↑')}
             ${row('Settings → Nitro', '"Tap to toggle": tap once, then only steer (fixes keyboards that drop 3 keys at once)')}
+            ${row('Settings → ⌨ Test keys', 'Steer works one way only while boosting? Your keyboard is ghosting (often ↑ ← Space). Let go of ↑, use WASD, or N / B for nitro')}
             ${row('Space (on foot)', 'Jump')}
           </table></section>
           <section><h3>🤸 Wheelies (motorcycles)</h3><table class="keys">
-            ${row('1. Pop', 'Above ~20 km/h hold ↑ (throttle) and press C: the clutch pop lifts the front')}
-            ${row('2. Balance', 'Keep C held. ↑ throttle lifts, ↓ rear brake lowers. Keep the needle in the GREEN band on the wheelie meter')}
-            ${row('3. Physics', 'Below the balance point the front falls; past it the bike tips over backwards. More power = easier pop (Vortex, Dust Devil)')}
-            ${row('4. Land', 'Release C or brake gently. Over 0.8 s earns XP, time in the green = PERFECT BALANCE bonus')}
-            ${row('⚠ Loop out', 'Needle in the red = you flip backwards: tap ↓ early. Settings → Assist Easy helps you balance')}
+            ${row('1. Lift', 'Hold C on the ground at any speed above ~15 km/h, even flat out with nitro. The front comes up by itself and holds there')}
+            ${row('2. Angle', '↑ lifts it higher, ↓ lowers it. During a wheelie ↓ does NOT brake, and the throttle stays on, so you keep your speed')}
+            ${row('3. Steer', '←/→ still steer (slightly softer), so you can wheelie through high-speed runs')}
+            ${row('4. Land', 'Release C: the front comes down smoothly. Over 0.8 s earns XP, time in the GREEN band = PERFECT BALANCE, averaging over 120 km/h = HIGH-SPEED WHEELIE bonus')}
+            ${row('⚠ Assist', 'Normal/Easy: wheelie control stops you looping out, the needle can touch the red but gets pulled back. Pro: real balance physics, hold ↑ too long and you flip over backwards')}
             ${row('Note', 'Every bike except the Thunder Cruiser can wheelie. Cars cannot')}
           </table></section>
           <section><h3>🌀 Drifting (cars and bikes)</h3><table class="keys">
@@ -430,6 +478,16 @@ export class Menu {
             ${row('4. Bank', 'Straighten up for a moment to bank the points (NICE / GREAT / INSANE). Hitting a wall loses the chain')}
             ${row('Best cars', 'Kitsune S-Spec, Panda 86, Brute V8, Kaze 7R slide easiest; GT3 and Hyper grip hard')}
             ${row('Assist', 'Settings → Assist: Normal/Easy hold your angle; Pro lets you spin out')}
+          </table></section>
+          <section><h3>🏎 Formula 1</h3><table class="keys">
+            ${row('Start', 'Five red lights come on one per second, then a random pause. Go on LIGHTS OUT; rolling early = +5 s penalty')}
+            ${row('Downforce', 'The faster you go, the more grip: fast corners are flat-out, slow hairpins need hard braking (~5 g)')}
+            ${row('C · DRS', 'In DRS zones (main straights) opens the rear wing: less drag, higher top speed. Closes when you brake')}
+            ${row('Space · ERS', 'Deploys electric boost. ERS recharges while braking')}
+            ${row('Slipstream', 'Follow close behind another car: less drag, "SLIP" lights up. Pull out to pass')}
+            ${row('Tyres', 'Soft = fastest, wears out quickly. Medium = balanced. Hard = slow but lasts. Sliding and locking up add wear; worn tyres lose grip')}
+            ${row('Pit stop', 'Drive into the pit lane (80 km/h limiter), stop in the box: fresh tyres in ~2.6 s, ERS refilled')}
+            ${row('Grid', 'Up to 15 AI rivals with their own racing lines; the timing tower shows positions and gaps')}
           </table></section>
           <section><h3>🛫 Air tricks</h3><table class="keys">
             ${row('Hands off', 'The bike levels itself and lands straight')}
@@ -451,6 +509,16 @@ export class Menu {
             ${row("' · ;", 'Trick / wheelie · handbrake drift')}
             ${row('8 9 0 · \\ · ]', 'Pick cards · open/close cards · reroll')}
             ${row('Backspace', 'Respawn')}
+            ${row('L / Num .', 'Next camera view')}
+          </table></section>
+          <section><h3>🎥 Camera & HUD</h3><table class="keys">
+            ${row('V (P2: L)', 'Cycle views: Chase → Far chase → Hood → First person → Cinematic → Top-down. Your choice is remembered; set the starting view in Settings')}
+            ${row('First person', 'Bikes: rider\'s helmet view, leans with the bike and follows wheelies and flips. Cars: driver\'s seat. F1: cockpit behind the halo')}
+            ${row('Hood', 'Low camera on the front of the vehicle: best feel for speed and lines')}
+            ${row('Cinematic', 'TV-style trackside shots that cut ahead of you; slow orbit when stopped')}
+            ${row('Right-drag · wheel', 'Look around in any view · zoom (chase views)')}
+            ${row('Gauges', 'Bottom right: speedometer with nitro ring, rev counter with redline and gear, NOS / AIR lights. F1 cars use the F1 dash instead')}
+            ${row('On foot', 'Hood / first person switch to the chase camera until you ride again')}
           </table></section>
           <section><h3>🎮 Gamepad</h3><table class="keys">
             ${row('A / RT · LT', 'Throttle · brake')}
@@ -459,6 +527,7 @@ export class Menu {
             ${row('X · Y', 'Fire · get on/off')}
             ${row('LB · L3', 'Handbrake drift · trick / wheelie')}
             ${row('R3 · Back · Start', 'Cards · next weapon · pause')}
+            ${row('Right stick ← → · ↑', 'Look around · next camera view')}
           </table></section>
           <section><h3>🗺 Modes</h3><p class="hint">
             <b>Open world:</b> story chapters, timed challenges, drones, gas stations (refuel), villages, stunt zones.<br>
@@ -514,6 +583,9 @@ export class Menu {
         s.mode = val as GameMode;
         if (s.mode === 'drift' && !DRIFT_TRACKS.some((t) => t.id === s.trackId)) s.trackId = 'docks';
         if (s.mode === 'race' && !TRACKS.some((t) => t.id === s.trackId)) s.trackId = 'coast';
+        if (s.mode === 'f1' && !F1_TRACKS.some((t) => t.id === s.trackId)) s.trackId = 'monza';
+        const ft = F1_TRACKS.find((t) => t.id === s.trackId);
+        if (s.mode === 'f1' && ft) { s.time = ft.time; s.weather = ft.weather; s.theme = ft.theme; s.laps = ft.laps; }
         const dt = DRIFT_TRACKS.find((t) => t.id === s.trackId);
         if (s.mode === 'drift' && dt && dt.id !== 'random') { s.time = dt.time; s.weather = dt.weather; s.theme = dt.theme; }
         break;
@@ -521,6 +593,8 @@ export class Menu {
       case 'theme': s.theme = val as WorldTheme; break;
       case 'trackId': {
         s.trackId = String(val);
+        const f1t = F1_TRACKS.find((x) => x.id === s.trackId);
+        if (s.mode === 'f1' && f1t) { s.time = f1t.time; s.weather = f1t.weather; s.theme = f1t.theme; s.laps = f1t.laps; break; }
         const dtr = DRIFT_TRACKS.find((x) => x.id === s.trackId);
         if (s.mode === 'drift' && dtr) {
           if (dtr.id !== 'random') { s.time = dtr.time; s.weather = dtr.weather; s.theme = dtr.theme; } else s.seed = newSeed();
@@ -539,6 +613,9 @@ export class Menu {
       case 'seed': s.seed = newSeed(); break;
       case 'maxPlayers': s.maxPlayers = +val; break;
       case 'drones': s.drones = +val; break;
+      case 'ai': s.ai = +val; break;
+      case 'session': s.session = val as 'race' | 'quali'; break;
+      case 'tyre': s.tyre = val as 'soft' | 'medium' | 'hard'; break;
       case 'locked': s.locked = !!val; break;
       case 'gen': s.gen = { ...s.gen, [this.genKey]: +val }; break;
       case 'surprise': {
@@ -573,6 +650,7 @@ export class Menu {
       return this.setOpt(d.opt, d.val ?? '');
     }
     if (d.kick) return this.a.kick(d.kick);
+    if (d.f1car) { P.f1car = d.f1car; this.a.saveProfile(P); return this.show(this.screen); }
     if (d.gkind) { this.garageKind = d.gkind as VehicleKind; return this.show('garage'); }
     if (d.veh) {
       if (this.garageFor === 2) P.vehicle2 = d.veh;
@@ -590,6 +668,7 @@ export class Menu {
     if (d.color2) { this.readNames(); P.color2 = +d.color2; this.a.saveProfile(P); return this.show(this.screen); }
     if (d.music !== undefined) { prefs.music = +d.music; savePrefs(); this.a.volumes(); return this.show('settings'); }
     if (d.sfx !== undefined) { prefs.sfx = +d.sfx; savePrefs(); this.a.volumes(); return this.show('settings'); }
+    if (d.cam && isCamView(d.cam)) { prefs.cams = [d.cam, d.cam]; savePrefs(); return this.show('settings'); }
     if (d.assist) { prefs.assist = +d.assist; savePrefs(); return this.show('settings'); }
     if (d.quality) { this.quality = d.quality as QualityName; this.a.setQuality(this.quality); return this.show('settings'); }
     switch (d.go) {
@@ -624,6 +703,7 @@ export class Menu {
         this.garageBack = this.screen;
         this.garageKind = vehicleById((this.garageFor === 2 ? P.vehicle2 : P.vehicle) ?? 'street').kind;
         return this.show('garage');
+      case 'hearEngine': return this.a.hearEngine((this.garageFor === 2 ? P.vehicle2 : P.vehicle) ?? 'street');
       case 'garageDone':
         if (this.garageBack === 'lobby' && this.lobby) {
           const me = this.lobby.players.find((p) => p.id === this.lobby!.you);
@@ -642,6 +722,11 @@ export class Menu {
       case 'train': prefs.onboarded = true; savePrefs(); return this.a.startTraining();
       case 'nitroHold': prefs.nitroToggle = false; savePrefs(); return this.show('settings');
       case 'nitroToggle': prefs.nitroToggle = true; savePrefs(); return this.show('settings');
+      case 'keytest':
+        this.keyTest = !this.keyTest;
+        this.show('settings');
+        (document.activeElement as HTMLElement | null)?.blur(); // Space must not re-press the button
+        return;
       case 'leave': return this.a.leaveRoom();
       case 'lstart': return this.a.lobbyStart();
       case 'mute': this.a.toggleMute(); return this.show('settings');

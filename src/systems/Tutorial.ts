@@ -25,7 +25,7 @@ export const STEPS: Step[] = [
     title: 'Boost AND steer', keys: 'Space / Shift / N  +  ← →', hint: 'Nitro drives the bike by itself, so you don\'t need ↑. Fewer keys = no keyboard ghosting.',
     done: (t, p, dt) => (t.acc += p.cam.boost > 0.5 && Math.abs(p.B.steer) > 0.4 ? dt : 0) > 1.2,
   },
-  { only: 'bike', title: 'Pop a 1.5 s wheelie', keys: 'Hold ↑ + press C, keep C held', hint: 'Keep the needle in the green band: ↑ lifts, ↓ (rear brake) lowers.', done: counter('wheelie', 1.5), start: (t) => (t.counts.wheelie = 0) },
+  { only: 'bike', title: 'Pop a 1.5 s wheelie', keys: 'Hold C while riding', hint: 'Works at any speed. ↑/↓ adjust the angle (↓ does not brake), release C to land.', done: counter('wheelie', 1.5), start: (t) => (t.counts.wheelie = 0) },
   { only: 'car', title: 'Bank a handbrake drift', keys: 'X into a corner, steer against the slide', hint: 'Straighten up for a moment to bank the points.', done: counter('drift', 150), start: (t) => (t.counts.drift = 0) },
   { title: 'Get big air (0.8 s)', keys: 'Hit an orange ramp ■', hint: 'Ramps are orange squares on the minimap. Hands off in the air = the bike levels itself.', done: (_t, p) => p.B.air && p.B.airT > 0.8 },
   { only: 'bike', title: 'Land a flip', keys: 'In the air: let go, then ↑ or ↓', hint: 'Release ↑ after takeoff, press it again to rotate. Stop before landing.', done: counter('flip', 1), start: (t) => (t.counts.flip = 0) },

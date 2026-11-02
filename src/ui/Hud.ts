@@ -5,18 +5,21 @@ import type { Player } from '../entities/Player';
 import { TIERS, type Card } from '../data/upgrades';
 import type { Viewport } from '../core/Renderer';
 import { WEAPONS } from '../data/weapons';
-import { POI_KINDS, POWERUPS, WHEELIE, type PoiKind, type PowerupKind } from '../config';
+import { F1, POI_KINDS, POWERUPS, WHEELIE, type PoiKind, type PowerupKind } from '../config';
+import { prefs } from '../core/prefs';
 
 const POI_COLOR = Object.fromEntries(POI_KINDS.map((k) => [k.kind, k.color])) as Record<PoiKind, string>;
 import { clamp, escapeHtml, hex, TAU } from '../utils/math';
 import { fmt } from '../systems/Race';
+import { Gauges } from './Gauges';
+import { CAM_LABEL } from '../core/cameraViews';
 
 const TEMPLATE = `
 <canvas class="lines"></canvas>
 <div class="vignette" data-k="vig"></div><div class="hurtfx" data-k="hurtfx"></div><div class="flashfx" data-k="flashfx"></div>
 <div class="floaters" data-k="floaters"></div><div class="reticle" data-k="reticle"><i data-k="tbar"></i></div><div class="cross" data-k="cross"></div><div class="hitmark" data-k="hitmark">✕</div>
 <div class="panel stats">
-  <div class="row"><span><span class="big" data-k="speed">0</span> km/h</span><span data-k="mode">On foot</span></div>
+  <div class="row"><b data-k="mode">On foot</b><span class="dim" data-k="camName"></span></div>
   <div class="row mt"><span>Health</span><span data-k="hpTxt"></span></div><div class="bar"><i class="hp" data-k="hpBar"></i></div>
   <div class="row"><span>Nitro</span><span data-k="nTxt"></span></div><div class="bar"><i class="nitro" data-k="nBar"></i></div>
   <div class="row"><span>Level <b data-k="lvl">1</b></span><span data-k="xpTxt"></span></div><div class="bar"><i class="xp" data-k="xpBar"></i></div>
@@ -27,6 +30,8 @@ const TEMPLATE = `
   <div class="buffs" data-k="buffs"></div>
 </div>
 <div class="panel challenge" data-k="ch"><div class="label">CHALLENGE</div><b data-k="cTxt"></b><div class="bar"><i class="cbar" data-k="cBar"></i></div><div data-k="cTime" class="dim"></div></div>
+<div class="panel f1dash" data-k="f1dash"><div class="f1top"><b data-k="f1speed">0</b><span>km/h</span><i data-k="f1gear">N</i></div><div class="rpm"><i data-k="f1rpm"></i></div><div class="f1row"><span class="tyre" data-k="f1tyre">M</span><span data-k="f1wear">0%</span><span class="lbl">ERS</span><div class="bar ers"><i data-k="f1ers"></i></div></div><div class="f1flags"><span data-k="f1drs">DRS</span><span data-k="f1slip">SLIP</span><span data-k="f1pit">PIT 80</span></div></div>
+<div class="panel tower" data-k="tower"></div>
 <div class="panel racebox" data-k="race"><div class="place" data-k="place"></div><div data-k="lap"></div><div class="dim" data-k="times"></div></div>
 <div class="panel tut" data-k="tut"></div>
 <div class="panel mapwrap"><canvas class="minimap" width="160" height="160"></canvas></div>
@@ -42,6 +47,8 @@ const TEMPLATE = `
 <div class="lvlburst" data-k="lvlburst"><div class="rays"></div><div class="lvl-num" data-k="lvlNum"></div><div class="lvl-sub" data-k="lvlSub"></div></div>
 <div class="ptag" data-k="tag"></div>
 <div class="panel keycard" data-k="keycard"></div>
+<div class="gauges" data-k="gauges"></div>
+<div class="camtag" data-k="camtag"></div>
 `;
 
 type Els = Record<string, HTMLElement>;
@@ -59,6 +66,8 @@ export class Hud {
   private rect: Viewport = { x: 0, y: 0, w: innerWidth, h: innerHeight };
   private _v = new THREE.Vector3();
   private tutKey = '';
+  private gauges = new Gauges();
+  private gaugesOn = false;
 
   constructor(private game: Game, private p: Player) {
     this.root = document.createElement('div');
@@ -71,6 +80,7 @@ export class Hud {
     this.els.race.style.display = game.opts.mode === 'race' ? '' : 'none';
     this.els.rideKey.textContent = p.ctrl.bindings.ride[0].replace('Key', '');
     this.buildKeycard();
+    this.els.gauges.appendChild(this.gauges.canvas);
     if (game.opts.locals.length > 1) {
       this.els.tag.textContent = `P${p.index + 1} · ${p.name}`;
       this.els.tag.style.color = hex(p.color);
@@ -81,14 +91,23 @@ export class Hud {
   /** Compact key list for this player's vehicle and bindings. */
   private buildKeycard() {
     const b = this.p.ctrl.bindings, k = (l: string[]) => `<kbd>${this.key(l)}</kbd>`, car = this.p.def.kind === 'car';
-    const rows = [
+    const f1 = !!this.p.def.f1 && this.game.opts.mode === 'f1';
+    const rows = f1 ? [
+      [`${k(b.up)} ${k(b.down)} ${k(b.left)} ${k(b.right)}`, 'throttle · brake (~5 g) · steer'],
+      [k(b.trick), 'DRS / straight mode (in DRS zones, closes when you brake)'],
+      [b.nitro.filter((c) => c !== 'ShiftRight').slice(0, 2).map((c) => k([c])).join(' '), 'ERS deploy (recharges under braking)'],
+      ['pit', 'drive into the pit lane, stop in the box: fresh tyres'],
+      [k(b.camera), 'camera: chase · far · hood · cockpit · TV · top-down'],
+      ['<kbd>Esc</kbd> <kbd>H</kbd>', 'pause · hide this card'],
+    ] : [
       [`${k(b.up)} ${k(b.down)} ${k(b.left)} ${k(b.right)}`, 'drive · brake · steer'],
-      [k(b.nitro), 'nitro (drives itself)'],
+      [b.nitro.filter((c) => c !== 'ShiftRight').slice(0, 3).map((c) => k([c])).join(' '), 'nitro (drives itself, no ↑ needed: if ← drops out, let go of ↑)'],
       [k(b.drift), 'handbrake → drift, counter-steer to hold'],
-      car ? null : [k(b.trick), 'ground: wheelie (↑↓ balance) · air: style trick'],
+      car ? null : [k(b.trick), 'hold on the ground: wheelie at any speed (↑/↓ angle, no braking) · air: style trick'],
       car ? null : ['air', 'let go, then ↑↓ flip · ←→ spin'],
       [`${k(b.fire)} ${k(b.weapon)}`, 'fire · next weapon'],
       [k(b.ride), 'get on / off'],
+      [k(b.camera), 'camera: chase · far · hood · first person · cinematic · top-down'],
       ['<kbd>Esc</kbd> <kbd>H</kbd>', 'pause · hide this card'],
     ].filter(Boolean) as string[][];
     this.els.keycard.innerHTML = `<div class="label">KEYS · ${escapeHtml(this.p.def.name)}</div>` + rows.map(([a, c]) => `<div class="kr"><span>${a}</span><em>${c}</em></div>`).join('');
@@ -109,6 +128,15 @@ export class Hud {
     b.classList.remove('show');
     void b.offsetWidth;
     b.classList.add('show');
+  }
+
+  /** Small fading "camera view" label (top centre). */
+  camLabel(text: string) {
+    const t = this.els.camtag;
+    t.textContent = text;
+    t.classList.remove('show');
+    void t.offsetWidth;
+    t.classList.add('show');
   }
 
   countdown(text: string) {
@@ -256,7 +284,8 @@ export class Hud {
       e.wzone.style.left = pct(W.balance - W.perfect) + '%';
       e.wzone.style.width = pct(W.perfect * 2) + '%';
       e.wneedle.style.left = Math.min(100, pct(wl)) + '%';
-      e.wtxt.textContent = `WHEELIE ${B.wheelieT.toFixed(1)}s${Math.abs(wl - W.balance) < W.perfect ? ' · BALANCED' : wl > W.balance ? ' · ↓ brake!' : ' · ↑ throttle'}`;
+      const pro = prefs.assist === 0, hint = Math.abs(wl - W.balance) < W.perfect ? ' · BALANCED' : wl > W.balance ? (pro ? ' · ↓ lower it!' : ' · ↓ lower') : ' · ↑ higher';
+      e.wtxt.textContent = `WHEELIE ${B.wheelieT.toFixed(1)}s · ${Math.round(B.wheelieD)} m${hint}`;
     }
     // live drift meter (every frame so it feels responsive)
     const dr = p.drift;
@@ -269,9 +298,52 @@ export class Hud {
     }
     // key card: shown for the first 20 s of a session, H flips it either way
     e.keycard.style.display = (g.time < 20) !== document.body.classList.contains('nohelp') && !g.tutorial ? 'block' : 'none';
+    // F1 dash (every frame: speed, gear, rpm lights)
+    const isF1 = g.opts.mode === 'f1' && !!p.def.f1;
+    e.f1dash.style.display = isF1 ? 'block' : 'none';
+    e.tower.style.display = isF1 && !!g.race ? 'block' : 'none';
+    if (isF1) {
+      const d = p.dash, f = p.f1;
+      e.f1speed.textContent = String(Math.round(Math.abs(B.v) * 3.6));
+      e.f1gear.textContent = B.v < -0.5 ? 'R' : Math.abs(B.v) < 0.5 ? 'N' : String(d.gear);
+      const r = Math.min(1, d.rpm / d.redline);
+      e.f1rpm.style.width = r * 100 + '%';
+      e.f1rpm.className = r > 0.94 ? 'shift' : r > 0.8 ? 'high' : '';
+      e.f1ers.style.width = (s.nitro / p.stats.nitroMax) * 100 + '%';
+      e.f1tyre.textContent = f.compound[0].toUpperCase();
+      e.f1tyre.style.borderColor = hex(F1.tyres[f.compound].color);
+      e.f1wear.textContent = Math.round(f.wear * 100) + '% wear';
+      e.f1drs.className = f.aeroOpen ? 'on' : '';
+      e.f1slip.className = f.slip ? 'on' : '';
+      e.f1pit.className = f.inPit ? 'on' : '';
+    }
+    // analog cluster for every vehicle except F1 cars in F1 mode (they have the F1 dash above)
+    const showG = p.riding && !isF1;
+    if (showG !== this.gaugesOn) {
+      this.gaugesOn = showG;
+      e.gauges.style.display = showG ? 'block' : 'none';
+      this.root.classList.toggle('gauges-on', showG);
+    }
+    if (showG && !(this.root.classList.contains('split') && frame % 2)) {
+      const d = p.dash, raw = p.stats.top * 3.6 * 1.6, step = raw <= 200 ? 20 : raw <= 360 ? 40 : 60;
+      this.gauges.draw({
+        kmh: p.s.dead ? 0 : speedKmh, maxKmh: Math.ceil(raw / step) * step, rpm: d.rpm, redline: d.redline,
+        gear: Math.abs(B.v) < 0.5 ? 'N' : String(d.gear), reverse: B.v < -0.5,
+        nitro: s.nitro / p.stats.nitroMax, boost: p.cam.boost, air: B.air ? B.airT : 0,
+      }, this.root.classList.contains('split') ? dt * 2 : dt);
+    }
     if (frame % 3) return;
+    if (isF1 && g.race && frame % 15 === 0) {
+      // timing tower: positions with gaps (metres behind converted with the leader's average speed)
+      const rows = g.race.standings(), lead = rows[0], len = (g.layout as unknown as { length: number }).length, avg = 60;
+      e.tower.innerHTML = '<div class="label">TIMING</div>' + rows.slice(0, 12).map((row, i) => {
+        const gap = i === 0 ? 'Leader' : row.time !== null && lead.time !== null ? '+' + (row.time - lead.time).toFixed(1) + 's' : '+' + Math.max(0, ((lead.prog - row.prog) * len) / avg).toFixed(1) + 's';
+        const me = row.local && row.id === String(p.index);
+        return `<div class="trow ${me ? 'me' : ''}"><b>${i + 1}</b><i style="background:${hex(row.color)}"></i><span>${escapeHtml(row.name)}</span><em>${row.time !== null && i === 0 ? fmt(row.time) : gap}</em></div>`;
+      }).join('');
+    }
     // text (every 3rd frame)
-    e.speed.textContent = String(Math.round(p.riding ? speedKmh : 0));
+    e.camName.textContent = '🎥 ' + CAM_LABEL[p.activeView];
     e.mode.textContent = s.dead ? 'Wrecked' : p.riding ? (B.air ? `Airborne ${B.airT.toFixed(1)}s` : p.cam.boost > 0.3 ? 'NITRO!' : 'Riding') : 'On foot';
     e.hpTxt.textContent = Math.ceil(s.hp) + ' / ' + Math.round(p.stats.hpMax);
     e.hpBar.style.width = (s.hp / p.stats.hpMax) * 100 + '%';
@@ -282,7 +354,7 @@ export class Hud {
     e.xpBar.style.width = (s.xp / p.xpNeed()) * 100 + '%';
     e.score.textContent = s.score + (s.combo > 1 ? ` (x${s.combo})` : '');
     e.gems.textContent = String(s.gems);
-    e.weapon.textContent = g.opts.mode === 'drift' ? `Drift ${p.drift.total.toLocaleString()} · best ${p.drift.best.toLocaleString()}` : WEAPONS[s.weapon].name + (p.nitroLatched ? ' · NOS ON' : '');
+    e.weapon.textContent = g.opts.mode === 'f1' ? `${p.f1.compound} tyres · ${p.f1.stops} stop${p.f1.stops === 1 ? '' : 's'}` : g.opts.mode === 'drift' ? `Drift ${p.drift.total.toLocaleString()} · best ${p.drift.best.toLocaleString()}` : WEAPONS[s.weapon].name + (p.nitroLatched ? ' · NOS ON' : '');
     e.dist.textContent = (s.dist / 1000).toFixed(2) + ' km';
     e.clock.textContent = g.env.label;
     e.buffs.innerHTML = (Object.keys(p.buffs) as PowerupKind[])

@@ -18,12 +18,14 @@ src/
     EngineSound.ts       Per-vehicle engine: firing pulses (rpm/60 x cyl/2), gearbox, turbo, crackle, limiter, wind, rumble
     Music.ts             Generative synthwave soundtrack on a lookahead scheduler; layers follow the action
     Events.ts            Typed event bus (challenge progress etc.)
+    cameraViews.ts       Chase, far, hood, first person, cinematic, top-down
     prefs.ts             Saved player preferences (riding assist, nitro toggle, onboarding seen)
   data/                  Pure data tables: weapons, upgrades, challenges, story, vehicles (garage stats)
   world/
     layout.ts            RoadLayout interface: GridRoads (open world) and Circuit (race loop)
     Terrain.ts           Height/colour of the ground, world themes, ramps and pads
     Chunks.ts            Streams 64 m chunks: terrain, instanced scenery, road markings, features
+    F1Track.ts           Real F1 circuits (Monza, Silverstone, Spa, Monaco, Suzuka, Bahrain) from bacinger/f1-circuits (MIT), DRS zones, pit lane, start lights, venue dressing
     DriftTrack.ts        Drift venues (docks, touge, skidpad, gymkhana, random): layout, zones, dressing
     Landmarks.ts         Villages, gas stations, windmills, stunt zones, drone outposts; race grandstands + tyre walls
     Environment.ts       Sky, day/night, weather (rain/snow/fog/storm), water, clouds, stars
@@ -38,6 +40,7 @@ src/
     Race.ts              Countdown, checkpoints, laps, positions, best-lap ghost
     Challenges.ts        Timed challenges per player with streaks
     Tutorial.ts          Guided training ride checklist
+    AiRacers.ts          Computer opponents: curvature/grip speed profile with braking pass, racing line, overtakes
     Particles.ts         GPU particle pools
     Effects.ts           Shockwave rings, debris, beams, skid marks (pooled/instanced)
   net/
@@ -48,6 +51,7 @@ src/
     Preview.ts           3D character preview + top-down map preview
     Hud.ts               Per-player HUD (stats, minimap, reticle, story, race panel)
     Touch.ts             Phone/tablet buttons
+    Gauges.ts            Canvas speedometer, tachometer, nitro ring
   styles/main.css
   utils/                 math helpers, seeded noise
 worker/
@@ -70,6 +74,7 @@ worker/
 - **Open world** roads form an endless wavy grid. Each seed rotates the grid and gives every road line its own curves; crossroads may host landmarks. Chunks build around each local player (one per frame) and unload behind.
 - **Terrain** = domain-warped continents + rolling hills + ridged mountains, optional river bands, a temperature-varied snow line. The world generator options (terrain, water, nature, roads, landmarks) scale these.
 - **Handling**: every vehicle drives the same physics with its own numbers (data/vehicles.ts). The travel direction chases the heading at the vehicle's traction rate; the handbrake (X) and power oversteer lower it, counter-steering raises it, sliding scrubs speed. Drift points = angle x speed x zone multiplier, chained into a growing multiplier and banked after 0.7 s of grip. Bikes wheelie on C (pivot on the rear axle).
+- **Formula 1**: downforce raises the cornering limit with v² (yaw capped at aLat/v), ~5 g braking, ERS charges under braking, straight-mode wing / DRS only in DRS zones, slipstream behind cars, tyre compounds wear with distance/sliding/braking, pit lane limiter and pit stops, five-light starts with jump-start penalty.
 - **Riding assist** (Settings) follows the road and guards the edge only when you are not steering, lets the bike glance off obstacles, and limits crest launches.
 - **Race** builds a closed Catmull-Rom loop from the track seed. 8 gates split it into segments; progress = lap + position inside the current segment.
 - **Time and weather** run in `Environment`: sky colours blend between keys in `SKY_KEYS`; dynamic weather picks a new state every ~90 s and blends into it. Wet/snowy roads lower grip.

@@ -2,7 +2,8 @@
 import * as THREE from 'three';
 import type { Game } from '../core/Game';
 import type { Player } from '../entities/Player';
-import type { Circuit } from '../world/layout';
+import type { TrackLine } from '../world/layout';
+import { F1 } from '../config';
 import { G, MAT, mesh } from '../entities/assets';
 import { buildGhost } from '../entities/models';
 import { RACE } from '../config';
@@ -26,17 +27,23 @@ export class Race {
   private lastCount = -1;
   readonly remoteFinish = new Map<string, number>();
 
-  constructor(private game: Game, private track: Circuit, readonly laps: number, private trackId: string) {
+  /** F1 start: 5 red lights one per second, random hold, lights out. */
+  private f1Start: { lit: number; t: number; hold: number } | null = null;
+  private jumped = new Set<number>();
+
+  constructor(private game: Game, private track: TrackLine, readonly laps: number, private trackId: string) {
     const n = track.n;
     for (let i = 0; i < RACE.checkpoints; i++) this.cps.push(Math.round((i / RACE.checkpoints) * n) % n);
-    this.cps.forEach((idx, i) => this.gate(idx, i === 0));
+    // F1 circuits have their own start gantry and no checkpoint arches (the gates still count, invisibly)
+    if (game.layout.kind === 'f1') this.f1Start = { lit: 0, t: 0, hold: F1.lightsHoldMin + Math.random() * (F1.lightsHoldMax - F1.lightsHoldMin) };
+    else this.cps.forEach((idx, i) => this.gate(idx, i === 0));
     if (game.players.length === 1 && !game.net && trackId !== 'random') {
       this.ghostData = load(trackId);
       this.ghost = buildGhost();
       this.ghost.visible = false;
       game.scene.add(this.ghost);
     }
-    for (const p of game.players) p.controlsLocked = true;
+    for (const p of game.players) p.controlsLocked = !this.f1Start; // F1: free to move, but rolling before lights out is a jump start
   }
 
   private gate(idx: number, start: boolean) {
@@ -59,6 +66,11 @@ export class Race {
   /** Online: everyone starts when the room says so. Locally: right away. */
   update(dt: number) {
     const g = this.game;
+    if (!this.started && this.f1Start) {
+      this.f1Lights(dt);
+      g.ai?.update(dt, false, 0);
+      return;
+    }
     if (!this.started) {
       this.countdown -= dt;
       const c = Math.ceil(this.countdown);
@@ -79,11 +91,14 @@ export class Race {
       return;
     }
     for (const p of g.players) this.track1(p);
+    g.ai?.update(dt, true, g.time - this.startTime);
     if (this.ghost && g.players[0]) this.record(g.players[0], dt);
     this.updateGhost();
     const places = this.standings();
     for (const p of g.players) p.race.place = places.findIndex((s) => s.local && s.id === String(p.index)) + 1;
     if (!this.over && g.players.every((p) => p.race.finished)) {
+      // AI still on track get their projected time so the result table is complete
+      for (const r of g.ai?.list ?? []) if (!r.finished) { r.finished = true; r.finishTime = (g.time - this.startTime) * (this.laps / Math.max(0.05, r.s / this.track.length)); }
       this.over = true;
       this.resultsT = RACE.resultsDelay;
     }
@@ -108,7 +123,7 @@ export class Race {
           if (p.index === 0) this.lapDone(lapTime);
           if (r.lap >= this.laps) {
             r.finished = true;
-            r.finishTime = g.time - this.startTime;
+            r.finishTime = g.time - this.startTime + (this.jumped.has(p.index) ? F1.jumpPenalty : 0);
             p.controlsLocked = false;
             g.audio.play('challenge');
             p.hud.banner('FINISHED!', `${fmt(r.finishTime)} · P${r.place}`, '#7cffb2');
@@ -131,6 +146,37 @@ export class Race {
     r.prog = r.lap === 0 ? frac - 1 : r.lap - 1 + frac;
   }
 
+  /** Formula 1 lights: one red light per second, a random hold, then lights out. Moving early = jump start. */
+  private f1Lights(dt: number) {
+    const g = this.game, st = this.f1Start!, lights = g.layout as unknown as { setLights?(lit: number, green: boolean): void };
+    st.t += dt;
+    const lit = Math.min(5, Math.floor(st.t / F1.lightsGap));
+    if (lit !== st.lit) {
+      st.lit = lit;
+      lights.setLights?.(lit, false);
+      if (lit > 0) { g.audio.play('count'); g.players.forEach((p) => p.hud.countdown('🔴'.repeat(lit) + '⚫'.repeat(5 - lit))); }
+    }
+    for (const p of g.players) {
+      // the clutch is in: you can rev but any roll before lights out is a jump start
+      if (Math.abs(p.B.v) > 2 && !this.jumped.has(p.index)) {
+        this.jumped.add(p.index);
+        p.hud.banner('JUMP START', `+${F1.jumpPenalty}s penalty`, '#ff4d5e');
+        g.audio.play('fail');
+      }
+    }
+    if (st.t >= 5 * F1.lightsGap + st.hold) {
+      lights.setLights?.(0, true);
+      this.started = true;
+      this.startTime = g.time;
+      g.audio.play('go');
+      for (const p of g.players) {
+        p.controlsLocked = false;
+        p.hud.countdown('LIGHTS OUT!');
+        p.race.lapStart = g.time;
+      }
+    }
+  }
+
   /** Position of the next gate, for the minimap arrow. */
   nextGate(p: Player) {
     const i = this.cps[p.race.nextCp];
@@ -142,6 +188,7 @@ export class Race {
       id: String(p.index), name: p.name, color: p.color, local: true, prog: p.race.prog, lap: p.race.lap,
       time: p.race.finished ? p.race.finishTime : null,
     }));
+    for (const a of g.ai?.list ?? []) rows.push({ id: a.id, name: a.name, color: a.color, local: false, prog: g.ai!.progress(a), lap: Math.max(0, Math.floor(a.s / this.track.length) + 1), time: a.finished ? a.finishTime : null });
     g.remotes?.forEach((r) => rows.push({ id: r.id, name: r.name, color: r.color, local: false, prog: r.state?.prog ?? -1, lap: r.state?.lap ?? 0, time: this.remoteFinish.get(r.id) ?? null }));
     return rows.sort((a, b) => (a.time !== null || b.time !== null ? (a.time ?? 1e9) - (b.time ?? 1e9) : b.prog - a.prog));
   }

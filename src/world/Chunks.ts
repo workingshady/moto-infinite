@@ -9,6 +9,7 @@ import { G, MAT, mesh } from '../entities/assets';
 import { buildPoi, dressCircuit, type Spinner, type Zone } from './Landmarks';
 import { Circuit, type Poi } from './layout';
 import { DriftTrack } from './DriftTrack';
+import { F1Track } from './F1Track';
 import { mulberry32, PI, TAU } from '../utils/math';
 
 export interface Obstacle { x: number; z: number; r: number; top: number }
@@ -102,7 +103,7 @@ export class ChunkManager {
     const ch: Chunk = { cx, cz, obs: [], ramps: [], pads: [], meshes: [terrain], terrain };
 
     this.scenery(ch, rng, x0, z0);
-    this.markings(ch, x0, z0);
+    if (g.layout.kind !== 'f1') this.markings(ch, x0, z0); // F1 circuits paint their own kerbs and lines
     for (const poi of g.layout.pois(x0, z0, CH)) {
       buildPoi(g, ch, poi, this.spinners, this.zones);
       this.pois.push(poi);
@@ -110,6 +111,7 @@ export class ChunkManager {
     }
     if (g.layout instanceof Circuit) dressCircuit(g, ch, g.layout, x0, z0, CH);
     if (g.layout instanceof DriftTrack) g.layout.dress(g, ch, x0, z0, CH);
+    if (g.layout instanceof F1Track) g.layout.dress(g, ch, x0, z0, CH);
     const F = FEATURES[g.opts.mode];
     g.layout.forEachRoadPoint(x0, z0, CH, (x, z, tx, tz, along) => {
       if (along >= 0 && along < 60) return; // keep the race start straight clear

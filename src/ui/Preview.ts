@@ -4,6 +4,7 @@ import { buildRider, nameTag, seatRider } from '../entities/models';
 import { buildVehicleModel } from '../entities/vehicleModels';
 import { vehicleById } from '../data/vehicles';
 import { DriftTrack, DRIFT_TRACKS, type DriftTrackId } from '../world/DriftTrack';
+import { F1Track, F1_TRACKS, type F1TrackId } from '../world/F1Track';
 import { canvasTex } from '../entities/assets';
 import { Noise } from '../utils/noise';
 import { Circuit, GridRoads } from '../world/layout';
@@ -109,11 +110,12 @@ export function drawMapPreview(canvas: HTMLCanvasElement, s: LobbySettings): Map
   const noise = new Noise(seed);
   const layout = s.mode === 'race' ? new Circuit(noise, seed)
     : s.mode === 'drift' ? new DriftTrack(noise, (dtrack?.id ?? 'docks') as DriftTrackId, seed)
+    : s.mode === 'f1' ? new F1Track(noise, (F1_TRACKS.find((t) => t.id === s.trackId)?.id ?? 'monza') as F1TrackId)
     : new GridRoads(noise, seed, s.gen.roads, GEN.poi[s.gen.poi].chance);
   const T = new Terrain(noise, layout, theme, s.gen);
   const W = canvas.width, H = canvas.height, ctx = canvas.getContext('2d')!;
   let cx = 0, cz = 0, span = 700;
-  if (layout instanceof Circuit || layout instanceof DriftTrack) {
+  if (layout instanceof Circuit || layout instanceof DriftTrack || layout instanceof F1Track) {
     let minX = 1e9, maxX = -1e9, minZ = 1e9, maxZ = -1e9;
     for (let i = 0; i < layout.n; i++) {
       minX = Math.min(minX, layout.px[i]); maxX = Math.max(maxX, layout.px[i]);
@@ -185,7 +187,7 @@ export function drawMapPreview(canvas: HTMLCanvasElement, s: LobbySettings): Map
     ctx.fillStyle = '#fff';
     ctx.fillText('YOU START HERE', a + 9, b - 8);
   }
-  return { lengthKm: layout instanceof Circuit || layout instanceof DriftTrack ? layout.length / 1000 : null, climb: Math.max(0, Math.round(hi - lo)), seed };
+  return { lengthKm: layout instanceof Circuit || layout instanceof DriftTrack || layout instanceof F1Track ? layout.length / 1000 : null, climb: Math.max(0, Math.round(hi - lo)), seed };
 }
 
 interface Slot { key: string; root: THREE.Group; wheels: THREE.Group[]; tag: THREE.Sprite; phase: number }

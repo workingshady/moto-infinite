@@ -108,6 +108,7 @@ export const DRONES = {
 /** Cumulative probabilities for what appears at each road sample point (every ~8 m). */
 export const FEATURES: Record<GameMode, { ramp: number; pad: number; gem: number; cones: number; crate: number; barrel: number; pile: number; powerup: number }> = {
   open: { ramp: 0.05, pad: 0.085, gem: 0.3, cones: 0.33, crate: 0.355, barrel: 0.37, pile: 0.42, powerup: 0.432 },
+  f1: { ramp: 0, pad: 0, gem: 0, cones: 0, crate: 0, barrel: 0, pile: 0, powerup: 0 },
   drift: { ramp: 0, pad: 0.02, gem: 0.12, cones: 0.16, crate: 0.16, barrel: 0.16, pile: 0.16, powerup: 0.17 },
   race: { ramp: 0.065, pad: 0.12, gem: 0.32, cones: 0.335, crate: 0.34, barrel: 0.345, pile: 0.345, powerup: 0.36 },
 };
@@ -143,25 +144,38 @@ export const DRIFT = {
   tandemDist: 12, tandemBonus: 0.5,
   grades: [[8000, 'INSANE!', '#ff3355'], [4000, 'GREAT!', '#ff7ad9'], [1500, 'NICE', '#ffd23f'], [0, 'DRIFT', '#ffffff']] as [number, string, string][],
 };
-/** Wheelies (bikes): hold the trick key on the ground. */
 /**
- * Wheelies as a real balance act: the bike pivots on the rear axle with angular momentum.
- * Below the balance point gravity drops the front, past it the bike goes over backwards.
- * Throttle (with the clutch pop on C) lifts, the rear brake (↓) pushes the front down.
+ * Wheelies (bikes): hold the trick key (C) on the ground at any speed, release to land.
+ * Normal/Easy: "wheelie control" like a modern superbike: a balance controller lifts the front to a comfortable
+ * angle and holds it there, ↑/↓ only nudge the target angle (↓ does NOT brake), and the angle is clamped below
+ * the loop-out point so you can never flip. Pro: real balance physics around the rear axle (gravity tips the bike
+ * forward below the balance point and over backwards past it), ↓ is the rear brake for the angle, loop out = crash.
+ * While the front is up the throttle stays on (C implies gas) and nitro keeps working, so no speed is lost.
  */
 export const WHEELIE = {
-  balance: 0.62, // rad: centre of mass right above the rear contact patch
-  gravity: 6.5, // tipping torque strength
-  throttle: 7, // lift torque from the throttle while C is held (x bike power)
-  pop: 2.4, // clutch-pop kick when pressing C with throttle (rad/s, x bike power)
-  brake: 11, // rear-brake torque pulling the front down
-  damping: 1.4,
-  loopOut: 1.2, // rad: past this you flip over backwards
-  minSpeed: 5, // m/s
+  balance: 0.62, // rad: centre of mass right above the rear contact patch (middle of the green band)
+  minSpeed: 4.2, // m/s (~15 km/h) to lift the front
+  // Normal/Easy controller (critically damped spring toward the target angle)
+  aim: 0.6, // rad: default hold angle (inside the green band)
+  aimUp: 0.36, // ↑ raises the target (towards the red, the controller still pulls it back)
+  aimDown: 0.3, // ↓ lowers the target (never brakes during a wheelie)
+  omega: 8, // rad/s: lift/settle stiffness (~0.5 s to the target)
+  landOmega: 7, // rad/s: how quickly the front comes down on release
+  land: -0.3, // rad: target below the ground on release, so the front drops smoothly instead of hovering
+  limit: [Infinity, 1.08, 0.98], // max angle per assist level (Pro, Normal, Easy): Normal/Easy can't loop out
+  // Pro physics
+  gravity: 6.5, // tipping torque strength (unstable around the balance point)
+  proHold: 30, // how hard the throttle hand pulls toward the default angle while C is held
+  proDamp: 5,
+  proUp: 14, // ↑ raw lift torque (x bike power): tap it, holding it loops you out
+  brake: 11, // rear-brake (↓) torque pulling the front down
+  loopOut: 1.2, // rad: past this you flip over backwards (Pro only)
+  active: 0.15, // rad: above this the wheelie counts as on (↓ stops braking, gas stays on)
   slam: 2.2, // front drop speed (rad/s) that counts as a hard landing
   perfect: 0.13, // within this of the balance point = perfect balance
-  assist: [0, 8, 14], // stabilising stiffness per assist level (Pro, Normal, Easy); Normal/Easy also get wheelie control
   minTime: 0.8, xpPerSec: 60, perfectXpPerSec: 90,
+  fastSpeed: 120 / 3.6, // m/s average for a HIGH-SPEED WHEELIE
+  fastXpPerSec: 80,
 };
 
 export const RACE = { checkpoints: 8, countdown: 3, ghostHz: 10, resultsDelay: 2.5 };
@@ -260,3 +274,20 @@ export const POI_KINDS: { kind: PoiKind; weight: number; label: string; color: s
   { kind: 'stunt', weight: 2, label: 'Stunt zone', color: '#ff7ad9' },
   { kind: 'outpost', weight: 2, label: 'Vex outpost', color: '#ff3355' },
 ];
+
+/** Formula 1 mode. Tyres wear with distance, sliding and braking; pit lane has a speed limiter. */
+export const F1 = {
+  tyres: {
+    soft: { label: 'Soft', color: 0xe8282e, grip: 1.07, life: 9000 }, // metres to fully worn
+    medium: { label: 'Medium', color: 0xf5d020, grip: 1, life: 16000 },
+    hard: { label: 'Hard', color: 0xf2f2f2, grip: 0.94, life: 26000 },
+  },
+  wornGrip: 0.72, // grip multiplier at 100% wear
+  pitLimit: 22, // m/s (80 km/h)
+  pitStop: 2.6, // seconds stationary
+  slipDist: 34, slipAngle: 0.3, slipTop: 1.06, slipAccel: 1.2, // slipstream behind another car
+  ersRegen: 22, ersIdle: 0.6, // nitro (ERS) recharge: per second under braking / otherwise
+  lightsGap: 1, lightsHoldMin: 0.4, lightsHoldMax: 2.6, jumpPenalty: 5,
+  aiNames: ['M. Verstappo', 'L. Hamiltone', 'C. Leclair', 'L. Norrison', 'O. Piastro', 'G. Russo', 'F. Alonzo', 'C. Sainte', 'P. Gaslee', 'Y. Tsunami', 'A. Albone', 'E. Ocone'],
+};
+export type TyreCompound = keyof typeof F1.tyres;

@@ -350,3 +350,46 @@ kbd.key { display: inline-flex; align-items: center; justify-content: center; mi
 .wzone { position: absolute; top: -3px; bottom: -3px; border-radius: 4px; background: rgba(124, 255, 178, 0.55); border: 2px solid #7cffb2; }
 .wneedle { position: absolute; top: -6px; width: 4px; height: 24px; margin-left: -2px; background: #fff; border-radius: 2px; box-shadow: 0 0 8px #fff; }
 .wmeter span { display: block; margin-top: 6px; font-weight: 900; font-size: 13px; text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8); }
+
+/* F1 dash + timing tower */
+.f1dash { left: 50%; bottom: 16px; transform: translateX(-50%); width: 300px; display: none; padding: 10px 14px; }
+.f1top { display: flex; align-items: baseline; gap: 6px; }
+.f1top b { font-size: 34px; font-weight: 900; font-variant-numeric: tabular-nums; }
+.f1top span { opacity: 0.7; font-size: 12px; }
+.f1top i { margin-left: auto; font-style: normal; font-size: 34px; font-weight: 900; color: var(--accent); }
+.rpm { height: 10px; border-radius: 5px; background: rgba(255, 255, 255, 0.12); overflow: hidden; margin: 4px 0 8px; }
+.rpm i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #39c46a, #7cffb2); transition: width 0.05s; }
+.rpm i.high { background: linear-gradient(90deg, #39c46a, #ffd23f, #ff3355); }
+.rpm i.shift { background: #3c8dff; animation: shiftBlink 0.12s steps(2) infinite; }
+@keyframes shiftBlink { 50% { opacity: 0.3; } }
+.f1row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.f1row .tyre { width: 22px; height: 22px; border-radius: 50%; border: 4px solid #fff; display: inline-flex; align-items: center; justify-content: center; font-weight: 900; font-size: 11px; background: #111; }
+.f1row .lbl { margin-left: auto; opacity: 0.7; }
+.f1row .ers { width: 80px; margin: 0; }
+.f1row .ers i { background: linear-gradient(90deg, #ffd23f, #3cc8ff); }
+.f1flags { display: flex; gap: 6px; margin-top: 8px; }
+.f1flags span { flex: 1; text-align: center; padding: 3px 0; border-radius: 6px; font-weight: 900; font-size: 11px; background: rgba(255, 255, 255, 0.08); color: rgba(255, 255, 255, 0.4); }
+.f1flags span.on { background: #39c46a; color: #04210f; }
+.f1flags span:last-child.on { background: #3c8dff; color: #fff; }
+.tower { left: 16px; top: 262px; width: 210px; font-size: 12px; display: none; padding: 8px 10px; }
+.trow { display: grid; grid-template-columns: 20px 6px 1fr auto; gap: 6px; align-items: center; padding: 2px 0; }
+.trow i { width: 4px; height: 14px; border-radius: 2px; }
+.trow b { text-align: right; }
+.trow em { font-style: normal; opacity: 0.75; font-variant-numeric: tabular-nums; }
+.trow.me { color: var(--accent); }
+.keytest { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0; }
+.keytest kbd.key { opacity: 0.35; transition: opacity 0.06s, transform 0.06s; }
+.keytest kbd.key.on { opacity: 1; background: linear-gradient(180deg, #8ff5ff, #2fc4e8); transform: translateY(2px); box-shadow: 0 1px 0 #1d7f99; }
+
+/* analog gauge cluster + camera label */
+.gauges { position: absolute; right: 12px; bottom: 10px; width: 236px; height: 150px; display: none; pointer-events: none; filter: drop-shadow(0 6px 18px rgba(0, 0, 0, 0.35)); }
+.gcanvas { display: block; width: 236px; height: 150px; }
+.split .gauges { transform: scale(0.75); transform-origin: bottom right; }
+.gauges-on .keycard { bottom: 170px; }
+.split.gauges-on .keycard { bottom: 124px; }
+.camtag { position: absolute; left: 50%; top: 112px; transform: translateX(-50%); padding: 6px 14px; border-radius: 999px; background: var(--panel); backdrop-filter: blur(8px);
+  font-weight: 800; font-size: 14px; opacity: 0; pointer-events: none; white-space: nowrap; }
+.camtag.show { animation: camtag 1.8s ease-out forwards; }
+@keyframes camtag { 0% { opacity: 0; transform: translate(-50%, -8px); } 12% { opacity: 1; transform: translate(-50%, 0); } 75% { opacity: 1; } 100% { opacity: 0; } }
+@media (max-width: 640px) { .gauges { transform: scale(0.72); transform-origin: bottom right; } }
+body:has(#touch) .gauges { bottom: 150px; }

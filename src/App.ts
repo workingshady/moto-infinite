@@ -10,6 +10,8 @@ import { DEFAULT_GEN, ROOM_CODE_RE, type LobbySettings } from '../shared/protoco
 import type { Standing } from './systems/Race';
 import { prefs } from './core/prefs';
 import { DRIFT_TRACKS } from './world/DriftTrack';
+import { F1_TRACKS } from './world/F1Track';
+import { vehicleById } from './data/vehicles';
 import { driftSeed } from './ui/Preview';
 
 const store = {
@@ -83,6 +85,7 @@ export class App {
       setQuality: (q: QualityName) => { this.quality = q; store.set('quality', q); this.game?.setQuality(q); },
       toggleMute: () => this.audio.toggleMute(),
       volumes: () => this.audio.applyVolumes(),
+      hearEngine: (id: string) => void this.audio.previewEngine(vehicleById(id).engine),
       saveProfile: (p: Profile) => store.set('profile', p),
     };
   }
@@ -103,7 +106,7 @@ export class App {
     const times = ['day', 'sunset', 'dawn'] as const;
     this.replaceGame({
       mode: 'open', seed: Math.floor(Math.random() * 1e9), trackId: '', laps: 0, pvp: false, quality: this.quality, locals: [], net: null, attract: true,
-      time: times[Math.floor(Math.random() * times.length)], weather: 'clear', theme: 'mixed', gen: { ...DEFAULT_GEN }, drones: 2,
+      time: times[Math.floor(Math.random() * times.length)], weather: 'clear', theme: 'mixed', gen: { ...DEFAULT_GEN }, drones: 2, ai: 0,
     });
   }
 
@@ -113,7 +116,8 @@ export class App {
     const dtrack = s.mode === 'drift' ? DRIFT_TRACKS.find((t) => t.id === s.trackId) : undefined;
     return {
       mode: s.mode, seed: s.mode === 'drift' ? driftSeed(s.trackId, s.seed) : track?.seed ?? s.seed, trackId: s.trackId, laps: s.laps, pvp: s.pvp,
-      time: s.time, weather: s.weather, theme: track?.theme ?? (dtrack && dtrack.id !== 'random' ? dtrack.theme : s.theme), gen: track ? { ...DEFAULT_GEN } : { ...DEFAULT_GEN, ...s.gen }, drones: s.drones ?? 2, quality: this.quality, locals, net,
+      time: s.time, weather: s.weather, theme: track?.theme ?? (dtrack && dtrack.id !== 'random' ? dtrack.theme : s.mode === 'f1' ? (F1_TRACKS.find((t) => t.id === s.trackId)?.theme ?? s.theme) : s.theme), gen: track ? { ...DEFAULT_GEN } : { ...DEFAULT_GEN, ...s.gen }, drones: s.drones ?? 2, ai: s.ai ?? 0, session: s.session ?? 'race', tyre: s.tyre ?? 'medium',
+      quality: this.quality, locals: s.mode === 'f1' ? locals.map((l) => ({ ...l, vehicle: vehicleById(l.vehicle).f1 ? l.vehicle : this.menu.profile.f1car ?? 'f1_2026' })) : locals, net,
     };
   }
 

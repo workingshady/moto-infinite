@@ -6,10 +6,20 @@ import { mulberry32, TAU } from '../utils/math';
 import { GEN, POI_KINDS, type PoiKind } from '../config';
 
 export interface Pose { x: number; z: number; h: number }
+
+/** A closed racing line sampled every few metres (Circuit and F1Track both provide it). */
+export interface TrackLine {
+  readonly n: number;
+  readonly length: number;
+  readonly spacing: number;
+  readonly px: Float32Array; readonly pz: Float32Array; readonly tx: Float32Array; readonly tz: Float32Array;
+  nearest(x: number, z: number, exhaustive?: boolean): { i: number; d: number };
+  curvature(i: number): number;
+}
 export type RoadPointFn = (x: number, z: number, tx: number, tz: number, along: number) => void;
 
 export interface RoadLayout {
-  readonly kind: 'grid' | 'circuit' | 'drift';
+  readonly kind: 'grid' | 'circuit' | 'drift' | 'f1';
   roadDist(x: number, z: number): number;
   roadHeight(x: number, z: number): number;
   nearestRoad(x: number, z: number): Pose;

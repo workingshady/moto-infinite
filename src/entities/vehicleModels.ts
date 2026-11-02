@@ -18,6 +18,12 @@ export interface VehicleModel {
   brakeMat: THREE.MeshStandardMaterial;
   driver: THREE.Group | null;
   wheelRadius: number;
+  /** F1: movable upper rear-wing element, pivot on its leading edge; rotate about local X (~0.5 rad) for DRS / straight mode. */
+  rearFlap?: THREE.Object3D;
+  /** F1 2026: active front-wing upper elements, same pivot pattern as rearFlap. */
+  frontFlap?: THREE.Object3D;
+  /** F1: tyre sidewall compound band (soft red / medium yellow / hard white), recolourable per car. */
+  tyreBands?: THREE.MeshStandardMaterial;
 }
 
 // ---- shared geometry (memoised so several vehicles on screen share buffers) ----
@@ -107,11 +113,23 @@ const contrast = (c: number) => {
 };
 
 // ---- builder kit ----
+const paints = new Map<number, { body: THREE.MeshStandardMaterial; accent: THREE.MeshStandardMaterial }>();
+function paint(color: number) {
+  let p = paints.get(color);
+  if (!p) {
+    p = {
+      body: M(color, { roughness: 0.3, metalness: 0.35 }),
+      accent: M(new THREE.Color(color).lerp(new THREE.Color(0xffffff), 0.35).getHex(), { roughness: 0.3, metalness: 0.6 }),
+    };
+    paints.set(color, p);
+  }
+  return p;
+}
 function kit(color: number) {
   const root = new THREE.Group();
   root.rotation.order = 'YXZ';
-  const body = M(color, { roughness: 0.3, metalness: 0.35 });
-  const accent = M(new THREE.Color(color).lerp(new THREE.Color(0xffffff), 0.35).getHex(), { roughness: 0.3, metalness: 0.6 });
+  const { body, accent } = paint(color);
+  // per instance: the game drives each vehicle's brake light separately
   const brakeMat = M(0xff2030, { emissive: 0xff1020, emissiveIntensity: 0.6 });
   const add = (geo: THREE.BufferGeometry, m: THREE.Material, x: number, y: number, z: number, rx = 0, ry = 0, rz = 0) => {
     const o = mesh(geo, m, x, y, z);
@@ -408,22 +426,28 @@ function carWheel(r: number, w: number, style: CarRim, side: number) {
   if (o.spoke && o.n) g.add(mesh(star(r, o.n), o.spoke, fx, 0, 0));
   return g;
 }
-function carRig(k: Kit, r: number, style: CarRim, wf = 0.24, wr = wf, track = 0.78): Rig {
+/** Four wheels: fronts inside steering pivots. `make(radius, width, side)` builds one wheel. */
+function rigWith(
+  k: Kit, make: (r: number, w: number, s: number) => THREE.Group,
+  rf: number, rr: number, wf: number, wr: number, tf: number, tr: number, fz = 1.35, rz = -1.3,
+): Rig {
   const wheels: THREE.Group[] = [], steer: THREE.Group[] = [], rearWheels: THREE.Group[] = [];
   sym((s) => {
     const pivot = new THREE.Group();
-    pivot.position.set(s * track, r, 1.35);
-    const f = carWheel(r, wf, style, s);
+    pivot.position.set(s * tf, rf, fz);
+    const f = make(rf, wf, s);
     pivot.add(f);
-    const b = carWheel(r, wr, style, s);
-    b.position.set(s * track, r, -1.3);
+    const b = make(rr, wr, s);
+    b.position.set(s * tr, rr, rz);
     k.root.add(pivot, b);
     wheels.push(f, b);
     steer.push(pivot);
     rearWheels.push(b);
   });
-  return { wheels, steer, rearWheels, wheelRadius: r };
+  return { wheels, steer, rearWheels, wheelRadius: rr };
 }
+const carRig = (k: Kit, r: number, style: CarRim, wf = 0.24, wr = wf, track = 0.78) =>
+  rigWith(k, (rad, w, s) => carWheel(rad, w, style, s), r, r, wf, wr, track, track);
 /** Seated driver (hips at group origin): suit, helmet in body colour with visor, arms to the wheel. */
 function buildDriver(helmet: THREE.Material) {
   const g = new THREE.Group();
@@ -754,10 +778,185 @@ function roadster(color: number) {
   return carDone(k, rig, [0.15, 0.25, -2.45, 0.06], [0.58, 2.15], [0.3, 0.25, -0.45], [-0.3, 0]);
 }
 
+// ---- Formula 1 (open wheel, 1:1 metres) ----
+const titanium = M(0x8c929a, { roughness: 0.3, metalness: 0.8 });
+const grooveMat = new THREE.MeshStandardMaterial({
+  flatShading: true,
+  roughness: 0.95,
+  map: canvasTex(8, 64, (g, w, h) => {
+    g.fillStyle = '#1a1a1a'; g.fillRect(0, 0, w, h);
+    g.fillStyle = '#4a4a4a';
+    for (const y of [12, 25, 38, 51]) g.fillRect(0, y, w, 2);
+  }),
+});
+interface F1Wheel { band: THREE.Material; disc: THREE.Material; spoke: THREE.Material; n: number; rimFrac: number; grooved?: boolean }
+/** Exposed F1 wheel: slick (or grooved) tyre, compound band on the outer sidewall, rim with spoke star. */
+function f1Wheel(r: number, w: number, side: number, o: F1Wheel) {
+  const g = new THREE.Group(), fx = side * (w / 2 + 0.006), rimR = r * o.rimFrac;
+  const t = new THREE.Mesh(cyl(r, r, w, 16), o.grooved ? [grooveMat, tyre, tyre] : tyre);
+  t.castShadow = t.receiveShadow = true;
+  t.rotation.z = PI / 2;
+  const d = mesh(cyl(rimR, rimR, w + 0.012, 14), o.disc);
+  d.rotation.z = PI / 2;
+  const band = mesh(tor(r * (0.5 + o.rimFrac / 2), 0.018, 3, 24), o.band, fx, 0, 0, false);
+  band.rotation.y = PI / 2;
+  const cap = mesh(cyl(r * 0.12, r * 0.12, 0.04, 6), redNut, fx, 0, 0);
+  cap.rotation.z = PI / 2;
+  g.add(t, d, band, cap, mesh(star(rimR / 0.62, o.n), o.spoke, fx, 0, 0));
+  return g;
+}
+/** Wing element group pivoting on its leading edge; elements: [width, chord, angle, leading-edge dy, dz]. */
+function flap(k: Kit, m: THREE.Material, y: number, z: number, els: number[][]) {
+  const g = new THREE.Group();
+  g.position.set(0, y, z);
+  for (const [w, c, a, dy, dz] of els) {
+    const o = mesh(box(w, 0.018, c), m, 0, dy + (Math.sin(a) * c) / 2, dz - (Math.cos(a) * c) / 2);
+    o.rotation.x = a;
+    g.add(o);
+  }
+  k.root.add(g);
+  return g;
+}
+/** Low-seated F1 driver: helmet in body colour, visor, HANS collar; origin = helmet centre. */
+function f1Driver(helmet: THREE.Material) {
+  const g = new THREE.Group();
+  g.add(mesh(sph(0.15), helmet), mesh(memo('f1visor', () => new THREE.SphereGeometry(0.155, 10, 6, PI / 2 - 0.9, 1.8, 1.25, 0.45)), visor));
+  g.add(mesh(box(0.32, 0.08, 0.22), dark, 0, -0.15, -0.06), mesh(box(0.24, 0.1, 0.03), dark, 0, -0.14, 0.3));
+  return g;
+}
+function f1Done(k: Kit, rig: Rig, band: THREE.MeshStandardMaterial, fl: [number, number, number, number], seat: [number, number, number],
+  flaps: { rearFlap?: THREE.Object3D; frontFlap?: THREE.Object3D }, twin?: [number, number]): VehicleModel {
+  return { ...finish(k, 'car', rig, fl, [0.4, 2.3], seat, f1Driver(k.body), twin), ...flaps, tyreBands: band };
+}
+const bandMat = () => M(0xe8322a, { roughness: 0.7 });
+
+/** 2026 F1: narrow nose, halo, active front + rear wings, undercut sidepods, shark fin, diffuser. */
+function f1_2026(color: number) {
+  const k = kit(color), { add, body, tube, beam, con } = k, band = bandMat(), num = numMat('16');
+  const wo: F1Wheel = { band, disc: rimDark, spoke: rimGrey, n: 5, rimFrac: 0.66 };
+  const rig = rigWith(k, (r, w, s) => f1Wheel(r, w, s, wo), 0.36, 0.36, 0.28, 0.38, 0.81, 0.76, 1.75, -1.65);
+  tube(0.06, 0.15, body, 0, 2.6, 0.28, 1.25, 0.5);
+  beam(0.05, 0.012, con, 0, 2.55, 0.34, 1.3, 0.65);
+  add(box(0.12, 0.012, 0.12), num, 0, 0.6, 1.55, 0.24);
+  add(box(0.5, 0.42, 1.3), body, 0, 0.5, 0.6);
+  add(box(0.36, 0.02, 0.75), dark, 0, 0.715, 0.4);
+  add(tor(0.27, 0.03, 4, 14, PI), titanium, 0, 0.98, 0.3, PI / 2);
+  tube(0.03, 0.03, titanium, 0, 0.57, 0.98, 0.8, 0.71);
+  add(box(0.24, 0.26, 0.3), body, 0, 0.95, -0.15);
+  add(box(0.16, 0.12, 0.02), dark, 0, 1.0, 0.01);
+  tube(0.22, 0.07, body, 0, -0.2, 0.68, -1.65, 0.45);
+  add(box(0.02, 0.22, 0.9), body, 0, 0.92, -0.75, -0.12);
+  add(box(0.024, 0.16, 0.2), num, 0, 0.93, -0.55);
+  add(box(1.4, 0.03, 2.5), carbon, 0, 0.07, 0.05);
+  add(box(1.0, 0.03, 0.6), carbon, 0, 0.2, -1.6, 0.3);
+  tube(0.1, 0.06, carbon, 0, -1.5, 0.42, -2.3, 0.42);
+  add(box(0.12, 0.05, 0.03), k.brakeMat, 0, 0.42, -2.32);
+  add(cyl(0.05, 0.05, 0.2, 8), engineMat, 0, 0.55, -2.15, PI / 2);
+  add(box(0.04, 0.45, 0.12), carbon, 0, 0.62, -2.15);
+  add(box(1.0, 0.025, 0.3), carbon, 0, 0.84, -2.2, 0.15);
+  add(box(1.7, 0.02, 0.34), carbon, 0, 0.11, 2.45);
+  sym((s) => {
+    tube(0.028, 0.028, titanium, s * 0.27, 0.3, 0.98, -0.05, 0.74);
+    add(box(0.36, 0.32, 1.1), body, s * 0.43, 0.48, -0.15);
+    add(box(0.28, 0.2, 0.02), dark, s * 0.43, 0.52, 0.41);
+    add(box(0.26, 0.24, 0.6), body, s * 0.36, 0.42, -0.95);
+    add(box(0.06, 0.012, 1.1), con, s * 0.43, 0.645, -0.15);
+    add(box(0.06, 0.08, 2.0), carbon, s * 0.7, 0.11, 0.05);
+    add(box(0.02, 0.18, 0.5), carbon, s * 0.25, 0.2, -1.65);
+    add(box(0.02, 0.36, 0.62), body, s * 0.51, 0.86, -2.25);
+    add(box(0.02, 0.18, 0.5), body, s * 0.86, 0.17, 2.42);
+    add(box(0.03, 0.16, 0.12), carbon, s * 0.06, 0.2, 2.45);
+    add(box(0.14, 0.06, 0.04), body, s * 0.38, 0.78, 0.7);
+    add(box(0.44, 0.025, 0.06), carbon, s * 0.46, 0.46, 1.75, 0, 0, s * 0.12);
+    add(box(0.44, 0.025, 0.06), carbon, s * 0.46, 0.3, 1.75);
+    add(box(0.42, 0.025, 0.06), carbon, s * 0.45, 0.4, -1.65);
+  });
+  const rearFlap = flap(k, body, 0.9, -2.1, [[1.0, 0.22, 0.45, 0, 0]]);
+  const frontFlap = flap(k, body, 0.13, 2.36, [[1.6, 0.14, 0.3, 0, 0], [1.5, 0.12, 0.5, 0.05, -0.12]]);
+  return f1Done(k, rig, band, [0, 0.55, -2.6, 0.07], [0, 0.8, 0.3], { rearFlap, frontFlap });
+}
+
+/** 2004 V10 F1: high nose on pylons, big airbox, slim sidepods with chimneys/flip-ups, tall narrow rear wing, grooved tyres. */
+function f1_v10(color: number) {
+  const k = kit(color), { add, body, tube, beam, con } = k, band = bandMat(), num = numMat('3');
+  const wo: F1Wheel = { band, disc: rimGrey, spoke: rimDark, n: 6, rimFrac: 0.5, grooved: true };
+  const rig = rigWith(k, (r, w, s) => f1Wheel(r, w, s, wo), 0.33, 0.33, 0.3, 0.36, 0.75, 0.72, 1.6, -1.5);
+  tube(0.06, 0.15, body, 0, 2.4, 0.42, 1.15, 0.6);
+  beam(0.05, 0.012, con, 0, 2.35, 0.48, 1.2, 0.75);
+  add(box(1.4, 0.02, 0.32), carbon, 0, 0.1, 2.25, -0.05);
+  add(box(1.3, 0.015, 0.14), body, 0, 0.16, 2.15, 0.35);
+  add(box(0.5, 0.46, 1.25), body, 0, 0.55, 0.55);
+  add(box(0.36, 0.02, 0.7), dark, 0, 0.785, 0.35);
+  add(box(0.3, 0.36, 0.4), body, 0, 1.0, -0.15);
+  add(box(0.2, 0.14, 0.02), dark, 0, 1.08, 0.06);
+  tube(0.22, 0.07, body, 0, -0.3, 0.85, -1.6, 0.45);
+  add(box(1.3, 0.03, 2.3), carbon, 0, 0.07, 0.05);
+  add(box(0.9, 0.03, 0.5), carbon, 0, 0.18, -1.55, 0.3);
+  tube(0.1, 0.06, carbon, 0, -1.4, 0.4, -2.15, 0.4);
+  add(box(0.85, 0.03, 0.24), carbon, 0, 0.58, -2.05, 0.15);
+  add(box(0.6, 0.02, 0.14), carbon, 0, 0.42, -1.95);
+  add(box(0.1, 0.05, 0.03), k.brakeMat, 0, 0.4, -2.17);
+  add(cyl(0.045, 0.045, 0.2, 8), engineMat, 0, 0.52, -2.0, PI / 2);
+  sym((s) => {
+    add(box(0.02, 0.2, 0.48), body, s * 0.71, 0.17, 2.22);
+    add(box(0.03, 0.32, 0.14), carbon, s * 0.1, 0.26, 2.25);
+    add(box(0.3, 0.3, 1.0), body, s * 0.4, 0.42, -0.1);
+    add(box(0.24, 0.2, 0.02), dark, s * 0.4, 0.45, 0.41);
+    add(cyl(0.05, 0.05, 0.14, 6), dark, s * 0.42, 0.62, -0.45);
+    add(box(0.02, 0.14, 0.25), body, s * 0.56, 0.62, -0.05);
+    add(box(0.02, 0.24, 0.5), carbon, s * 0.46, 0.25, 0.8);
+    add(box(0.06, 0.012, 1.0), con, s * 0.4, 0.575, -0.1);
+    add(box(0.012, 0.16, 0.16), num, s * 0.155, 1.0, -0.15);
+    add(box(0.02, 0.52, 0.6), body, s * 0.43, 0.72, -2.05);
+    add(box(0.13, 0.06, 0.04), body, s * 0.36, 0.82, 0.6);
+    add(box(0.38, 0.025, 0.06), carbon, s * 0.44, 0.48, 1.6, 0, 0, s * 0.15);
+    add(box(0.38, 0.025, 0.06), carbon, s * 0.44, 0.32, 1.6);
+    add(box(0.4, 0.025, 0.06), carbon, s * 0.45, 0.38, -1.5);
+  });
+  const rearFlap = flap(k, body, 0.85, -1.92, [[0.85, 0.2, 0.5, 0, 0], [0.85, 0.14, 0.7, 0.06, -0.14]]);
+  return f1Done(k, rig, band, [0, 0.52, -2.45, 0.07], [0, 0.9, 0.25], { rearFlap });
+}
+
+/** 1970s F1: cigar/wedge tub, periscope airbox, wide strutted rear wing, fat rear slicks, nose winglets, exposed engine + exhausts. */
+function f1_classic(color: number) {
+  const k = kit(color), { add, body, tube, beam, con } = k, band = bandMat(), num = numMat('5');
+  const wo: F1Wheel = { band, disc: rimGrey, spoke: rimDark, n: 5, rimFrac: 0.62 };
+  const rig = rigWith(k, (r, w, s) => f1Wheel(r, w, s, wo), 0.3, 0.36, 0.24, 0.5, 0.72, 0.72, 1.35, -1.35);
+  add(prism('f1c', [[2.25, 0.18], [2.25, 0.26], [0.7, 0.6], [0.0, 0.66], [-0.55, 0.6], [-0.6, 0.18], [0.0, 0.14]], 0.7), body, 0, 0, 0);
+  beam(0.14, 0.012, con, 0, 2.2, 0.275, 0.75, 0.595);
+  add(box(0.22, 0.012, 0.22), num, 0, 0.435, 1.5, 0.22);
+  add(box(0.4, 0.02, 0.55), dark, 0, 0.655, 0.25);
+  add(box(0.36, 0.14, 0.02), winMat, 0, 0.72, 0.62, -0.4);
+  add(tor(0.18, 0.03, 4, 10, PI), chrome, 0, 0.66, 0.0);
+  add(box(0.3, 0.42, 0.36), body, 0, 0.95, -0.25);
+  add(box(0.22, 0.2, 0.02), dark, 0, 1.05, -0.06);
+  add(box(0.5, 0.32, 0.85), engineMat, 0, 0.42, -1.07);
+  add(box(0.36, 0.22, 0.4), carbon, 0, 0.35, -1.7);
+  add(box(1.3, 0.03, 0.42), body, 0, 0.98, -1.85, 0.1);
+  add(box(0.1, 0.05, 0.03), k.brakeMat, 0, 0.35, -1.92);
+  sym((s) => {
+    add(box(0.32, 0.26, 0.8), body, s * 0.48, 0.38, -0.35);
+    add(box(0.06, 0.012, 0.8), con, s * 0.48, 0.515, -0.35);
+    add(box(0.5, 0.03, 0.32), body, s * 0.5, 0.22, 2.0, -0.12);
+    add(box(0.02, 0.14, 0.34), body, s * 0.75, 0.24, 2.0);
+    add(box(0.012, 0.2, 0.2), num, s * 0.155, 0.95, -0.25);
+    add(box(0.1, 0.08, 0.7), chrome, s * 0.17, 0.62, -1.1);
+    tube(0.035, 0.035, chrome, s * 0.2, -0.8, 0.38, -1.5, 0.42);
+    tube(0.04, 0.075, chrome, s * 0.22, -1.5, 0.42, -1.95, 0.48, 8);
+    add(box(0.03, 0.5, 0.1), carbon, s * 0.2, 0.72, -1.75);
+    add(box(0.02, 0.2, 0.46), body, s * 0.65, 0.96, -1.85);
+    add(box(0.12, 0.06, 0.04), chrome, s * 0.4, 0.68, 0.5);
+    add(box(0.5, 0.03, 0.05), carbon, s * 0.48, 0.3, 1.35);
+    add(box(0.4, 0.03, 0.05), carbon, s * 0.5, 0.36, -1.35);
+  });
+  return f1Done(k, rig, band, [0.22, 0.48, -2.3, 0.07], [0, 0.82, 0.2], {}, [-0.44, 0]);
+}
+
 const BUILDERS: Record<VehicleModelId, (color: number) => VehicleModel> = {
   street, superbike, dirt, cafe, cruiser,
   drift_coupe: driftCoupe, hatch, gt, muscle, rally,
   rotary, hyper, touring, trophy, roadster,
+  f1_2026, f1_v10, f1_classic,
 };
 
 export function buildVehicleModel(id: VehicleModelId, color: number): VehicleModel {

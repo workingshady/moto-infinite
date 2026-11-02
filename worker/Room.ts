@@ -132,7 +132,7 @@ export class Room extends DurableObject<Env> {
         if (!this.isHost(ws)) return;
         const s = msg.settings;
         this.settings = {
-          mode: s.mode === 'race' || s.mode === 'drift' ? s.mode : 'open',
+          mode: s.mode === 'race' || s.mode === 'drift' || s.mode === 'f1' ? s.mode : 'open',
           trackId: clean(s.trackId).toLowerCase(),
           laps: Math.max(1, Math.min(50, Math.round(Number(s.laps) || 3))),
           pvp: !!s.pvp,
@@ -144,6 +144,9 @@ export class Room extends DurableObject<Env> {
           maxPlayers: Math.max(2, Math.min(MAX_PLAYERS, Math.round(Number(s.maxPlayers) || MAX_PLAYERS))),
           locked: !!s.locked,
           drones: Math.max(0, Math.min(3, Math.round(Number(s.drones ?? 2)))),
+          ai: 0, // computer opponents are local-only (not synced)
+          session: s.session === 'quali' ? 'quali' : 'race',
+          tyre: s.tyre === 'soft' || s.tyre === 'hard' ? s.tyre : 'medium',
         };
         for (const k of Object.keys(GEN_MAX) as (keyof typeof GEN_MAX)[])
           this.settings.gen[k] = Math.max(0, Math.min(GEN_MAX[k], Math.round(Number(s.gen?.[k] ?? DEFAULT_GEN[k]))));

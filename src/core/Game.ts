@@ -10,6 +10,9 @@ import type { ChallengeId } from '../data/challenges';
 import { Noise } from '../utils/noise';
 import { Circuit, GridRoads, type Pose, type RoadLayout } from '../world/layout';
 import { DriftTrack, type DriftTrackId } from '../world/DriftTrack';
+import { F1Track, F1_TRACKS, type F1TrackId } from '../world/F1Track';
+import { AiRacers } from '../systems/AiRacers';
+import type { TyreCompound } from '../config';
 import { Terrain } from '../world/Terrain';
 import { ChunkManager } from '../world/Chunks';
 import { Environment } from '../world/Environment';
@@ -38,6 +41,11 @@ export interface SessionOptions {
   gen: WorldGen;
   /** Enemy drone amount, index into DRONE_LEVELS. */
   drones: number;
+  /** Computer opponents in races (local only). */
+  ai?: number;
+  /** F1 session and starting tyre. */
+  session?: 'race' | 'quali';
+  tyre?: TyreCompound;
   /** Guided training ride for new players. */
   tutorial?: boolean;
   quality: QualityName;
@@ -72,6 +80,7 @@ export class Game {
   readonly hudLayer: HTMLDivElement;
   readonly net: NetClient | null;
   race: Race | null = null;
+  ai: AiRacers | null = null;
   tutorial: Tutorial | null = null;
   remotes: RemotePlayers | null = null;
   time = 0;
@@ -81,6 +90,7 @@ export class Game {
   private last = 0;
   private netT = 0;
   private attractCam: THREE.PerspectiveCamera | null = null;
+  private aiCount = 0;
   private offs: (() => void)[] = [];
   private onResize = () => this.resize();
 
@@ -89,6 +99,7 @@ export class Game {
     const noise = new Noise(opts.seed);
     this.layout = opts.mode === 'race' ? new Circuit(noise, opts.seed)
       : opts.mode === 'drift' ? new DriftTrack(noise, opts.trackId as DriftTrackId, opts.seed)
+      : opts.mode === 'f1' ? new F1Track(noise, opts.trackId as F1TrackId)
       : new GridRoads(noise, opts.seed, opts.gen.roads, GEN.poi[opts.gen.poi].chance);
     this.terrain = new Terrain(noise, this.layout, opts.theme, opts.gen);
     this.renderer = new Renderer(opts.quality, document.body);
@@ -105,7 +116,9 @@ export class Game {
     this.combat = new Combat(this);
     this.chunks = new ChunkManager(this);
 
-    const count = opts.attract ? 0 : opts.locals.length + (this.net ? this.netSlot() : 0);
+    const aiCount = opts.attract || opts.net || opts.session === 'quali' || (opts.mode !== 'race' && opts.mode !== 'f1') ? 0 : opts.ai ?? 0;
+    this.aiCount = aiCount;
+    const count = opts.attract ? 0 : opts.locals.length + (this.net ? this.netSlot() : 0) + aiCount;
     this.spawnPoints = Array.from({ length: Math.max(1, count) }, (_, i) => this.layout.spawn(i));
     this.events.on('progress', (e) => e.player.challenges?.notify(e.id, e.value));
 
@@ -115,9 +128,17 @@ export class Game {
     if (opts.attract) {
       this.attractCam = new THREE.PerspectiveCamera(55, 1, 0.3, 900);
     } else {
-      const first = this.net ? this.netSlot() : 0;
+      const first = this.net ? this.netSlot() : Math.floor(this.aiCount / 2); // start mid-grid when racing the AI
       opts.locals.forEach((l, i) => this.players.push(new Player(this, i, l.controller, l.name, l.color, this.spawnPoints[first + i], opts.mode !== 'open' || opts.locals.length > 1 || !!this.net, l.vehicle)));
-      if (opts.mode === 'race' && this.layout instanceof Circuit) this.race = new Race(this, this.layout, opts.laps, opts.trackId);
+      if (opts.mode === 'f1') this.players.forEach((p) => p.setTyres(opts.tyre ?? 'medium'));
+      if (this.aiCount && (this.layout instanceof Circuit || this.layout instanceof F1Track)) {
+        // AI take every grid slot the local players don't use
+        this.ai = new AiRacers(this, this.layout, this.aiCount, opts.mode === 'f1', this.layout instanceof F1Track ? this.layout.halfWidth : 7, opts.laps, 0);
+        const used = new Set(this.players.map((_, i) => first + i));
+        let slot = 0;
+        for (const r of this.ai.list) { while (used.has(slot)) slot++; this.ai.place(r, slot++); }
+      }
+      if ((opts.mode === 'race' && this.layout instanceof Circuit) || (opts.mode === 'f1' && this.layout instanceof F1Track)) this.race = new Race(this, this.layout, opts.laps, opts.trackId);
       if (this.net) this.wireNet(this.net);
       if (opts.tutorial) this.tutorial = new Tutorial(this);
     }
@@ -151,6 +172,7 @@ export class Game {
     const track = TRACKS.find((t) => t.id === this.opts.trackId);
     const beat = this.opts.tutorial ? { title: 'TRAINING RIDE', text: 'Follow the checklist on the right. Each step teaches one skill.' }
       : this.opts.mode === 'drift' ? { title: 'DRIFT SESSION', text: 'Hold X (handbrake) into corners, steer against the slide to hold the angle. Chain drifts for a bigger multiplier.' }
+      : this.opts.mode === 'f1' ? { title: `GRAND PRIX · ${(F1_TRACKS.find((t) => t.id === this.opts.trackId)?.name ?? '').toUpperCase()}`, text: this.opts.session === 'quali' ? 'Time trial: set your fastest lap, beat your ghost.' : `${this.opts.laps} laps · wait for the five red lights to go out. Pit for fresh tyres when they wear.` }
       : this.opts.mode === 'open' ? STORY.spawn : { title: `${STORY.race.title} · ${(track?.name ?? 'RANDOM').toUpperCase()}`, text: `${this.opts.laps} lap${this.opts.laps > 1 ? 's' : ''}. ${STORY.race.text}` };
     setTimeout(() => this.players.forEach((p) => p.storyBeat(beat.title, beat.text)), 700);
   }
@@ -228,7 +250,7 @@ export class Game {
     this.remotes?.update(dt);
     this.updateMusic();
     const focus = this.players.length ? this.players.map((p) => p.P) : [this.attractFocus()];
-    this.chunks.stream(focus, WORLD.buildsPerFrame);
+    this.chunks.stream(focus, this.opts.mode === 'f1' ? 2 : WORLD.buildsPerFrame); // F1 speeds need chunks ready sooner
     this.env.update(dt, this.time, focus[0].x, focus[0].z);
     if (this.net && this.players[0]) {
       this.netT -= dt;
@@ -285,6 +307,7 @@ export class Game {
     this.offs.forEach((off) => off());
     this.players.forEach((p) => p.dispose());
     this.remotes?.dispose();
+    this.ai?.dispose();
     this.events.clear();
     this.renderer.dispose();
     this.hudLayer.remove();

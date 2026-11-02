@@ -6,7 +6,8 @@ export type VehicleKind = 'bike' | 'car';
 export type VehicleModelId =
   | 'street' | 'superbike' | 'dirt' | 'cafe' | 'cruiser'
   | 'drift_coupe' | 'hatch' | 'gt' | 'muscle' | 'rally'
-  | 'rotary' | 'hyper' | 'touring' | 'trophy' | 'roadster';
+  | 'rotary' | 'hyper' | 'touring' | 'trophy' | 'roadster'
+  | 'f1_2026' | 'f1_v10' | 'f1_classic';
 
 export interface VehicleDef {
   id: VehicleModelId;
@@ -26,6 +27,11 @@ export interface VehicleDef {
   offroad: number; // 0..1, 1 = no off-road penalty
   wheelie: boolean;
   engine: EngineProfile;
+  /**
+   * Open-wheel aero cars: downforce grows with speed², so the cornering limit (aLat, m/s² at low speed)
+   * rises at speed; F1 brakes hard (m/s²), ERS adds acceleration, straight-mode wings cut drag.
+   */
+  f1?: { downforce: number; aLat: number; brake: number; ersTop: number; dragCut: number };
   /** Fluff for the garage card. */
   spec: { power: string; weight: string; layout: string };
 }
@@ -35,7 +41,7 @@ export const VEHICLES: VehicleDef[] = [
     top: 30, accel: 17, grip: 1.9, traction: 9, slideTraction: 2.2, hp: 0, offroad: 0.3, wheelie: true, engine: { type: 'i4', cyl: 4, idle: 1300, redline: 11500, gears: 6, crackle: 0.3 },
     spec: { power: '95 hp', weight: '185 kg', layout: 'Inline-4' } },
   { id: 'superbike', name: 'Vortex 1000RR', kind: 'bike', cls: 'Superbike', era: '2020s', desc: 'Brutal top speed, twitchy. Pros only.',
-    top: 38, accel: 21, grip: 1.75, traction: 8, slideTraction: 2, hp: -10, offroad: 0.1, wheelie: true, engine: { type: 'i4', cyl: 4, idle: 1400, redline: 14500, gears: 6, crackle: 0.7 },
+    top: 38, accel: 21, grip: 1.75, traction: 8, slideTraction: 2, hp: -10, offroad: 0.1, wheelie: true, engine: { type: 'i4', cyl: 4, idle: 1400, redline: 14500, gears: 6, crackle: 0.5, pitch: 0.92 },
     spec: { power: '210 hp', weight: '195 kg', layout: 'Inline-4' } },
   { id: 'dirt', name: 'Dust Devil 450', kind: 'bike', cls: 'Motocross', era: '2010s', desc: 'Light, launches high, ignores rough ground.',
     top: 27, accel: 19, grip: 2.2, traction: 7, slideTraction: 1.6, hp: 0, offroad: 1, wheelie: true, engine: { type: 'single', cyl: 1, idle: 1700, redline: 10500, gears: 5, crackle: 0.5 },
@@ -53,13 +59,13 @@ export const VEHICLES: VehicleDef[] = [
     top: 29, accel: 13, grip: 2, traction: 5, slideTraction: 1.1, hp: 30, offroad: 0.3, wheelie: false, engine: { type: 'i4', cyl: 4, idle: 900, redline: 7800, gears: 5, crackle: 0.2 },
     spec: { power: '130 hp', weight: '940 kg', layout: 'FR · I4' } },
   { id: 'gt', name: 'Apex GT3', kind: 'car', cls: 'Race', era: '2020s', desc: 'Aero grip and speed. Hard to unstick, fastest on a circuit.',
-    top: 42, accel: 22, grip: 2.25, traction: 12, slideTraction: 2.5, hp: 40, offroad: 0, wheelie: false, engine: { type: 'v8', cyl: 8, idle: 1200, redline: 9000, gears: 6, crackle: 0.9, lope: 0.15 },
+    top: 42, accel: 22, grip: 2.25, traction: 12, slideTraction: 2.5, hp: 40, offroad: 0, wheelie: false, engine: { type: 'v8', cyl: 8, idle: 1200, redline: 9000, gears: 6, crackle: 0.7, lope: 0.15 },
     spec: { power: '550 hp', weight: '1,250 kg', layout: 'MR · V8' } },
   { id: 'muscle', name: 'Brute V8', kind: 'car', cls: 'Muscle', era: '1970s', desc: 'Torque monster. Power oversteer everywhere.',
     top: 36, accel: 20, grip: 1.45, traction: 3.5, slideTraction: 0.7, hp: 60, offroad: 0.3, wheelie: false, engine: { type: 'v8', cyl: 8, idle: 750, redline: 6200, gears: 4, crackle: 0.5, lope: 0.6 },
     spec: { power: '425 hp', weight: '1,600 kg', layout: 'FR · V8' } },
   { id: 'rally', name: 'Gravel 4WD', kind: 'car', cls: 'Rally', era: '2000s', desc: 'All-wheel drive. King of dirt, snow and rain.',
-    top: 33, accel: 19, grip: 2.05, traction: 6, slideTraction: 1.4, hp: 50, offroad: 1, wheelie: false, engine: { type: 'i4', cyl: 4, idle: 1000, redline: 7600, gears: 6, turbo: true, crackle: 1 },
+    top: 33, accel: 19, grip: 2.05, traction: 6, slideTraction: 1.4, hp: 50, offroad: 1, wheelie: false, engine: { type: 'i4', cyl: 4, idle: 1000, redline: 7600, gears: 6, turbo: true, crackle: 0.8 },
     spec: { power: '300 hp', weight: '1,230 kg', layout: '4WD · turbo I4' } },
   { id: 'rotary', name: 'Kaze 7R', kind: 'car', cls: 'Drift', era: '1990s', desc: 'Rotary-engined coupe. Revs forever, light tail, loves long slides.',
     top: 35, accel: 18, grip: 1.85, traction: 4.5, slideTraction: 0.9, hp: 35, offroad: 0.2, wheelie: false, engine: { type: 'rotary', cyl: 4, idle: 1000, redline: 9000, gears: 5, turbo: true, crackle: 0.8 },
@@ -76,6 +82,22 @@ export const VEHICLES: VehicleDef[] = [
   { id: 'roadster', name: 'Riviera GT', kind: 'car', cls: 'Classic', era: '1960s', desc: 'Open-top classic GT. Elegant, light steering, gentle drifts.',
     top: 31, accel: 14, grip: 1.8, traction: 6, slideTraction: 1.4, hp: 20, offroad: 0.1, wheelie: false, engine: { type: 'i6', cyl: 6, idle: 800, redline: 6500, gears: 4, crackle: 0.3 },
     spec: { power: '265 hp', weight: '1,150 kg', layout: 'FR · I6' } },
+  // Formula cars: real-scale speeds for the 1:1 F1 circuits (HUD shows true km/h)
+  { id: 'f1_2026', name: 'Formula 2026', kind: 'car', cls: 'Formula 1', era: '2026', desc: '768 kg, 3.4 m wheelbase, active front and rear wings, ~50% electric power. Brutal braking and downforce.',
+    top: 90, accel: 30, grip: 2.6, traction: 16, slideTraction: 4, hp: 20, offroad: 0, wheelie: false,
+    engine: { type: 'hybrid', cyl: 6, idle: 4000, redline: 15000, gears: 8, turbo: true, crackle: 0.2 },
+    f1: { downforce: 1.6, aLat: 16, brake: 48, ersTop: 1.07, dragCut: 1.08 },
+    spec: { power: '~1,000 hp (V6 hybrid)', weight: '768 kg', layout: 'MR · 1.6 V6 turbo + ERS' } },
+  { id: 'f1_v10', name: 'Formula V10', kind: 'car', cls: 'Formula 1', era: '2004', desc: 'The screaming V10 era: 19,000 rpm, huge mechanical grip, grooved tyres.',
+    top: 92, accel: 29, grip: 2.5, traction: 15, slideTraction: 3.6, hp: 15, offroad: 0, wheelie: false,
+    engine: { type: 'v10', cyl: 10, idle: 5000, redline: 19000, gears: 7, crackle: 0.5, pitch: 0.8 },
+    f1: { downforce: 1.5, aLat: 15, brake: 46, ersTop: 1.03, dragCut: 1.05 },
+    spec: { power: '~900 hp (3.0 V10)', weight: '605 kg', layout: 'MR · 3.0 V10' } },
+  { id: 'f1_classic', name: 'Formula 1976', kind: 'car', cls: 'Formula 1', era: '1970s', desc: 'Cigar-shaped wedge with a tall airbox. Less downforce, more slide, all heart.',
+    top: 78, accel: 22, grip: 2.2, traction: 9, slideTraction: 2.4, hp: 10, offroad: 0.1, wheelie: false,
+    engine: { type: 'v8', cyl: 8, idle: 3000, redline: 11000, gears: 5, crackle: 0.8, lope: 0.1 },
+    f1: { downforce: 0.8, aLat: 13, brake: 36, ersTop: 1, dragCut: 1.03 },
+    spec: { power: '~480 hp (3.0 V8)', weight: '575 kg', layout: 'MR · 3.0 V8' } },
 ];
 
 export const vehicleById = (id: string) => VEHICLES.find((v) => v.id === id) ?? VEHICLES[0];

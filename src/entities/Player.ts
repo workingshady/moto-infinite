@@ -8,7 +8,7 @@ import type { EngineSound } from '../core/EngineSound';
 import type { Entity } from './EntityManager';
 import type { Pose } from '../world/layout';
 import type { NetState } from '../../shared/protocol';
-import { ASSIST, BIKE, DRIFT, LEVELING, CONTROL, LANDING, PHYS, PLAYER, POWERUPS, ROAD, WHEELIE, type PowerupKind } from '../config';
+import { ASSIST, BIKE, DRIFT, F1, type TyreCompound, LEVELING, CONTROL, LANDING, PHYS, PLAYER, POWERUPS, ROAD, WHEELIE, type PowerupKind } from '../config';
 import { clamp, damp, lerp, rnd, TAU, wrapPi } from '../utils/math';
 import { buildRider, seatRider, type RiderModel } from './models';
 import { buildVehicleModel, type VehicleModel } from './vehicleModels';
@@ -18,7 +18,8 @@ import { MILESTONES, TIERS, UPGRADES, type Card } from '../data/upgrades';
 import { Hud } from '../ui/Hud';
 import { PlayerChallenges } from '../systems/Challenges';
 import { STORY } from '../data/story';
-import { prefs } from '../core/prefs';
+import { prefs, savePrefs } from '../core/prefs';
+import { CAM_LABEL, CAM_VIEWS, isCamView, type CamView } from '../core/cameraViews';
 
 type Style = 'NO-HANDER' | 'SUPERMAN' | 'HEEL CLICKER';
 
@@ -38,9 +39,14 @@ export class Player {
     x: 0, z: 0, y: 0, h: 0, moveH: 0, v: 0, vy: 0, lean: 0, pitch: 0, pitchV: 0, steer: 0,
     air: false, airT: 0, lastG: 0, wheel: 0, flipAcc: 0, spinAcc: 0, pad: 0, wasN: false, impact: 0, fromRamp: false,
     latch: { up: false, down: false, left: false, right: false },
-    wheelie: 0, wheelieV: 0, wheelieT: 0, wheeliePerfect: 0, wheelieHeld: false, yawV: 0, flick: 0, lastSteerSign: 0, lastSteerT: 0, wasUp: false, close: false, tandem: false,
+    wheelie: 0, wheelieV: 0, wheelieT: 0, wheeliePerfect: 0, wheelieD: 0, yawV: 0, flick: 0, lastSteerSign: 0, lastSteerT: 0, wasUp: false, close: false, tandem: false,
   };
   /** Live drift chain: points build while sliding, banked after a short straight. */
+  /** Formula 1 state: tyres, aero, pit stops. */
+  readonly f1 = {
+    compound: 'medium' as TyreCompound, wear: 0, aeroOpen: false, slip: false, inPit: false, pitT: 0, stops: 0, penalty: 0,
+    topMul: 1, accelMul: 1, gripMul: 1, stillT: 0,
+  };
   readonly drift = { on: false, pts: 0, t: 0, cool: 0, angle: 0, total: 0, best: 0, zone: '', zoneMult: 1, jitter: 0, prevAngle: 0 };
   readonly W = { x: 0, z: 0, y: 0, h: 0, vy: 0, ground: true, phase: 0, amt: 0 };
   readonly stats = {
@@ -76,10 +82,21 @@ export class Player {
   private style: Style | null = null;
   private styleT = 0;
   private styleDone: Style[] = [];
+  /** Chosen camera view (cycled with the camera key, remembered per player slot). */
+  view: CamView = 'chase';
+  /** Camera view actually used this frame (on foot / wrecked fall back to a third-person view). */
+  activeView: CamView = 'chase';
+  private cine = { x: 0, y: 0, z: 0, set: false, side: 1 };
+  private camQ = new THREE.Quaternion();
+  private headParts: THREE.Object3D[] | null = null;
+  private headHidden = false;
+  /** Vehicle bounds in model space (hood camera placement). */
+  private dims = new THREE.Box3();
 
   constructor(readonly game: Game, readonly index: number, readonly ctrl: Controller, readonly name: string, readonly color: number, spawn: Pose, mounted: boolean, vehicle = 'street') {
     this.def = vehicleById(vehicle);
     this.bike = buildVehicleModel(this.def.id, color);
+    this.dims.setFromObject(this.bike.root); // still at the origin, unrotated, no rider yet
     const d = this.def, st = this.stats;
     Object.assign(st, { top: d.top, accel: d.accel, grip: d.grip, hpMax: PLAYER.hpMax + d.hp });
     this.s.hp = st.hpMax;
@@ -97,6 +114,19 @@ export class Player {
     this.cam.pos.set(B.x - Math.sin(B.h) * 12, B.y + 7, B.z - Math.cos(B.h) * 12);
     this.cam.look.set(B.x, B.y, B.z);
     this.camera.position.copy(this.cam.pos);
+    const saved = Array.isArray(prefs.cams) ? prefs.cams[index] : undefined;
+    this.view = isCamView(saved) ? saved : 'chase';
+  }
+
+  /** Next camera view; remembered in prefs for this player slot. */
+  cycleCamera() {
+    this.view = CAM_VIEWS[(CAM_VIEWS.indexOf(this.view) + 1) % CAM_VIEWS.length];
+    if (!Array.isArray(prefs.cams)) prefs.cams = ['chase', 'chase'];
+    prefs.cams[this.index] = this.view;
+    savePrefs();
+    this.cine.set = false;
+    this.cam.yaw = 0;
+    this.hud.camLabel(`🎥 ${CAM_LABEL[this.view]}${!this.riding && (this.view === 'fp' || this.view === 'hood') ? ' · when riding' : ''}`);
   }
 
   // ---------------------------------------------------------------- per frame (input edges)
@@ -110,6 +140,7 @@ export class Player {
       }
     }
     if (this.game.paused) return;
+    if (c.hit('camera')) this.cycleCamera();
     if (this.controlsLocked) return;
     if (c.hit('ride')) this.toggleRide();
     if (c.hit('respawn')) this.respawn();
@@ -143,7 +174,7 @@ export class Player {
     this.syncP();
     this.aimTarget = g.entities.findTarget(this.P.x, this.P.z, this.P.h);
     s.fireCd -= dt;
-    if (this.ctrl.is('fire') && s.fireCd <= 0 && !s.dead && !this.controlsLocked) g.combat.fire(this);
+    if (this.ctrl.is('fire') && s.fireCd <= 0 && !s.dead && !this.controlsLocked && g.opts.mode !== 'f1') g.combat.fire(this); // no weapons in F1
     if (g.time - s.lastHurt > PLAYER.regenDelay && !s.dead) s.hp = Math.min(this.stats.hpMax, s.hp + PLAYER.regenRate * dt);
     if (s.comboT > 0) { s.comboT -= dt; if (s.comboT <= 0) s.combo = 0; }
     for (const k of Object.keys(this.buffs) as PowerupKind[]) if (this.buffs[k] > 0) this.buffs[k] = Math.max(0, this.buffs[k] - dt);
@@ -176,12 +207,19 @@ export class Player {
       }
       B.wasN = wantN;
       if (B.pad > 0) boosting = true;
-      const top = st.top * (boosting ? BIKE.nitroTopMul : 1) * (onRoad ? 1 : lerp(BIKE.offroadTop, 1, this.def.offroad));
+      const F = this.def.f1;
+      if (F) this.f1Step(dt, active && c.is('trick'), down);
+      const top = st.top * (boosting ? (F ? F.ersTop : BIKE.nitroTopMul) : 1) * (onRoad ? 1 : lerp(BIKE.offroadTop, 1, this.def.offroad)) * this.f1.topMul;
       if (!B.air) {
-        if (up) B.v += (B.v < 0 ? 40 : st.accel * (boosting ? BIKE.nitroAccelMul : 1)) * dt;
+        // F1: aero drag makes acceleration fade toward top speed
+        const dragFade = F ? 1 - clamp(B.v / top, 0, 1) ** 2 * 0.8 : 1;
+        // mid-wheelie the throttle stays on (holding C = gas) and ↓ only lowers the front instead of braking
+        const inWheelie = B.wheelie > WHEELIE.active;
+        const gas = up || (inWheelie && active && c.is('trick'));
+        if (gas) B.v +=(B.v < 0 ? 40 : st.accel * (boosting ? (F ? 1.25 : BIKE.nitroAccelMul) : 1) * dragFade * this.f1.accelMul) * dt;
         else if (boosting) B.v += st.accel * BIKE.nitroAccelMul * dt; // nitro drives by itself: Space + ←/→ is enough
-        if (down) B.v -= (B.v > 0 ? BIKE.brake : BIKE.reverse) * dt;
-        if (!up && !down && !boosting) B.v *= 1 - BIKE.coastDrag * dt;
+        if (down && !inWheelie) B.v -= (B.v > 0 ? (F ? F.brake * this.f1.gripMul : BIKE.brake) : BIKE.reverse) * dt;
+        if (!gas && !down && !boosting) B.v *= 1 - BIKE.coastDrag * dt;
         if (!onRoad) B.v *= 1 - BIKE.offroadDrag * (1 - this.def.offroad) * dt;
         if (g.env.grip < 1 && Math.abs(B.steer) > 0.6 && Math.abs(B.v) > 20) B.v *= 1 - (1 - g.env.grip) * dt; // wet roads scrub speed in corners
         if (B.v > top) B.v -= Math.min(B.v - top, 30 * dt);
@@ -193,8 +231,14 @@ export class Player {
         const wheelie = this.updateWheelie(dt, active && c.is('trick'), up, down);
         // yaw with inertia: the yaw rate eases toward what the steering asks for (heavier cars respond slower)
         const yawTarget = B.steer * st.grip * g.env.grip * clamp(Math.abs(B.v) / 6, 0, 1) * Math.sign(B.v)
-          * (boosting ? CONTROL.boostSteer : 1) * (handbrake ? 1.55 : 1) * (wheelie ? 0.5 : 1);
-        B.yawV = lerp(B.yawV, yawTarget, damp(dt, this.isCar ? DRIFT.yawInertia.car : DRIFT.yawInertia.bike));
+          * (boosting ? CONTROL.boostSteer : 1) * (handbrake ? 1.55 : 1) * (wheelie ? 0.8 : 1);
+        // F1: the cornering limit (lateral g) grows with downforce ~ v², so yaw rate is capped at aLat / v
+        let yawGoal = yawTarget;
+        if (F) {
+          const v = Math.max(Math.abs(B.v), 6), aLat = F.aLat * (1 + F.downforce * (v / 50) ** 2 * (this.f1.aeroOpen ? 0.7 : 1)) * this.f1.gripMul * g.env.grip;
+          yawGoal = clamp(yawTarget, -aLat / v, aLat / v);
+        }
+        B.yawV = lerp(B.yawV, yawGoal, damp(dt, this.isCar ? DRIFT.yawInertia.car : DRIFT.yawInertia.bike));
         B.h += B.yawV * dt;
         // weight transfer: a quick left-right flick, lifting off, or braking mid-turn makes the rear light
         const steerSign = Math.sign(want);
@@ -209,7 +253,7 @@ export class Player {
         // drift model: the travel direction chases the heading at the vehicle's traction rate.
         // Handbrake and power oversteer (throttle on a low-traction car) let the tail step out;
         // counter-steering (steering against the slide) catches it faster.
-        let trac = (handbrake ? this.def.slideTraction : this.def.traction) * g.env.grip;
+        let trac = (handbrake ? this.def.slideTraction : this.def.traction) * g.env.grip * this.f1.gripMul;
         const turning = Math.abs(B.steer) > 0.4 && Math.abs(B.v) > 14;
         if (this.isCar && (up || boosting) && Math.abs(slip) > 0.1 && this.def.traction < 6) trac *= 0.75; // power oversteer
         if (B.flick > 0) trac *= DRIFT.flickTraction; // feint / Scandinavian flick
@@ -286,7 +330,9 @@ export class Player {
       B.lean = lerp(B.lean, 0.22, damp(dt, 4));
       B.wasN = false;
     }
-    s.nitro = clamp(s.nitro + st.nitroRegen * dt, 0, st.nitroMax);
+    // F1: ERS harvests energy under braking; everything else regenerates nitro over time
+    const regen = this.def.f1 ? (down && Math.abs(B.v) > 10 ? F1.ersRegen : F1.ersIdle) : st.nitroRegen;
+    s.nitro = clamp(s.nitro + regen * dt, 0, st.nitroMax);
     if (Math.abs(B.v) < 0.03) B.v = 0;
     B.pad = Math.max(0, B.pad - dt);
     this.cam.boost = lerp(this.cam.boost, boosting && this.riding ? 1 : 0, damp(dt, 6));
@@ -342,6 +388,8 @@ export class Player {
           if (this.riding) {
             const d = Math.abs(B.v) * dt;
             s.dist += d;
+            // tyre wear: distance, plus extra when sliding or braking hard
+            if (this.def.f1) this.f1.wear = Math.min(1, this.f1.wear + (d / F1.tyres[this.f1.compound].life) * (1 + Math.abs(wrapPi(B.h - B.moveH)) * 4 + (down ? 0.6 : 0)));
             g.events.emit('progress', { player: this, id: 'dist', value: d });
           }
           B.x = nx;
@@ -434,31 +482,36 @@ export class Player {
   }
 
   /**
-   * Wheelie as a balance act (bikes only). State: angle B.wheelie and angular velocity B.wheelieV around the rear axle.
-   * C + throttle pops and lifts, ↓ is the rear brake, gravity tips toward 0 below the balance point and over the top past it.
+   * Wheelies (bikes only). State: angle B.wheelie and angular velocity B.wheelieV around the rear axle.
+   * Hold C on the ground at any speed to lift, release to land. Normal/Easy: wheelie control holds the front at a target
+   * angle (↑/↓ nudge it, never brake) and clamps it below the loop-out point. Pro: real balance physics, loop out = crash.
    */
   private updateWheelie(dt: number, hold: boolean, up: boolean, down: boolean) {
     const B = this.B, W = WHEELIE;
     if (!this.def.wheelie || this.isCar) return false;
-    const speed = Math.abs(B.v), power = this.def.accel / 17;
-    if (hold && !B.wheelieHeld && up && speed > W.minSpeed && B.wheelie < 0.05) B.wheelieV += W.pop * power; // clutch pop
-    B.wheelieHeld = hold;
-    if (B.wheelie <= 0 && B.wheelieV <= 0) { B.wheelie = 0; B.wheelieV = 0; this.endWheelie(); return false; }
-    let torque = -W.gravity * Math.sin(W.balance - B.wheelie); // falls forward below balance, backward past it
-    const k = W.assist[prefs.assist] ?? W.assist[1], target = W.balance - 0.08;
-    // wheelie control (like modern bikes' electronics, on Normal/Easy): power fades as the front nears the balance point
-    const control = k ? clamp((target + 0.2 - B.wheelie) / 0.3, 0, 1) : 1;
-    if (hold && up && speed > W.minSpeed) torque += W.throttle * power * clamp(1.4 - speed / this.def.top, 0.35, 1.2) * control;
-    if (down) torque -= W.brake;
-    if (k && hold) torque -= k * (B.wheelie - target) + k * 0.35 * B.wheelieV; // assist: settle just under the balance point
-    B.wheelieV += torque * dt;
-    B.wheelieV *= 1 - W.damping * dt;
+    const on = hold && B.v > W.minSpeed, a = B.wheelie, v = B.wheelieV, lim = W.limit[prefs.assist] ?? W.limit[1];
+    if (!on && a <= 0) { B.wheelie = 0; B.wheelieV = 0; this.endWheelie(); return false; }
+    const pro = prefs.assist === 0, gravity = pro ? -W.gravity * Math.sin(W.balance - a) : 0; // Pro: tips forward below balance, backwards past it
+    let acc: number;
+    if (!on) acc = gravity + W.landOmega ** 2 * (W.land - a) - 2 * W.landOmega * v; // released: the front comes down smoothly
+    else if (pro) {
+      // Pro: the throttle hand only roughly holds the angle, ↑ adds raw lift (hold it too long and you loop out), ↓ is the rear brake
+      acc = gravity + W.proHold * (W.aim - a) - W.proDamp * v + (up ? W.proUp * (this.def.accel / 17) : 0) - (down ? W.brake : 0);
+    } else {
+      // wheelie control: critically damped spring toward the target angle, same feel at any speed (nitro included)
+      const aim = Math.min(W.aim + (up ? W.aimUp : 0) - (down ? W.aimDown : 0), lim - 0.06);
+      acc = W.omega ** 2 * (aim - a) - 2 * W.omega * v;
+    }
+    B.wheelieV += acc * dt;
     B.wheelie += B.wheelieV * dt;
+    if (B.wheelie > lim) { B.wheelie = lim; B.wheelieV = Math.min(B.wheelieV, 0); } // electronics catch it before the loop-out
     if (B.wheelie > W.loopOut) {
       B.wheelie = 0;
       B.wheelieV = 0;
-      this.endWheelie();
-      this.crash('Looped out! Tap ↓ (rear brake) to bring the front down');
+      B.wheelieT = 0;
+      B.wheeliePerfect = 0;
+      B.wheelieD = 0;
+      this.crash('Looped out! ↓ lowers the front, or switch Assist to Normal for wheelie control');
       return false;
     }
     if (B.wheelie <= 0) {
@@ -470,20 +523,24 @@ export class Player {
     }
     if (B.wheelie > 0.18) {
       B.wheelieT += dt;
+      B.wheelieD += Math.abs(B.v) * dt;
       if (Math.abs(B.wheelie - W.balance) < W.perfect) B.wheeliePerfect += dt;
       this.game.events.emit('progress', { player: this, id: 'wheelie', value: B.wheelieT });
     }
     return B.wheelie > 0.18;
   }
 
-  /** Front wheel back down: bank the wheelie. */
+  /** Front wheel back down: bank the wheelie (time, perfect balance and high-speed bonuses). */
   private endWheelie() {
-    const B = this.B, t = B.wheelieT, perfect = B.wheeliePerfect;
+    const B = this.B, W = WHEELIE, t = B.wheelieT, perfect = B.wheeliePerfect, dist = B.wheelieD;
     B.wheelieT = 0;
     B.wheeliePerfect = 0;
-    if (t < WHEELIE.minTime) return;
-    const xp = Math.round((t * WHEELIE.xpPerSec + perfect * WHEELIE.perfectXpPerSec) * this.stats.trickMul);
-    this.hud.banner(`WHEELIE ${t.toFixed(1)}s`, `${perfect > 0.5 ? `PERFECT BALANCE ${perfect.toFixed(1)}s · ` : ''}+${xp} XP`, perfect > 0.5 ? '#7cffb2' : '#ffd23f');
+    B.wheelieD = 0;
+    if (t < W.minTime) return;
+    const fast = dist / t > W.fastSpeed;
+    const xp = Math.round((t * W.xpPerSec + perfect * W.perfectXpPerSec + (fast ? t * W.fastXpPerSec : 0)) * this.stats.trickMul);
+    const extras = [fast ? `avg ${Math.round((dist / t) * 3.6)} km/h` : '', perfect > 0.5 ? `PERFECT BALANCE ${perfect.toFixed(1)}s` : ''].filter(Boolean).join(' · ');
+    this.hud.banner(`${fast ? 'HIGH-SPEED ' : ''}WHEELIE ${t.toFixed(1)}s · ${Math.round(dist)} m`, `${extras ? extras + ' · ' : ''}+${xp} XP`, fast ? '#ff7ad9' : perfect > 0.5 ? '#7cffb2' : '#ffd23f');
     this.game.audio.play('trick');
     this.addXP(xp);
   }
@@ -663,11 +720,70 @@ export class Player {
     if (Math.abs(wrapPi(target - B.h)) > Math.PI / 2) target += Math.PI;
     const err = wrapPi(target - B.h);
     if (!steerInput && Math.abs(err) < 0.6) B.h += err * Math.min(1, dt * A.follow);
-    // edge guard: heading outward near the edge -> steer back toward the centre line
+    // edge guard: heading outward near the edge -> steer back toward the centre line.
+    // Only when actually heading away from the centre, and never while the rider steers outward
+    // (it used to push against an outward steer, which felt like one direction "not working").
     if (rd > ROAD.asphalt - 1.5 && A.edge) {
       const toCx = road.x - B.x, toCz = road.z - B.z, toward = Math.atan2(toCx, toCz);
       const out = wrapPi(toward - B.h);
-      if (Math.abs(out) > 0.2 && steerInput * out <= 0) B.h += clamp(out, -0.5, 0.5) * Math.min(1, dt * A.edge) * clamp((rd - ROAD.asphalt + 1.5) / 3, 0, 1);
+      const outward = Math.sin(B.h) * toCx + Math.cos(B.h) * toCz < 0;
+      if (outward && Math.abs(out) > 0.2 && steerInput * out >= 0) B.h += clamp(out, -0.5, 0.5) * Math.min(1, dt * A.edge) * clamp((rd - ROAD.asphalt + 1.5) / 3, 0, 1);
+    }
+  }
+
+  /** Gearbox state from the engine sound (for the F1 dash). */
+  get dash() {
+    return { gear: this.engine?.gear ?? 1, rpm: this.engine?.rpm ?? 0, redline: this.def.engine.redline };
+  }
+
+  /** Starting tyres for F1 sessions. */
+  setTyres(c: TyreCompound) {
+    this.f1.compound = c;
+    this.f1.wear = 0;
+    this.bike.tyreBands?.color.setHex(F1.tyres[c].color);
+  }
+
+  /** F1 per-step: tyre grip, straight-mode wing (DRS), slipstream, pit limiter and pit stops. */
+  private f1Step(dt: number, wingKey: boolean, braking: boolean) {
+    const f = this.f1, B = this.B, g = this.game, lay = g.layout as unknown as { inDrs?(i: number): boolean; isPit?(x: number, z: number): boolean; nearest?(x: number, z: number, e?: boolean): { i: number } };
+    const T = F1.tyres[f.compound];
+    f.gripMul = T.grip * lerp(1, F1.wornGrip, f.wear ** 1.4);
+    // straight mode / DRS: only inside DRS zones, closes the moment you brake
+    const idx = lay.nearest ? lay.nearest(B.x, B.z).i : -1;
+    const zone = idx >= 0 && !!lay.inDrs?.(idx);
+    if (zone && wingKey && !braking) f.aeroOpen = true;
+    if (!zone || braking) f.aeroOpen = false;
+    f.slip = !!g.ai?.slipstreamFor(B.x, B.z, B.moveH) || g.players.some((o) => o !== this && Math.hypot(o.B.x - B.x, o.B.z - B.z) < F1.slipDist && Math.hypot(o.B.x - B.x, o.B.z - B.z) > 3);
+    const F = this.def.f1!;
+    f.topMul = (f.aeroOpen ? F.dragCut : 1) * (f.slip ? F1.slipTop : 1);
+    f.accelMul = f.slip ? F1.slipAccel : 1;
+    const wing = this.bike.rearFlap;
+    if (wing) wing.rotation.x = lerp(wing.rotation.x, f.aeroOpen ? 0.5 : 0, Math.min(1, dt * 10));
+    if (this.bike.frontFlap) this.bike.frontFlap.rotation.x = lerp(this.bike.frontFlap.rotation.x, f.aeroOpen ? 0.25 : 0, Math.min(1, dt * 10));
+    // pit lane: speed limiter, stop in the box for fresh tyres
+    f.inPit = !!lay.isPit?.(B.x, B.z);
+    if (f.inPit) {
+      if (B.v > F1.pitLimit) B.v = lerp(B.v, F1.pitLimit, Math.min(1, dt * 4));
+      f.stillT = Math.abs(B.v) < 2 ? f.stillT + dt : 0;
+      if (f.stillT > 0.4 && f.pitT <= 0 && f.wear > 0.05) {
+        f.pitT = F1.pitStop;
+        this.controlsLocked = true;
+        g.audio.play('mount');
+        this.hud.banner('PIT STOP', 'Tyres off… tyres on!', '#3cc8ff');
+      }
+    }
+    if (f.pitT > 0) {
+      f.pitT -= dt;
+      B.v = 0;
+      if (f.pitT <= 0) {
+        const next: TyreCompound = f.compound === 'soft' ? 'medium' : f.compound === 'medium' ? 'hard' : 'soft';
+        this.setTyres(next);
+        f.stops++;
+        this.s.nitro = this.stats.nitroMax;
+        this.controlsLocked = false;
+        this.hud.banner(`PIT STOP ${F1.pitStop.toFixed(1)}s`, `${F1.tyres[next].label} tyres fitted · ERS full`, '#7cffb2');
+        g.audio.play('go');
+      }
     }
   }
 
@@ -701,6 +817,9 @@ export class Player {
     this.failDrift();
     B.wheelie = 0;
     B.wheelieV = 0;
+    B.wheelieT = 0;
+    B.wheeliePerfect = 0;
+    B.wheelieD = 0;
     this.hud.banner('CRASH!', reason, '#ff4d5e');
     g.audio.play('crash');
     if (this.isCar) g.audio.play('clank');
@@ -958,25 +1077,106 @@ export class Player {
   }
 
   // ---------------------------------------------------------------- camera, audio, network
+  /** Hide this player's own head/helmet (first-person view) without touching what other viewports see. */
+  private hideHead(on: boolean) {
+    if (on) this.rider.helmet.visible = false;
+    if (on === this.headHidden) return;
+    this.headHidden = on;
+    if (!this.headParts) {
+      const parts: THREE.Object3D[] = [];
+      for (const o of this.rider.root.children) if (o instanceof THREE.Mesh && o !== this.rider.hair && o.position.y > 1.95) parts.push(o);
+      this.bike.driver?.traverse((o) => { if (o instanceof THREE.Mesh && o.geometry instanceof THREE.SphereGeometry) parts.push(o); });
+      this.headParts = parts;
+    }
+    for (const o of this.headParts) o.visible = !on;
+    if (!on) this.rider.helmet.visible = this.riding;
+  }
+
+  /** Point on the vehicle the attached cameras (hood / first person) sit at, in world space. */
+  private eyePoint(view: 'fp' | 'hood', out: THREE.Vector3) {
+    const M = this.bike.root, d = this.dims, car = this.isCar;
+    M.updateMatrixWorld(true);
+    if (view === 'fp') {
+      const drv = this.bike.driver;
+      if (car && drv) return drv.localToWorld(this.def.f1 ? out.set(0, 0.05, 0.06) : out.set(0, 0.76, 0));
+      if (!car) return this.rider.helmet.localToWorld(out.set(0, 0.06, 0.22));
+      return M.localToWorld(out.set(0, d.max.y * 0.85, 0));
+    }
+    return car ? M.localToWorld(out.set(0, d.max.y * 0.72 + 0.25, d.max.z * 0.5)) : M.localToWorld(out.set(0, d.max.y + 0.35, d.max.z * 0.3));
+  }
+
   updateCamera(dt: number, aspect: number) {
-    const P = this.P, cam = this.cam, c = this.ctrl, B = this.B, speedKmh = Math.abs(B.v) * 3.6;
+    const P = this.P, cam = this.cam, c = this.ctrl, B = this.B, speedKmh = Math.abs(B.v) * 3.6, g = this.game;
     if (c.is('up') || c.is('down')) cam.yaw *= Math.exp(-dt * 2.5);
+    const live = this.riding && !this.s.dead;
+    const view: CamView = live || (this.view !== 'fp' && this.view !== 'hood') ? this.view : 'chase';
+    this.activeView = view;
+    // every player renders in turn: show heads in all viewports except our own first-person one
+    for (const o of g.players) o.hideHead(o === this && view === 'fp');
+    const attached = view === 'fp' || view === 'hood';
     const zoom = c.zoom;
-    const dist = (this.riding ? 9 + Math.abs(B.v) * 0.06 - cam.boost * 1.2 : 7) * zoom, ht = (this.riding ? 3.8 : 3.2) * zoom, a = P.h + cam.yaw;
-    cam.pos.set(P.x - Math.sin(a) * dist, P.y + ht, P.z - Math.cos(a) * dist);
-    cam.pos.y = Math.max(cam.pos.y, this.game.terrain.groundAt(cam.pos.x, cam.pos.z) + 1.2);
-    this.camera.position.lerp(cam.pos, damp(dt, this.riding ? 7 : 6));
-    cam.look.lerp(this._v.set(P.x, P.y + 1.6, P.z), damp(dt, 12));
-    this.camera.lookAt(cam.look);
+    let fovBase = 62, speedFov = 1, shakeMul = 1, fovOverride = 0;
+    if (attached) {
+      // locked to the vehicle: lean, pitch (wheelies, flips) and heading come straight from the model
+      const eye = this.eyePoint(view, cam.pos);
+      eye.y = Math.max(eye.y, g.terrain.groundAt(eye.x, eye.z) + 0.25);
+      this.camera.position.copy(eye);
+      this.camQ.setFromAxisAngle(this._v.set(0, 1, 0), Math.PI + cam.yaw);
+      this.camera.quaternion.copy(this.bike.root.quaternion).multiply(this.camQ);
+      cam.look.copy(eye).add(this._v.set(Math.sin(B.h), 0, Math.cos(B.h)).multiplyScalar(10));
+      fovBase = view === 'fp' ? 74 : 68;
+      speedFov = 0.6;
+      shakeMul = view === 'fp' ? 0.25 : 0.4;
+    } else if (view === 'cine') {
+      // trackside TV camera ahead of the action; slow orbit when (almost) standing still
+      const ci = this.cine, fx = Math.sin(P.h), fz = Math.cos(P.h);
+      if (Math.abs(P.v) > 6) {
+        const dx = P.x - ci.x, dz = P.z - ci.z, dist = Math.hypot(dx, dz), behind = (dx * fx + dz * fz) > 0;
+        if (!ci.set || dist > 70 || (behind && dist > 28)) {
+          ci.side = -ci.side;
+          const ahead = 30 + Math.min(40, Math.abs(P.v) * 0.9), sx = P.x + fx * ahead + fz * 9 * ci.side, sz = P.z + fz * ahead - fx * 9 * ci.side;
+          Object.assign(ci, { x: sx, z: sz, y: g.terrain.groundAt(sx, sz) + 2.5 + Math.random() * 3, set: true });
+        }
+        this.camera.position.set(ci.x, Math.max(ci.y, g.terrain.groundAt(ci.x, ci.z) + 1.5), ci.z);
+        cam.look.lerp(this._v.set(P.x, P.y + 1, P.z), damp(dt, 10));
+        // zoom to keep the vehicle roughly the same size on screen
+        fovOverride = clamp((2 * Math.atan(7 / Math.max(1, Math.hypot(P.x - ci.x, P.z - ci.z))) * 180) / Math.PI, 14, 60);
+      } else {
+        ci.set = false;
+        const a = g.time * 0.25, r = 13 * zoom;
+        cam.pos.set(P.x + Math.sin(a) * r, P.y + 4 + Math.sin(g.time * 0.31) * 1.5, P.z + Math.cos(a) * r);
+        cam.pos.y = Math.max(cam.pos.y, g.terrain.groundAt(cam.pos.x, cam.pos.z) + 1.2);
+        this.camera.position.lerp(cam.pos, damp(dt, 3));
+        cam.look.lerp(this._v.set(P.x, P.y + 1.2, P.z), damp(dt, 8));
+      }
+      this.camera.up.set(0, 1, 0);
+      this.camera.lookAt(cam.look);
+      speedFov = 0;
+      shakeMul = 0.3;
+    } else {
+      const far = view === 'far' ? 1.75 : 1, a = P.h + cam.yaw;
+      let dist = (this.riding ? 9 + Math.abs(B.v) * 0.06 - cam.boost * 1.2 : 7) * zoom * far, ht = (this.riding ? 3.8 : 3.2) * zoom * (view === 'far' ? 1.6 : 1);
+      if (view === 'top') { dist = 5 * zoom; ht = (34 + Math.abs(B.v) * 0.25) * zoom; }
+      cam.pos.set(P.x - Math.sin(a) * dist, P.y + ht, P.z - Math.cos(a) * dist);
+      cam.pos.y = Math.max(cam.pos.y, g.terrain.groundAt(cam.pos.x, cam.pos.z) + 1.2);
+      this.camera.position.lerp(cam.pos, damp(dt, view === 'top' ? 5 : this.riding ? 7 : 6));
+      cam.look.lerp(this._v.set(P.x, P.y + (view === 'top' ? 0 : 1.6), P.z), damp(dt, 12));
+      this.camera.up.set(0, 1, 0);
+      this.camera.lookAt(cam.look);
+      if (view === 'top') { speedFov = 0.3; fovBase = 55; }
+    }
     if (cam.shake > 0) {
-      this.camera.position.x += rnd(cam.shake);
-      this.camera.position.y += rnd(cam.shake);
-      this.camera.position.z += rnd(cam.shake);
+      const k = cam.shake * shakeMul;
+      this.camera.position.x += rnd(k);
+      this.camera.position.y += rnd(k);
+      this.camera.position.z += rnd(k);
       cam.shake = Math.max(0, cam.shake - dt * 1.6);
     }
     cam.fovKick = Math.max(0, cam.fovKick - dt * 12);
-    const fovT = 62 + (this.riding ? clamp(speedKmh - 40, 0, 140) * 0.11 : 0) + cam.boost * 10 + cam.fovKick;
-    this.camera.fov = lerp(this.camera.fov, fovT, damp(dt, 5));
+    const fovT = fovOverride || fovBase + ((this.riding ? clamp(speedKmh - 40, 0, 140) * 0.11 : 0) + cam.boost * 10 + cam.fovKick) * speedFov;
+    this.camera.fov = view === 'cine' && fovOverride ? fovT : lerp(this.camera.fov, fovT, damp(dt, 5));
+    const near = attached ? 0.06 : 0.3;
+    if (this.camera.near !== near) this.camera.near = near;
     this.camera.aspect = aspect;
     this.camera.updateProjectionMatrix();
 
