@@ -162,7 +162,7 @@ export class Menu {
     this.root.style.display = '';
     this.screen = s;
     this.root.className = s === 'pause' || s === 'results' ? 'overlay dim' : 'overlay';
-    const wide = s === 'home' || s === 'mode' || s === 'lobby' || s === 'onboard' || s === 'garage';
+    const wide = s === 'home' || s === 'mode' || s === 'lobby' || s === 'onboard' || s === 'garage' || s === 'howto';
     this.root.innerHTML = `<div class="card-wrap ${wide ? 'wide' : ''}">${this.render(s, data)}</div>`;
     this.afterRender();
   }

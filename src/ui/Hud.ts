@@ -157,8 +157,14 @@ export class Hud {
     this.hurtA = Math.min(0.9, this.hurtA + 0.5);
   }
 
+  /** Friendly label for a key code: ArrowUp -> ↑, ShiftLeft -> Shift, KeyF -> F. */
   private key(list: string[]) {
-    return (list[0] ?? '').replace('Digit', '').replace('Numpad', 'Num').replace('Key', '').replace('Backslash', '\\').replace('BracketRight', ']');
+    const names: Record<string, string> = {
+      ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→', ShiftLeft: 'Shift', ShiftRight: 'R-Shift', Space: 'Space',
+      Backslash: '\\', BracketRight: ']', Slash: '/', Period: '.', Quote: "'", Semicolon: ';', Enter: 'Enter', Tab: 'Tab', Backspace: '⌫',
+    };
+    const c = list[0] ?? '';
+    return names[c] ?? c.replace('Digit', '').replace('Numpad', 'Num').replace('Key', '');
   }
 
   /** Non-blocking card row at the bottom: rarity colours, stack counts, reroll button. */
