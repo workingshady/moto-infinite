@@ -192,7 +192,7 @@ export class Menu {
     this.screen = s;
     this.root.className = s === 'pause' || s === 'results' ? 'overlay dim' : 'overlay';
     const wide = s === 'home' || s === 'mode' || s === 'lobby' || s === 'onboard' || s === 'garage' || s === 'howto';
-    this.root.innerHTML = `<div class="card-wrap ${wide ? 'wide' : ''}">${this.render(s, data)}</div>`;
+    this.root.innerHTML = `<div class="card-wrap ${wide ? 'wide' : ''} scr-${s}">${this.render(s, data)}</div>`;
     this.afterRender();
   }
 
@@ -404,20 +404,24 @@ export class Menu {
       case 'lobby': {
         const v = this.lobby!;
         return `
-        <div class="lobby-head">
-          <div><h2>Lobby</h2><div class="dim small">Room code</div><div class="roomcode">${escapeHtml(v.code)}</div></div>
-          <div>
+        <div class="lobby-grid">
+          <div class="lobby-side">
+            <div class="lobby-head">
+              <div><h2>Lobby</h2><div class="dim small">Room code</div><div class="roomcode">${escapeHtml(v.code)}</div></div>
+            </div>
+            <div class="share"><input readonly value="${escapeHtml(v.link)}" id="link"><button class="btn" data-go="copy">Copy link</button>${'share' in navigator ? '<button class="btn" data-go="share">Share</button>' : ''}</div>
+            <div id="lineupHost" class="lineup-host" title="Drag to spin"></div>
             <div class="dim small">Riders ${v.players.length}/${v.settings.maxPlayers}${v.settings.locked ? ' · 🔒 locked' : ''}</div>
             <ul class="players">${v.players.map((p) => `<li><i style="background:${hex(p.color)}"></i>${escapeHtml(p.name)}${p.host ? ' 👑' : ''}${p.id === v.you ? ' <em>(you)</em>' : ''}${p.ready ? ' <span class="ready">✓ ready</span>' : ' <span class="notready">…</span>'}${v.host && p.id !== v.you ? `<button class="kick" data-kick="${escapeHtml(p.id)}" title="Remove from room">✕</button>` : ''}</li>`).join('')}</ul>
+            <div class="me-row"><label>Your name <input id="lname" maxlength="16" value="${escapeHtml(v.players.find((p) => p.id === v.you)?.name ?? P.name)}"></label><div class="dots">${colorDots(v.players.find((p) => p.id === v.you)?.color ?? P.color, 'lcolor')}</div><div class="ride-line">Ride: <b>${escapeHtml(vehicleById(P.vehicle ?? 'street').name)}</b> <button class="chip" data-go="garage">Change</button></div></div>
+          </div>
+          <div class="lobby-main">
+            ${this.optionsPanel(v.settings, v.host, true)}
+            <div class="opt room-opts ${v.host ? '' : 'disabled'}"><span>Room</span><div class="chips">${chips('maxPlayers', Array.from({ length: MAX_PLAYERS - 1 }, (_, i) => i + 2), v.settings.maxPlayers, (n) => `${n} max`)}</div>
+              <label class="check"><input type="checkbox" data-opt="locked" ${v.settings.locked ? 'checked' : ''} ${v.host ? '' : 'disabled'}> 🔒 Lock room</label></div>
+            ${v.host ? '' : '<p class="hint">Only the host 👑 can change the world and room settings.</p>'}
           </div>
         </div>
-        <div id="lineupHost" class="lineup-host" title="Drag to spin"></div>
-        <div class="me-row"><label>Your name <input id="lname" maxlength="16" value="${escapeHtml(v.players.find((p) => p.id === v.you)?.name ?? P.name)}"></label><div class="dots">${colorDots(v.players.find((p) => p.id === v.you)?.color ?? P.color, 'lcolor')}</div><div class="ride-line">Ride: <b>${escapeHtml(vehicleById(P.vehicle ?? 'street').name)}</b> <button class="chip" data-go="garage">Change</button></div></div>
-        <div class="share"><input readonly value="${escapeHtml(v.link)}" id="link"><button class="btn" data-go="copy">Copy link</button>${'share' in navigator ? '<button class="btn" data-go="share">Share</button>' : ''}</div>
-        ${this.optionsPanel(v.settings, v.host, true)}
-        <div class="opt room-opts ${v.host ? '' : 'disabled'}"><span>Room</span><div class="chips">${chips('maxPlayers', Array.from({ length: MAX_PLAYERS - 1 }, (_, i) => i + 2), v.settings.maxPlayers, (n) => `${n} max`)}</div>
-          <label class="check"><input type="checkbox" data-opt="locked" ${v.settings.locked ? 'checked' : ''} ${v.host ? '' : 'disabled'}> 🔒 Lock room</label></div>
-        ${v.host ? '' : '<p class="hint">Only the host 👑 can change the world and room settings.</p>'}
         <div class="row-buttons"><span><button class="btn ghost" data-go="leave">Leave</button> <button class="btn ghost" data-go="tutorial">🎓 How to play</button></span>${v.host
           ? `<button class="btn primary" data-go="lstart">Start for everyone · ${v.players.filter((p) => p.ready).length}/${v.players.length} ready</button>`
           : (() => { const me = v.players.find((p) => p.id === v.you); return me?.ready

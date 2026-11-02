@@ -477,3 +477,30 @@ body:has(#touch) .gauges { bottom: 150px; }
 .hud.mode-race .mapwrap, .hud.mode-f1 .mapwrap { border-radius: 14px; }
 .minimap { width: 190px; height: 190px; border-radius: 50%; }
 .hud.mode-race .minimap, .hud.mode-f1 .minimap { border-radius: 10px; }
+
+/* ---------------------------------------------------------------- menu zoom-out + side-by-side lobby */
+/* Menus render smaller so whole screens fit without scrolling or browser zoom. */
+#menu.overlay { --mz: 0.8; }
+#menu > .card-wrap { zoom: var(--mz); }
+@media (max-height: 860px) { #menu.overlay { --mz: 0.72; } }
+@media (max-height: 700px) { #menu.overlay { --mz: 0.64; } }
+@media (max-width: 820px) { #menu.overlay { --mz: 0.9; } }
+/* menus may grow to fill most of the screen (sizes are pre-zoom) */
+.card-wrap.wide { width: min(1240px, 100%); }
+.card-wrap.scr-lobby, .card-wrap.scr-mode { width: min(1560px, 100%); }
+/* lobby: room, cars and riders in a column on the left; world/room settings on the right */
+.lobby-grid { display: grid; grid-template-columns: 400px 1fr; gap: 26px; align-items: start; }
+.lobby-side { display: flex; flex-direction: column; gap: 6px; }
+.lobby-side .lobby-head { display: block; }
+.lobby-side .roomcode { font-size: 40px; text-align: left; }
+.lobby-side .share { margin: 4px 0 8px; }
+.lobby-side .lineup-host { height: 260px; margin: 0 0 6px; }
+.lobby-side .players { margin: 0; }
+.lobby-side .me-row { margin: 6px 0 0; }
+.lobby-main { min-width: 0; border-left: 1px solid rgba(255, 255, 255, 0.08); padding-left: 26px; }
+@media (max-width: 1100px) {
+  .lobby-grid { grid-template-columns: 1fr; }
+  .lobby-main { border-left: 0; padding-left: 0; }
+}
+/* tall screens scroll from the top instead of being clipped above the fold */
+#menu.overlay { align-items: safe center; }
