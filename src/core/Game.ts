@@ -226,6 +226,7 @@ export class Game {
     this.tutorial?.update(dt);
     this.race?.update(dt);
     this.remotes?.update(dt);
+    this.updateMusic();
     const focus = this.players.length ? this.players.map((p) => p.P) : [this.attractFocus()];
     this.chunks.stream(focus, WORLD.buildsPerFrame);
     this.env.update(dt, this.time, focus[0].x, focus[0].z);
@@ -236,6 +237,15 @@ export class Game {
         this.net.send({ t: 'state', s: this.players[0].netState() });
       }
     }
+  }
+
+  /** Soundtrack layers follow the action: riding, fast/drifting, and fights or final laps. */
+  private updateMusic() {
+    const m = this.audio.music, p = this.players[0];
+    if (!m || this.opts.attract || !p) return;
+    const fast = Math.abs(p.B.v) * 3.6 > 110 || p.drift.on || p.cam.boost > 0.5;
+    const action = this.entities.list.some((e) => e.alive && e.engaged) || (!!this.race && p.race.lap === this.race.laps && !p.race.finished);
+    m.setIntensity(!p.riding ? 1 : action ? 3 : fast ? 2 : 1);
   }
 
   private attractFocus() {
@@ -270,6 +280,7 @@ export class Game {
 
   dispose() {
     cancelAnimationFrame(this.raf);
+    this.audio.music?.setIntensity(0); // back to calm menu music
     removeEventListener('resize', this.onResize);
     this.offs.forEach((off) => off());
     this.players.forEach((p) => p.dispose());

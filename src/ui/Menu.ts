@@ -104,6 +104,7 @@ export interface MenuActions {
   raceAgain(): void;
   setQuality(q: QualityName): void;
   toggleMute(): boolean;
+  volumes(): void;
   saveProfile(p: Profile): void;
 }
 
@@ -391,6 +392,9 @@ export class Menu {
         <p class="hint">Riding assist keeps the bike on the road when you're not steering, glances you off trees instead of stopping dead, and softens crashes. Pro = no help.</p>
         <div class="opt"><span>Nitro</span><div class="chips"><button class="chip ${prefs.nitroToggle ? '' : 'on'}" data-go="nitroHold">Hold</button><button class="chip ${prefs.nitroToggle ? 'on' : ''}" data-go="nitroToggle">Tap to toggle</button></div></div>
         <p class="hint">Toggle mode helps keyboards that ignore 3 keys at once: tap nitro once, then only steer.</p>
+        <div class="opt"><span>Music</span><div class="chips">${([['Off', 0], ['Low', 0.3], ['Med', 0.6], ['High', 1]] as const).map(([l, v]) => `<button class="chip ${prefs.music === v ? 'on' : ''}" data-music="${v}">${l}</button>`).join('')}</div></div>
+        <div class="opt"><span>Effects</span><div class="chips">${([['Off', 0], ['Low', 0.4], ['Med', 0.7], ['High', 1]] as const).map(([l, v]) => `<button class="chip ${prefs.sfx === v ? 'on' : ''}" data-sfx="${v}">${l}</button>`).join('')}</div></div>
+        <p class="hint">All sound is generated live: each vehicle has its own engine (cylinders, gears, turbo, exhaust crackle) and the soundtrack builds with the action.</p>
         <div class="opt"><span>Sound</span><div class="chips"><button class="chip" data-go="mute">${this.muted() ? '🔇 Off' : '🔊 On'}</button></div></div>
         <div class="row-buttons"><button class="btn ghost" data-go="back">← Back</button></div>`;
       case 'howto': {
@@ -584,6 +588,8 @@ export class Menu {
     }
     if (d.color) { this.readNames(); P.color = +d.color; this.a.saveProfile(P); return this.show(this.screen); }
     if (d.color2) { this.readNames(); P.color2 = +d.color2; this.a.saveProfile(P); return this.show(this.screen); }
+    if (d.music !== undefined) { prefs.music = +d.music; savePrefs(); this.a.volumes(); return this.show('settings'); }
+    if (d.sfx !== undefined) { prefs.sfx = +d.sfx; savePrefs(); this.a.volumes(); return this.show('settings'); }
     if (d.assist) { prefs.assist = +d.assist; savePrefs(); return this.show('settings'); }
     if (d.quality) { this.quality = d.quality as QualityName; this.a.setQuality(this.quality); return this.show('settings'); }
     switch (d.go) {

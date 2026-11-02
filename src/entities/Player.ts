@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import type { Game } from '../core/Game';
 import type { Controller } from '../core/Input';
 import type { Engine } from '../core/Audio';
+import type { EngineSound } from '../core/EngineSound';
 import type { Entity } from './EntityManager';
 import type { Pose } from '../world/layout';
 import type { NetState } from '../../shared/protocol';
@@ -68,7 +69,7 @@ export class Player {
   readonly stacks: Record<string, number> = {};
   private flame = 0x66ccff;
   private respawnT = 0;
-  private engine: Engine | null = null;
+  private engine: EngineSound | null = null;
   private screech: Engine | null = null;
   private _v = new THREE.Vector3();
   private nitroOn = false;
@@ -169,7 +170,7 @@ export class Player {
       if (s.nitro <= 1) this.nitroOn = false;
       const wantN = active && (prefs.nitroToggle ? this.nitroOn : c.is('nitro')) && s.nitro > 1;
       if (wantN) {
-        if (!B.wasN) { g.audio.play('nitro'); this.cam.shake = Math.max(this.cam.shake, 0.25); this.cam.fovKick = 8; }
+        if (!B.wasN) { g.audio.play('nitro'); g.audio.play('whoosh'); this.cam.shake = Math.max(this.cam.shake, 0.25); this.cam.fovKick = 8; }
         s.nitro -= BIKE.nitroBurn * dt;
         boosting = true;
       }
@@ -639,7 +640,7 @@ export class Player {
         const a = (i / 24) * TAU;
         g.fx.emit(B.x, B.y + 0.2, B.z, Math.cos(a) * 7, 1, Math.sin(a) * 7, 1, 1, 3.5, 0xb8a98c, 0.6, 0, 2.5, true);
       }
-      g.audio.play('thud');
+      g.audio.play('land', clamp(B.impact / 20, 0.4, 1));
     }
   }
 
@@ -702,6 +703,7 @@ export class Player {
     B.wheelieV = 0;
     this.hud.banner('CRASH!', reason, '#ff4d5e');
     g.audio.play('crash');
+    if (this.isCar) g.audio.play('clank');
     this.cam.shake = 0.9;
     this.hud.flash('#ff3040', 0.25);
     B.v *= 0.3; // keep some momentum so a crash isn't a full stop
@@ -978,8 +980,12 @@ export class Player {
     this.camera.aspect = aspect;
     this.camera.updateProjectionMatrix();
 
-    if (!this.engine) this.engine = this.game.audio.createEngine();
-    this.engine?.set(45 + Math.abs(B.v) * 3.2 + cam.boost * 40 + (B.air ? 30 : 0), 400 + Math.abs(B.v) * 25, this.riding ? 0.045 / this.game.players.length + cam.boost * 0.03 : 0);
+    if (!this.engine) this.engine = this.game.audio.createEngineSound(this.def.engine);
+    this.engine?.update(dt, {
+      speed: Math.abs(B.v), top: this.stats.top, throttle: this.riding && !this.s.dead && (this.ctrl.is('up') || cam.boost > 0.2),
+      boost: cam.boost, air: B.air, riding: this.riding && !this.s.dead, offroad: !this.game.terrain.onRoad(B.x, B.z),
+      volume: 1 / this.game.players.length,
+    });
   }
 
   netState(): NetState {

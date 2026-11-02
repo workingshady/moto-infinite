@@ -14,7 +14,9 @@ src/
     Game.ts              One play session: builds the world, fixed-step loop, renders 1 or 2 viewports
     Renderer.ts          WebGLRenderer, quality presets, split-screen viewports
     Input.ts             Keyboard/mouse/touch/gamepads → per-player Controller actions
-    Audio.ts             WebAudio synth (no audio files)
+    Audio.ts             WebAudio mixer (sfx / engines / music buses -> compressor) and one-shot effects
+    EngineSound.ts       Per-vehicle engine: firing pulses (rpm/60 x cyl/2), gearbox, turbo, crackle, limiter, wind, rumble
+    Music.ts             Generative synthwave soundtrack on a lookahead scheduler; layers follow the action
     Events.ts            Typed event bus (challenge progress etc.)
     prefs.ts             Saved player preferences (riding assist, nitro toggle, onboarding seen)
   data/                  Pure data tables: weapons, upgrades, challenges, story, vehicles (garage stats)

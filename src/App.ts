@@ -82,6 +82,7 @@ export class App {
       raceAgain: () => this.raceAgain(),
       setQuality: (q: QualityName) => { this.quality = q; store.set('quality', q); this.game?.setQuality(q); },
       toggleMute: () => this.audio.toggleMute(),
+      volumes: () => this.audio.applyVolumes(),
       saveProfile: (p: Profile) => store.set('profile', p),
     };
   }

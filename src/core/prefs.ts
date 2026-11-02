@@ -6,12 +6,15 @@ export interface Prefs {
   onboarded: boolean;
   /** Riding assist level, index into ASSIST (0 Pro, 1 Normal, 2 Easy). */
   assist: number;
+  /** 0..1 */
+  music: number;
+  sfx: number;
 }
 
 const KEY = 'moto:prefs';
 
 export const prefs: Prefs = (() => {
-  const base: Prefs = { nitroToggle: false, onboarded: false, assist: 1 };
+  const base: Prefs = { nitroToggle: false, onboarded: false, assist: 1, music: 0.6, sfx: 1 };
   try {
     return { ...base, ...(JSON.parse(localStorage.getItem(KEY) ?? '{}') as Partial<Prefs>) };
   } catch {

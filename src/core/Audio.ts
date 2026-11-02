@@ -1,9 +1,14 @@
 // WebAudio synth: every sound is generated, no audio files to download.
+// Mixer: sfx / engines / music buses -> master (mute) -> compressor -> speakers.
+import { EngineSound, type EngineProfile } from './EngineSound';
+import { Music } from './Music';
+import { prefs } from './prefs';
 
 export type SfxName =
   | 'gem' | 'blaster' | 'scatter' | 'rocket' | 'rail' | 'swarm' | 'mine' | 'boom' | 'hit' | 'hurt' | 'crash'
   | 'nitro' | 'pad' | 'level' | 'trick' | 'challenge' | 'fail' | 'orb' | 'power' | 'count' | 'go' | 'select'
-  | 'unlock' | 'lap' | 'weapon' | 'mount' | 'jump' | 'thud' | 'cone' | 'crate' | 'thunder' | 'hitmark' | 'story';
+  | 'unlock' | 'lap' | 'weapon' | 'mount' | 'jump' | 'thud' | 'cone' | 'crate' | 'thunder' | 'hitmark' | 'story'
+  | 'shift' | 'blowoff' | 'pop' | 'clank' | 'whoosh' | 'land';
 
 export interface Engine {
   set(freq: number, filter: number, gain: number): void;
@@ -12,8 +17,11 @@ export interface Engine {
 
 export class Audio {
   private ac: AudioContext | null = null;
-  private master: GainNode | null = null;
+  private master: GainNode | null = null; // mute switch
+  private sfx: GainNode | null = null; // effects bus (tone/noise one-shots)
+  private engines: GainNode | null = null;
   private noiseBuf: AudioBuffer | null = null;
+  music: Music | null = null;
   muted = false;
 
   constructor() {
@@ -36,17 +44,51 @@ export class Audio {
     } catch {
       return;
     }
-    this.master = this.ac.createGain();
-    this.master.gain.value = this.muted ? 0 : 0.45;
-    this.master.connect(this.ac.destination);
-    this.noiseBuf = this.ac.createBuffer(1, this.ac.sampleRate, this.ac.sampleRate);
+    const ac = this.ac;
+    // a gentle compressor glues everything together and stops explosions from clipping
+    const comp = ac.createDynamicsCompressor();
+    comp.threshold.value = -16;
+    comp.knee.value = 12;
+    comp.ratio.value = 4;
+    comp.attack.value = 0.004;
+    comp.release.value = 0.25;
+    comp.connect(ac.destination);
+    this.master = ac.createGain();
+    this.master.gain.value = this.muted ? 0 : 0.6;
+    this.master.connect(comp);
+    this.sfx = ac.createGain();
+    this.sfx.connect(this.master);
+    this.engines = ac.createGain();
+    this.engines.connect(this.master);
+    this.noiseBuf = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
     const d = this.noiseBuf.getChannelData(0);
     for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    this.music = new Music(ac, this.master, this.noiseBuf);
+    this.applyVolumes();
+    this.music.start();
+  }
+
+  /** Apply the Music / Effects volume settings (0..1). */
+  applyVolumes() {
+    if (!this.ac) return;
+    this.sfx!.gain.value = 0.75 * prefs.sfx;
+    this.engines!.gain.value = prefs.sfx;
+    this.music?.setVolume(prefs.music);
+  }
+
+  /** Engine + wind + off-road rumble for one vehicle; one-shots (shift, blow-off, crackle) come back through play(). */
+  createEngineSound(profile: EngineProfile): EngineSound | null {
+    if (!this.ac || !this.engines || !this.noiseBuf) return null;
+    return new EngineSound(this.ac, this.engines, this.noiseBuf, profile, {
+      shift: () => this.play('shift'),
+      blowoff: () => this.play('blowoff'),
+      pop: () => this.play('pop'),
+    });
   }
 
   toggleMute() {
     this.muted = !this.muted;
-    if (this.master) this.master.gain.value = this.muted ? 0 : 0.45;
+    if (this.master) this.master.gain.value = this.muted ? 0 : 0.6;
     try {
       localStorage.setItem('moto:muted', this.muted ? '1' : '0');
     } catch {
@@ -57,21 +99,21 @@ export class Audio {
 
   tone(f: number, dur: number, type: OscillatorType = 'square', vol = 0.12, slide = 1, delay = 0) {
     const ac = this.ac;
-    if (!ac || !this.master || this.muted) return;
+    if (!ac || !this.sfx || this.muted) return;
     const t = ac.currentTime + delay, o = ac.createOscillator(), g = ac.createGain();
     o.type = type;
     o.frequency.setValueAtTime(f, t);
     if (slide !== 1) o.frequency.exponentialRampToValueAtTime(Math.max(20, f * slide), t + dur);
     g.gain.setValueAtTime(vol, t);
     g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-    o.connect(g).connect(this.master);
+    o.connect(g).connect(this.sfx);
     o.start(t);
     o.stop(t + dur + 0.02);
   }
 
   noise(dur: number, vol = 0.3, freq = 1000, type: BiquadFilterType = 'lowpass') {
     const ac = this.ac;
-    if (!ac || !this.master || !this.noiseBuf || this.muted) return;
+    if (!ac || !this.sfx || !this.noiseBuf || this.muted) return;
     const t = ac.currentTime, s = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain();
     s.buffer = this.noiseBuf;
     f.type = type;
@@ -79,7 +121,7 @@ export class Audio {
     f.frequency.exponentialRampToValueAtTime(Math.max(40, freq * 0.2), t + dur);
     g.gain.setValueAtTime(vol, t);
     g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-    s.connect(f).connect(g).connect(this.master);
+    s.connect(f).connect(g).connect(this.sfx);
     s.start(t);
     s.stop(t + dur);
   }
@@ -117,6 +159,12 @@ export class Audio {
       case 'thud': T(90, 0.15, 'square', 0.08, 0.6); break;
       case 'cone': T(500, 0.06, 'square', 0.05); break;
       case 'crate': T(140, 0.15, 'square', 0.08, 0.5); break;
+      case 'shift': N(0.05, 0.08, 1800, 'bandpass'); T(90, 0.06, 'square', 0.05, 0.7); break; // gearbox clack + exhaust bark
+      case 'blowoff': N(0.45, 0.07, 6000, 'highpass'); break; // turbo "pssh"
+      case 'pop': N(0.04, 0.2 + Math.random() * 0.15, 900 + Math.random() * 900); break; // overrun crackle
+      case 'clank': T(180, 0.25, 'square', 0.09, 0.6); T(410, 0.18, 'triangle', 0.07, 0.8, 0.02); N(0.3, 0.25, 4000, 'highpass'); break;
+      case 'whoosh': N(0.7, 0.28, 2600, 'bandpass'); T(220, 0.5, 'sawtooth', 0.04, 2.2); break;
+      case 'land': N(0.25, 0.3 * v, 300); T(70, 0.18, 'sine', 0.2 * v, 0.6); break;
       case 'thunder': N(2.8, 0.5, 260); T(45, 2, 'sine', 0.25, 0.6); break;
       case 'hitmark': T(1600, 0.04, 'square', 0.04, 0.8); break;
       case 'story': [392, 494, 587].forEach((f, i) => T(f, 0.5, 'sine', 0.08, 1, i * 0.18)); break;
@@ -134,7 +182,7 @@ export class Audio {
     filt.Q.value = 6;
     filt.frequency.value = 1800;
     gain.gain.value = 0;
-    src.connect(filt).connect(gain).connect(this.master);
+    src.connect(filt).connect(gain).connect(this.engines ?? this.master);
     src.start();
     return {
       set(freq, _filter, g) {
@@ -143,33 +191,6 @@ export class Audio {
       },
       stop() {
         try { src.stop(); gain.disconnect(); } catch { /* already stopped */ }
-      },
-    };
-  }
-
-  createEngine(): Engine | null {
-    const ac = this.ac;
-    if (!ac || !this.master) return null;
-    const osc = ac.createOscillator(), filt = ac.createBiquadFilter(), gain = ac.createGain();
-    osc.type = 'sawtooth';
-    filt.type = 'lowpass';
-    filt.frequency.value = 500;
-    gain.gain.value = 0;
-    osc.connect(filt).connect(gain).connect(this.master);
-    osc.start();
-    return {
-      set(freq, filter, g) {
-        osc.frequency.setTargetAtTime(freq, ac.currentTime, 0.05);
-        filt.frequency.setTargetAtTime(filter, ac.currentTime, 0.05);
-        gain.gain.setTargetAtTime(g, ac.currentTime, 0.05);
-      },
-      stop() {
-        try {
-          osc.stop();
-          gain.disconnect();
-        } catch {
-          /* already stopped */
-        }
       },
     };
   }
