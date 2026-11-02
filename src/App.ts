@@ -102,7 +102,7 @@ export class App {
     const times = ['day', 'sunset', 'dawn'] as const;
     this.replaceGame({
       mode: 'open', seed: Math.floor(Math.random() * 1e9), trackId: '', laps: 0, pvp: false, quality: this.quality, locals: [], net: null, attract: true,
-      time: times[Math.floor(Math.random() * times.length)], weather: 'clear', theme: 'mixed', gen: { ...DEFAULT_GEN },
+      time: times[Math.floor(Math.random() * times.length)], weather: 'clear', theme: 'mixed', gen: { ...DEFAULT_GEN }, drones: 2,
     });
   }
 
@@ -112,7 +112,7 @@ export class App {
     const dtrack = s.mode === 'drift' ? DRIFT_TRACKS.find((t) => t.id === s.trackId) : undefined;
     return {
       mode: s.mode, seed: s.mode === 'drift' ? driftSeed(s.trackId, s.seed) : track?.seed ?? s.seed, trackId: s.trackId, laps: s.laps, pvp: s.pvp,
-      time: s.time, weather: s.weather, theme: track?.theme ?? (dtrack && dtrack.id !== 'random' ? dtrack.theme : s.theme), gen: track ? { ...DEFAULT_GEN } : { ...DEFAULT_GEN, ...s.gen }, quality: this.quality, locals, net,
+      time: s.time, weather: s.weather, theme: track?.theme ?? (dtrack && dtrack.id !== 'random' ? dtrack.theme : s.theme), gen: track ? { ...DEFAULT_GEN } : { ...DEFAULT_GEN, ...s.gen }, drones: s.drones ?? 2, quality: this.quality, locals, net,
     };
   }
 
@@ -148,7 +148,7 @@ export class App {
     this.withLoading(() => {
       this.replaceGame({
         mode: 'open', seed: Math.floor(Math.random() * 1e9), trackId: '', laps: 0, pvp: false, time: 'day', weather: 'clear', theme: 'mixed',
-        gen: { terrain: 0, water: 0, flora: 0, roads: 1, poi: 2 }, tutorial: true, quality: this.quality,
+        gen: { terrain: 0, water: 0, flora: 0, roads: 1, poi: 2 }, drones: 2, tutorial: true, quality: this.quality,
         locals: [{ name: P.name, color: P.color, controller: this.input.controllers[0], vehicle: P.vehicle ?? 'street' }], net: null,
       });
       this.enterPlay(true);

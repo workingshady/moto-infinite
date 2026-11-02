@@ -1,6 +1,6 @@
 // Landing page, game setup (shared by solo, split screen and online lobby), settings, pause and results.
 // Plain DOM: each screen is a template string; clicks are handled by data-attributes in one place.
-import { ASSIST, GEN, PLAYER_COLORS, QUALITY, THEME_DEFS, TRACKS, WEATHER_DEFS, type QualityName } from '../config';
+import { ASSIST, DRONE_LEVELS, GEN, PLAYER_COLORS, QUALITY, THEME_DEFS, TRACKS, WEATHER_DEFS, type QualityName } from '../config';
 import { DEFAULT_GEN, GEN_MAX, MAX_PLAYERS, THEMES, TIMES, WEATHERS, type WorldGen, type GameMode, type LobbySettings, type PlayerInfo, type TimeOfDay, type Weather, type WorldTheme } from '../../shared/protocol';
 import type { Standing } from '../systems/Race';
 import { fmt } from '../systems/Race';
@@ -124,7 +124,7 @@ export class Menu {
   readonly root: HTMLDivElement;
   private screen: Screen = 'home';
   private back: Screen = 'home';
-  private setup: Setup = { split: false, mode: 'open', trackId: 'coast', laps: 3, pvp: false, seed: newSeed(), time: 'day', weather: 'clear', theme: 'mixed', gen: { ...DEFAULT_GEN }, maxPlayers: 8, locked: false };
+  private setup: Setup = { split: false, mode: 'open', trackId: 'coast', laps: 3, pvp: false, seed: newSeed(), time: 'day', weather: 'clear', theme: 'mixed', gen: { ...DEFAULT_GEN }, maxPlayers: 8, locked: false, drones: 2 };
   private lobby: LobbyView | null = null;
   private genKey: keyof WorldGen = 'terrain';
   private slide = 0;
@@ -237,6 +237,8 @@ export class Menu {
         ${s.mode === 'drift' ? '' : s.mode === 'open' ? `
         <div class="opt"><span>World</span><div class="chips">${chips('theme', THEMES, s.theme, (t) => THEME_DEFS[t].label)}</div></div>
         <p class="hint">${THEME_DEFS[s.theme].blurb}</p>
+        <div class="opt"><span>Drones</span><div class="chips">${chips('drones', [0, 1, 2, 3], s.drones ?? 2, (i) => (i === 0 ? '🚫 ' : '🛸 ') + DRONE_LEVELS[i].label)}</div></div>
+        <p class="hint">${(s.drones ?? 2) === 0 ? 'Peaceful ride: no drone attacks, no drone outposts guards, no drone challenges.' : 'Drones attack in the open world; further from the start = tougher types.'}</p>
         <details class="gen" open><summary>🛠 World generator</summary>
           ${genRow('terrain', 'Terrain')}${genRow('water', 'Water')}${genRow('flora', 'Nature')}${genRow('roads', 'Roads')}${genRow('poi', 'Landmarks')}
         </details>
@@ -410,11 +412,11 @@ export class Menu {
             ${row('Space (on foot)', 'Jump')}
           </table></section>
           <section><h3>🤸 Wheelies (motorcycles)</h3><table class="keys">
-            ${row('1. Speed', 'Ride faster than ~25 km/h on the ground')}
-            ${row('2. Hold C', 'The front wheel lifts and balances on the rear wheel')}
-            ${row('3. ↑ / ↓', 'While holding C: ↑ lifts higher, ↓ brings it down. Steering is softer on one wheel')}
-            ${row('4. Release C', 'The front drops. Over 0.8 s earns XP: "WHEELIE 2.4s"')}
-            ${row('⚠ Loop out', 'Lift too far and you flip backwards: tap ↓ to save it')}
+            ${row('1. Pop', 'Above ~20 km/h hold ↑ (throttle) and press C: the clutch pop lifts the front')}
+            ${row('2. Balance', 'Keep C held. ↑ throttle lifts, ↓ rear brake lowers. Keep the needle in the GREEN band on the wheelie meter')}
+            ${row('3. Physics', 'Below the balance point the front falls; past it the bike tips over backwards. More power = easier pop (Vortex, Dust Devil)')}
+            ${row('4. Land', 'Release C or brake gently. Over 0.8 s earns XP, time in the green = PERFECT BALANCE bonus')}
+            ${row('⚠ Loop out', 'Needle in the red = you flip backwards: tap ↓ early. Settings → Assist Easy helps you balance')}
             ${row('Note', 'Every bike except the Thunder Cruiser can wheelie. Cars cannot')}
           </table></section>
           <section><h3>🌀 Drifting (cars and bikes)</h3><table class="keys">
@@ -532,6 +534,7 @@ export class Menu {
       case 'pvp': s.pvp = !!val; break;
       case 'seed': s.seed = newSeed(); break;
       case 'maxPlayers': s.maxPlayers = +val; break;
+      case 'drones': s.drones = +val; break;
       case 'locked': s.locked = !!val; break;
       case 'gen': s.gen = { ...s.gen, [this.genKey]: +val }; break;
       case 'surprise': {

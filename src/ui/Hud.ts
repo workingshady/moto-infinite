@@ -5,7 +5,7 @@ import type { Player } from '../entities/Player';
 import { TIERS, type Card } from '../data/upgrades';
 import type { Viewport } from '../core/Renderer';
 import { WEAPONS } from '../data/weapons';
-import { POI_KINDS, POWERUPS, type PoiKind, type PowerupKind } from '../config';
+import { POI_KINDS, POWERUPS, WHEELIE, type PoiKind, type PowerupKind } from '../config';
 
 const POI_COLOR = Object.fromEntries(POI_KINDS.map((k) => [k.kind, k.color])) as Record<PoiKind, string>;
 import { clamp, escapeHtml, hex, TAU } from '../utils/math';
@@ -35,6 +35,7 @@ const TEMPLATE = `
 <div class="story" data-k="story"><b data-k="storyT"></b><span data-k="storyX"></span></div>
 <div class="objective" data-k="objective"></div>
 <div class="countdown" data-k="countdown"></div>
+<div class="wmeter" data-k="wmeter"><div class="wtrack"><i class="wzone" data-k="wzone"></i><i class="wneedle" data-k="wneedle"></i></div><span data-k="wtxt"></span></div>
 <div class="driftmeter" data-k="driftm"><div class="dgauge"><i data-k="dneedle"></i></div><b data-k="driftPts"></b><span data-k="driftInfo"></span><div class="dtags" data-k="dtags"></div></div>
 <div class="levelup" data-k="levelup"><div class="lu-head"><b>CHOOSE AN UPGRADE</b><span data-k="luHint"></span></div><div class="cards" data-k="cards"></div></div>
 <div class="upbadge" data-k="upbadge"></div>
@@ -247,6 +248,16 @@ export class Hud {
       e.cross.style.transform = `translate(${q.x}px,${q.y}px) translate(-50%,-50%)`;
     }
 
+    // wheelie meter: needle = angle, green band = balance point, red end = loop out
+    const wl = B.wheelie;
+    e.wmeter.style.display = p.riding && wl > 0.08 ? 'block' : 'none';
+    if (wl > 0.08) {
+      const W = WHEELIE, pct = (a: number) => (a / W.loopOut) * 100;
+      e.wzone.style.left = pct(W.balance - W.perfect) + '%';
+      e.wzone.style.width = pct(W.perfect * 2) + '%';
+      e.wneedle.style.left = Math.min(100, pct(wl)) + '%';
+      e.wtxt.textContent = `WHEELIE ${B.wheelieT.toFixed(1)}s${Math.abs(wl - W.balance) < W.perfect ? ' · BALANCED' : wl > W.balance ? ' · ↓ brake!' : ' · ↑ throttle'}`;
+    }
     // live drift meter (every frame so it feels responsive)
     const dr = p.drift;
     e.driftm.style.display = dr.on && dr.pts > 20 ? 'block' : 'none';
@@ -285,7 +296,7 @@ export class Hud {
       e.cBar.style.width = Math.min(100, (c.prog / c.n) * 100) + '%';
       e.cTime.textContent = (c.def.fmt ? c.def.fmt(c.prog) : Math.floor(c.prog)) + ' · ' + Math.ceil(c.t) + 's left' + (p.challenges!.streak > 1 ? ` · streak x${p.challenges!.streak}` : '');
     } else e.ch.style.display = 'none';
-    e.prompt.style.display = !p.riding && !s.dead && Math.hypot(p.W.x - B.x, p.W.z - B.z) < 3.5 ? 'block' : 'none';
+    e.prompt.style.display = !p.riding && !s.dead && Math.hypot(p.W.x - B.x, p.W.z - B.z) < (p.isCar ? 4.5 : 3.5) ? 'block' : 'none';
     const race = g.race;
     if (race) {
       const r = p.race, total = race.standings().length;

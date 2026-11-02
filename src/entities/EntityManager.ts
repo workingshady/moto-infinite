@@ -5,7 +5,7 @@ import type { Chunk } from '../world/Chunks';
 import type { Player } from './Player';
 import { G, MAT, mesh } from './assets';
 import { buildDrone } from './models';
-import { AIM, DRONES, DRONE_TYPES, POWERUPS, type DroneKind, type PowerupKind } from '../config';
+import { AIM, DRONES, DRONE_LEVELS, DRONE_TYPES, POWERUPS, type DroneKind, type PowerupKind } from '../config';
 import { clamp, lerp, TAU } from '../utils/math';
 
 export type EntityType = 'gem' | 'crate' | 'barrel' | 'cone' | 'drone' | 'powerup';
@@ -40,7 +40,8 @@ export class EntityManager {
   add(type: EntityType, x: number, z: number, o: { y?: number; chunk?: Chunk | null; power?: PowerupKind; force?: boolean; kind?: DroneKind } = {}): Entity | null {
     const gy = this.game.terrain.groundAt(x, z);
     if (gy < 0.5 && type !== 'drone') return null;
-    if (type === 'drone' && this.drones >= DRONES.maxAlive + (o.force ? 3 : 0)) return null;
+    const dl = DRONE_LEVELS[this.game.opts.drones ?? 2]?.mul ?? 1;
+    if (type === 'drone' && (dl === 0 || this.drones >= Math.round(DRONES.maxAlive * dl) + (o.force ? 3 : 0))) return null;
     if (type === 'drone' && this.game.opts.tutorial && !this.game.tutorial?.complete) return null; // no enemies while learning
     if (type === 'drone' && this.game.opts.mode === 'drift') return null; // drift sessions are about style, not combat
     let inner: THREE.Object3D, hp = 1, r = 0.8, y = gy;

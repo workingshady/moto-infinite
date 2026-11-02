@@ -58,7 +58,7 @@ export const BIKE = {
   coastDrag: 1, offroadDrag: 0.25, offroadTop: 0.8,
   nitroMax: 100, nitroBurn: 28, nitroRegen: 2, nitroTopMul: 1.6, nitroAccelMul: 1.9,
   grip: 1.9, padTopMul: 1.55, padTime: 1.6,
-  flipAccel: 13, spinRate: 4.2, mountDist: 3.5,
+  flipAccel: 13, spinRate: 4.2, mountDist: 3.5, carMountDist: 4.5,
 };
 
 export const LANDING = {
@@ -84,6 +84,14 @@ export const LEVELING = {
 };
 
 export const PLAYER = { hpMax: 100, regenDelay: 4, regenRate: 8, magnet: 3, respawnDelay: 1.8, comboWindow: 5 };
+
+/** Drone amount option: multiplies spawn chance and the alive cap. */
+export const DRONE_LEVELS = [
+  { label: 'Off', mul: 0 },
+  { label: 'Few', mul: 0.45 },
+  { label: 'Normal', mul: 1 },
+  { label: 'Many', mul: 1.8 },
+];
 
 export const DRONES = {
   chance: 0.035, // per chunk near spawn
@@ -136,7 +144,25 @@ export const DRIFT = {
   grades: [[8000, 'INSANE!', '#ff3355'], [4000, 'GREAT!', '#ff7ad9'], [1500, 'NICE', '#ffd23f'], [0, 'DRIFT', '#ffffff']] as [number, string, string][],
 };
 /** Wheelies (bikes): hold the trick key on the ground. */
-export const WHEELIE = { balance: 0.5, up: 0.28, down: 0.32, loopOut: 1.05, minSpeed: 6, minTime: 0.8, xpPerSec: 60 };
+/**
+ * Wheelies as a real balance act: the bike pivots on the rear axle with angular momentum.
+ * Below the balance point gravity drops the front, past it the bike goes over backwards.
+ * Throttle (with the clutch pop on C) lifts, the rear brake (↓) pushes the front down.
+ */
+export const WHEELIE = {
+  balance: 0.62, // rad: centre of mass right above the rear contact patch
+  gravity: 6.5, // tipping torque strength
+  throttle: 7, // lift torque from the throttle while C is held (x bike power)
+  pop: 2.4, // clutch-pop kick when pressing C with throttle (rad/s, x bike power)
+  brake: 11, // rear-brake torque pulling the front down
+  damping: 1.4,
+  loopOut: 1.2, // rad: past this you flip over backwards
+  minSpeed: 5, // m/s
+  slam: 2.2, // front drop speed (rad/s) that counts as a hard landing
+  perfect: 0.13, // within this of the balance point = perfect balance
+  assist: [0, 8, 14], // stabilising stiffness per assist level (Pro, Normal, Easy); Normal/Easy also get wheelie control
+  minTime: 0.8, xpPerSec: 60, perfectXpPerSec: 90,
+};
 
 export const RACE = { checkpoints: 8, countdown: 3, ghostHz: 10, resultsDelay: 2.5 };
 

@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import type { Game } from '../core/Game';
 import type { Pad, Ramp } from './Terrain';
 import { RAMP } from './Terrain';
-import { FEATURES, DRONES, QUALITY, ROAD, WORLD } from '../config';
+import { FEATURES, DRONES, DRONE_LEVELS, QUALITY, ROAD, WORLD } from '../config';
 import { G, MAT, mesh } from '../entities/assets';
 import { buildPoi, dressCircuit, type Spinner, type Zone } from './Landmarks';
 import { Circuit, type Poi } from './layout';
@@ -118,7 +118,7 @@ export class ChunkManager {
 
     if (g.opts.mode === 'open') {
       const sp = g.spawnPoints[0], far = Math.hypot(x0, z0);
-      if (Math.hypot(x0 + CH / 2 - sp.x, z0 + CH / 2 - sp.z) > DRONES.safeRadius && rng() < DRONES.chance + DRONES.farChance * Math.min(1, far / DRONES.farDist))
+      if (Math.hypot(x0 + CH / 2 - sp.x, z0 + CH / 2 - sp.z) > DRONES.safeRadius && rng() < (DRONES.chance + DRONES.farChance * Math.min(1, far / DRONES.farDist)) * (DRONE_LEVELS[g.opts.drones ?? 2]?.mul ?? 1))
         g.entities.add('drone', x0 + rng() * CH, z0 + rng() * CH, { chunk: ch });
     }
     this.chunks.set(key(cx, cz), ch);

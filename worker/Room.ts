@@ -143,6 +143,7 @@ export class Room extends DurableObject<Env> {
           gen: { ...DEFAULT_GEN },
           maxPlayers: Math.max(2, Math.min(MAX_PLAYERS, Math.round(Number(s.maxPlayers) || MAX_PLAYERS))),
           locked: !!s.locked,
+          drones: Math.max(0, Math.min(3, Math.round(Number(s.drones ?? 2)))),
         };
         for (const k of Object.keys(GEN_MAX) as (keyof typeof GEN_MAX)[])
           this.settings.gen[k] = Math.max(0, Math.min(GEN_MAX[k], Math.round(Number(s.gen?.[k] ?? DEFAULT_GEN[k]))));

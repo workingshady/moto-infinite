@@ -36,6 +36,8 @@ export interface SessionOptions {
   weather: Weather;
   theme: WorldTheme;
   gen: WorldGen;
+  /** Enemy drone amount, index into DRONE_LEVELS. */
+  drones: number;
   /** Guided training ride for new players. */
   tutorial?: boolean;
   quality: QualityName;

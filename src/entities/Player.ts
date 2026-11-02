@@ -37,7 +37,7 @@ export class Player {
     x: 0, z: 0, y: 0, h: 0, moveH: 0, v: 0, vy: 0, lean: 0, pitch: 0, pitchV: 0, steer: 0,
     air: false, airT: 0, lastG: 0, wheel: 0, flipAcc: 0, spinAcc: 0, pad: 0, wasN: false, impact: 0, fromRamp: false,
     latch: { up: false, down: false, left: false, right: false },
-    wheelie: 0, wheelieT: 0, yawV: 0, flick: 0, lastSteerSign: 0, lastSteerT: 0, wasUp: false, close: false, tandem: false,
+    wheelie: 0, wheelieV: 0, wheelieT: 0, wheeliePerfect: 0, wheelieHeld: false, yawV: 0, flick: 0, lastSteerSign: 0, lastSteerT: 0, wasUp: false, close: false, tandem: false,
   };
   /** Live drift chain: points build while sliding, banked after a short straight. */
   readonly drift = { on: false, pts: 0, t: 0, cool: 0, angle: 0, total: 0, best: 0, zone: '', zoneMult: 1, jitter: 0, prevAngle: 0 };
@@ -248,6 +248,7 @@ export class Player {
         const pitchIn = trick || this.isCar ? 0 : (up && !L.up ? 1 : 0) - (down && !L.down ? 1 : 0);
         const spinIn = this.isCar ? 0 : (left && !L.left ? 1 : 0) - (right && !L.right ? 1 : 0);
         B.wheelie = lerp(B.wheelie, 0, damp(dt, 6));
+        B.wheelieV = 0;
         B.pitchV += pitchIn * BIKE.flipAccel * dt;
         B.pitchV *= 1 - 1.8 * dt;
         const dp = B.pitchV * dt;
@@ -431,30 +432,59 @@ export class Player {
       g.fx.emit(B.x - fx * 1.1, B.y + 0.15, B.z - fz * 1.1, rnd(1), 1, rnd(1), 0.9, 0.6, 2.2, 0xdddddd, 0.35, -0.4, 1.5, true);
   }
 
-  /** Bikes: hold the trick key on the ground to pop a wheelie. ↑ lifts, ↓ lowers; too far = loop out. */
+  /**
+   * Wheelie as a balance act (bikes only). State: angle B.wheelie and angular velocity B.wheelieV around the rear axle.
+   * C + throttle pops and lifts, ↓ is the rear brake, gravity tips toward 0 below the balance point and over the top past it.
+   */
   private updateWheelie(dt: number, hold: boolean, up: boolean, down: boolean) {
-    const B = this.B;
+    const B = this.B, W = WHEELIE;
     if (!this.def.wheelie || this.isCar) return false;
-    const want = hold && Math.abs(B.v) > WHEELIE.minSpeed ? WHEELIE.balance + (up ? WHEELIE.up : 0) - (down ? WHEELIE.down : 0) : 0;
-    B.wheelie = lerp(B.wheelie, want, damp(dt, want > B.wheelie ? 2.6 : 5));
-    if (B.wheelie > WHEELIE.loopOut) {
+    const speed = Math.abs(B.v), power = this.def.accel / 17;
+    if (hold && !B.wheelieHeld && up && speed > W.minSpeed && B.wheelie < 0.05) B.wheelieV += W.pop * power; // clutch pop
+    B.wheelieHeld = hold;
+    if (B.wheelie <= 0 && B.wheelieV <= 0) { B.wheelie = 0; B.wheelieV = 0; this.endWheelie(); return false; }
+    let torque = -W.gravity * Math.sin(W.balance - B.wheelie); // falls forward below balance, backward past it
+    const k = W.assist[prefs.assist] ?? W.assist[1], target = W.balance - 0.08;
+    // wheelie control (like modern bikes' electronics, on Normal/Easy): power fades as the front nears the balance point
+    const control = k ? clamp((target + 0.2 - B.wheelie) / 0.3, 0, 1) : 1;
+    if (hold && up && speed > W.minSpeed) torque += W.throttle * power * clamp(1.4 - speed / this.def.top, 0.35, 1.2) * control;
+    if (down) torque -= W.brake;
+    if (k && hold) torque -= k * (B.wheelie - target) + k * 0.35 * B.wheelieV; // assist: settle just under the balance point
+    B.wheelieV += torque * dt;
+    B.wheelieV *= 1 - W.damping * dt;
+    B.wheelie += B.wheelieV * dt;
+    if (B.wheelie > W.loopOut) {
       B.wheelie = 0;
-      this.crash('Looped out! Ease off with ↓ during wheelies');
+      B.wheelieV = 0;
+      this.endWheelie();
+      this.crash('Looped out! Tap ↓ (rear brake) to bring the front down');
       return false;
     }
-    if (B.wheelie > 0.2) B.wheelieT += dt;
-    else if (B.wheelieT > 0) {
-      const t = B.wheelieT;
-      B.wheelieT = 0;
-      if (t >= WHEELIE.minTime) {
-        const xp = Math.round(t * WHEELIE.xpPerSec * this.stats.trickMul);
-        this.hud.banner(`WHEELIE ${t.toFixed(1)}s`, `+${xp} XP`, '#ffd23f');
-        this.game.audio.play('trick');
-        this.addXP(xp);
-      }
+    if (B.wheelie <= 0) {
+      if (B.wheelieV < -W.slam) { this.cam.shake = Math.max(this.cam.shake, 0.25); this.game.audio.play('thud'); }
+      B.wheelie = 0;
+      B.wheelieV = 0;
+      this.endWheelie();
+      return false;
     }
-    if (B.wheelieT > 0) this.game.events.emit('progress', { player: this, id: 'wheelie', value: B.wheelieT });
-    return B.wheelie > 0.2;
+    if (B.wheelie > 0.18) {
+      B.wheelieT += dt;
+      if (Math.abs(B.wheelie - W.balance) < W.perfect) B.wheeliePerfect += dt;
+      this.game.events.emit('progress', { player: this, id: 'wheelie', value: B.wheelieT });
+    }
+    return B.wheelie > 0.18;
+  }
+
+  /** Front wheel back down: bank the wheelie. */
+  private endWheelie() {
+    const B = this.B, t = B.wheelieT, perfect = B.wheeliePerfect;
+    B.wheelieT = 0;
+    B.wheeliePerfect = 0;
+    if (t < WHEELIE.minTime) return;
+    const xp = Math.round((t * WHEELIE.xpPerSec + perfect * WHEELIE.perfectXpPerSec) * this.stats.trickMul);
+    this.hud.banner(`WHEELIE ${t.toFixed(1)}s`, `${perfect > 0.5 ? `PERFECT BALANCE ${perfect.toFixed(1)}s · ` : ''}+${xp} XP`, perfect > 0.5 ? '#7cffb2' : '#ffd23f');
+    this.game.audio.play('trick');
+    this.addXP(xp);
   }
 
   /** Drift scoring: angle x speed builds points, the multiplier grows the longer the chain lasts. */
@@ -669,6 +699,7 @@ export class Player {
     const B = this.B, g = this.game;
     this.failDrift();
     B.wheelie = 0;
+    B.wheelieV = 0;
     this.hud.banner('CRASH!', reason, '#ff4d5e');
     g.audio.play('crash');
     this.cam.shake = 0.9;
@@ -690,7 +721,7 @@ export class Player {
     const f = active ? (c.is('up') ? 1 : 0) - (c.is('down') ? 1 : 0) : 0;
     const spd = f * (c.is('nitro') && !c.is('jump') ? PHYS.runSpeed : PHYS.walkSpeed) * (f < 0 ? 0.55 : 1);
     const nx = W.x + Math.sin(W.h) * spd * dt, nz = W.z + Math.cos(W.h) * spd * dt;
-    if (spd !== 0 && !g.chunks.blocked(nx, nz, 0.45, W.y, 0.9) && !g.entities.hitTest(nx, W.y, nz, 0.4) && !(Math.hypot(nx - B.x, nz - B.z) < 1.3 && W.y < B.y + 1.5)) {
+    if (spd !== 0 && !g.chunks.blocked(nx, nz, 0.45, W.y, 0.9) && !g.entities.hitTest(nx, W.y, nz, 0.4) && !(Math.hypot(nx - B.x, nz - B.z) < (this.isCar ? 2.3 : 1.3) && W.y < B.y + 1.5)) {
       W.x = nx;
       W.z = nz;
     }
@@ -720,7 +751,7 @@ export class Player {
 
   private toggleRide() {
     const W = this.W, B = this.B, g = this.game;
-    if (!this.riding && Math.hypot(W.x - B.x, W.z - B.z) < BIKE.mountDist) {
+    if (!this.riding && Math.hypot(W.x - B.x, W.z - B.z) < (this.isCar ? BIKE.carMountDist : BIKE.mountDist)) {
       this.mount();
       g.audio.play('mount');
     } else if (this.riding) {

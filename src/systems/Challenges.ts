@@ -49,7 +49,8 @@ export class PlayerChallenges {
   }
 
   private start() {
-    const options = CHALLENGES.filter((d) => d.id !== this.last);
+    const p = this.p, droneOff = (p.game.opts.drones ?? 2) === 0;
+    const options = CHALLENGES.filter((d) => d.id !== this.last && !(droneOff && d.id === 'drone') && !(d.id === 'wheelie' && !p.def.wheelie) && !(p.isCar && (d.id === 'flip' || d.id === 'spin' || d.id === 'style')));
     const def = options[Math.floor(Math.random() * options.length)], n = def.target();
     this.last = def.id;
     this.active = { def, n, prog: 0, t: def.time, done: false };
