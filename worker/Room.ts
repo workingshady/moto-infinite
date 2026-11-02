@@ -6,7 +6,7 @@ import { DEFAULT_GEN, DEFAULT_SETTINGS, GEN_MAX, MAX_PLAYERS, THEMES, TIMES, WEA
 interface Attachment { id: string; name: string; color: number; vehicle?: string; joined: number; hello: boolean; ready?: boolean }
 
 const MAX_MSG = 8 * 1024;
-const cleanId = (s: unknown) => String(s ?? 'street').replace(/[^a-z_]/g, '').slice(0, 16) || 'street';
+const cleanId = (s: unknown) => String(s ?? 'street').replace(/[^a-z0-9_]/g, '').slice(0, 16) || 'street';
 const clean = (s: unknown) => [...String(s ?? '')].filter((c) => c >= ' ' && c !== '<' && c !== '>').join('').trim().slice(0, 16) || 'Rider';
 
 export class Room extends DurableObject<Env> {

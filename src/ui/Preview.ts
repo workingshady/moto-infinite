@@ -207,6 +207,7 @@ export class LobbyShowcase {
   private angle = 0;
   private drag: number | null = null;
   private span = 4;
+  private resize: ResizeObserver | null = null;
 
   constructor() {
     this.canvas = document.createElement('canvas');
@@ -247,7 +248,7 @@ export class LobbyShowcase {
     const ids = new Set(players.map((p) => p.id));
     for (const [id, s] of this.slots) if (!ids.has(id)) { this.scene.remove(s.root); this.slots.delete(id); }
     const gap = players.some((p) => vehicleById(p.vehicle).kind === 'car') ? 3.8 : 3.1;
-    this.span = Math.max(4, players.length * gap);
+    this.span = Math.max(gap, (players.length - 1) * gap + gap);
     players.forEach((p, i) => {
       const label = `${p.host ? '👑 ' : ''}${p.name}${p.id === you ? ' (you)' : ''}${p.ready ? ' ✓' : ''}`, key = `${p.color}|${p.vehicle}|${label}`;
       let s = this.slots.get(p.id);
@@ -270,10 +271,17 @@ export class LobbyShowcase {
 
   mount(host: HTMLElement) {
     host.appendChild(this.canvas);
-    const w = host.clientWidth || 600, h = host.clientHeight || 220;
-    this.renderer.setSize(w, h, false);
-    this.camera.aspect = w / h;
-    this.camera.updateProjectionMatrix();
+    const fit = () => {
+      const w = host.clientWidth || 600, h = host.clientHeight || 220;
+      this.renderer.setSize(w, h, false);
+      this.camera.aspect = w / h;
+      this.camera.updateProjectionMatrix();
+    };
+    fit();
+    // the lobby panel stretches with the window, so keep the 3D view sized to it
+    this.resize?.disconnect();
+    this.resize = new ResizeObserver(fit);
+    this.resize.observe(host);
     if (this.raf) return;
     let last = performance.now();
     const loop = (now: number) => {
@@ -288,9 +296,11 @@ export class LobbyShowcase {
         s.root.children[0].rotation.z = Math.sin(t * 1.3 + s.phase) * 0.07; // gentle lean
         s.root.children[0].position.y = Math.abs(Math.sin(t * 6 + s.phase)) * 0.03;
       }
-      const d = 6 + this.span * 0.75, a = Math.sin(this.angle) * 0.55;
-      this.camera.position.set(Math.sin(a) * d, 3.2 + this.span * 0.08, Math.cos(a) * d);
-      this.camera.lookAt(0, 1.2, 0);
+      // pull back just far enough that the whole grid (plus name tags) fits the frame, whatever its shape
+      const half = this.span / 2 + 1.6, vHalf = Math.tan((this.camera.fov * Math.PI) / 360), hHalf = vHalf * this.camera.aspect;
+      const d = Math.max(half / hHalf, 2.6 / vHalf, 5.5) + 1.2, a = Math.sin(this.angle) * 0.55;
+      this.camera.position.set(Math.sin(a) * d, 2.4 + d * 0.22, Math.cos(a) * d);
+      this.camera.lookAt(0, 1.3, 0);
       this.renderer.render(this.scene, this.camera);
     };
     this.raf = requestAnimationFrame(loop);

@@ -121,6 +121,16 @@ interface LobbyView { code: string; link: string; players: PlayerInfo[]; setting
 
 const TIME_LABEL: Record<TimeOfDay, string> = { day: '☀️ Day', dawn: '🌅 Dawn', sunset: '🌇 Sunset', night: '🌙 Night', cycle: '🔄 Live cycle' };
 const WEATHER_ICON: Record<Weather, string> = { clear: '☀️', cloudy: '☁️', rain: '🌧️', fog: '🌫️', snow: '❄️', storm: '⛈️', dynamic: '🎲' };
+const MODE_LABEL: Record<GameMode, string> = { open: '🌄 Open world', race: '🏁 Circuit race', f1: '🏎 Formula 1', drift: '🌀 Drift' };
+
+/** One-glance strip of what everyone is about to play (mode, place, laps, time, weather). */
+function raceSummary(s: LobbySettings) {
+  const place = s.mode === 'open' ? THEME_DEFS[s.theme].label
+    : (s.mode === 'f1' ? F1_TRACKS : s.mode === 'drift' ? DRIFT_TRACKS : TRACKS).find((t) => t.id === s.trackId)?.name ?? '';
+  const laps = s.mode === 'race' || s.mode === 'f1' ? `<span>🔁 ${s.laps} lap${s.laps === 1 ? '' : 's'}</span>` : '';
+  const weather = `${WEATHER_ICON[s.weather]} ${s.weather === 'dynamic' ? 'Changing' : WEATHER_DEFS[s.weather].label}`;
+  return `<div class="race-summary"><b>${MODE_LABEL[s.mode] ?? s.mode}</b><span>📍 ${escapeHtml(place)}</span>${laps}<span>${TIME_LABEL[s.time]}</span><span>${weather}</span></div>`;
+}
 const LAPS = [1, 3, 5, 10];
 const newSeed = () => Math.floor(Math.random() * 1e9);
 
@@ -190,7 +200,7 @@ export class Menu {
   show(s: Screen, data?: unknown) {
     this.root.style.display = '';
     this.screen = s;
-    this.root.className = s === 'pause' || s === 'results' ? 'overlay dim' : 'overlay';
+    this.root.className = s === 'pause' || s === 'results' ? 'overlay dim' : s === 'lobby' ? 'overlay lobby-screen' : 'overlay';
     const wide = s === 'home' || s === 'mode' || s === 'lobby' || s === 'onboard' || s === 'garage' || s === 'howto';
     this.root.innerHTML = `<div class="card-wrap ${wide ? 'wide' : ''} scr-${s}">${this.render(s, data)}</div>`;
     this.afterRender();
@@ -205,8 +215,11 @@ export class Menu {
   /** Re-render the lobby in place when players or settings change. */
   private refreshLobby() {
     const focused = document.activeElement as HTMLInputElement | null, keep = focused?.id === 'lname' ? focused.value : null;
+    const scroll = this.root.querySelector('.lobby-main')?.scrollTop ?? 0;
     this.root.querySelector('.card-wrap')!.innerHTML = this.render('lobby');
     this.afterRender();
+    const main = this.root.querySelector('.lobby-main');
+    if (main) main.scrollTop = scroll;
     if (keep !== null) {
       const el = this.root.querySelector<HTMLInputElement>('#lname')!;
       el.value = keep;
@@ -406,16 +419,17 @@ export class Menu {
         return `
         <div class="lobby-grid">
           <div class="lobby-side">
-            <div class="lobby-head">
-              <div><h2>Lobby</h2><div class="dim small">Room code</div><div class="roomcode">${escapeHtml(v.code)}</div></div>
+            <div class="lobby-top">
+              <div><div class="label">🌐 ONLINE ROOM · CODE</div><div class="roomcode">${escapeHtml(v.code)}</div></div>
+              <div class="share"><input readonly value="${escapeHtml(v.link)}" id="link"><button class="btn" data-go="copy">Copy link</button>${'share' in navigator ? '<button class="btn" data-go="share">Share</button>' : ''}</div>
             </div>
-            <div class="share"><input readonly value="${escapeHtml(v.link)}" id="link"><button class="btn" data-go="copy">Copy link</button>${'share' in navigator ? '<button class="btn" data-go="share">Share</button>' : ''}</div>
-            <div id="lineupHost" class="lineup-host" title="Drag to spin"></div>
-            <div class="dim small">Riders ${v.players.length}/${v.settings.maxPlayers}${v.settings.locked ? ' · 🔒 locked' : ''}</div>
+            <div id="lineupHost" class="lineup-host" title="Drag to spin"><span class="lineup-hint">⟲ drag to spin</span></div>
+            <div class="riders-head"><span class="label">RIDERS ${v.players.length}/${v.settings.maxPlayers}${v.settings.locked ? ' · 🔒 LOCKED' : ''}</span><span class="ready-count">${v.players.filter((p) => p.ready).length}/${v.players.length} ready</span></div>
             <ul class="players">${v.players.map((p) => `<li><i style="background:${hex(p.color)}"></i>${escapeHtml(p.name)}${p.host ? ' 👑' : ''}${p.id === v.you ? ' <em>(you)</em>' : ''}${p.ready ? ' <span class="ready">✓ ready</span>' : ' <span class="notready">…</span>'}${v.host && p.id !== v.you ? `<button class="kick" data-kick="${escapeHtml(p.id)}" title="Remove from room">✕</button>` : ''}</li>`).join('')}</ul>
             <div class="me-row"><label>Your name <input id="lname" maxlength="16" value="${escapeHtml(v.players.find((p) => p.id === v.you)?.name ?? P.name)}"></label><div class="dots">${colorDots(v.players.find((p) => p.id === v.you)?.color ?? P.color, 'lcolor')}</div><div class="ride-line">Ride: <b>${escapeHtml(vehicleById(P.vehicle ?? 'street').name)}</b> <button class="chip" data-go="garage">Change</button></div></div>
           </div>
           <div class="lobby-main">
+            ${raceSummary(v.settings)}
             ${this.optionsPanel(v.settings, v.host, true)}
             <div class="opt room-opts ${v.host ? '' : 'disabled'}"><span>Room</span><div class="chips">${chips('maxPlayers', Array.from({ length: MAX_PLAYERS - 1 }, (_, i) => i + 2), v.settings.maxPlayers, (n) => `${n} max`)}</div>
               <label class="check"><input type="checkbox" data-opt="locked" ${v.settings.locked ? 'checked' : ''} ${v.host ? '' : 'disabled'}> 🔒 Lock room</label></div>
