@@ -12,7 +12,9 @@ import { DriftTrack } from './DriftTrack';
 import { F1Track } from './F1Track';
 import { mulberry32, PI, TAU } from '../utils/math';
 
-export interface Obstacle { x: number; z: number; r: number; top: number }
+import { obsOverlap, obsPush, sweep, type Obstacle, type Push } from './collide';
+
+export type { Obstacle } from './collide';
 export interface Chunk { cx: number; cz: number; obs: Obstacle[]; ramps: Ramp[]; pads: (Pad & { m: THREE.Mesh })[]; meshes: THREE.Object3D[]; terrain: THREE.Mesh }
 
 const CH = WORLD.chunk;
@@ -302,38 +304,61 @@ export class ChunkManager {
     for (const s of this.spinners) s.obj.rotation.z += s.speed * dt;
   }
 
-  /** Is the spot blocked by water, a cliff or a tree/rock? */
+  /** Is the spot blocked by water, a cliff or a tree/rock/barrier? */
   blocked(nx: number, nz: number, r: number, y: number, maxStep: number): false | 'water' | 'wall' | 'tree' {
     const gy = this.game.terrain.groundAt(nx, nz);
     if (gy < 0.2) return 'water';
     if (gy - y > maxStep) return 'wall';
-    let hit = false;
-    this.forNear(nx, nz, (c) => {
-      for (const o of c.obs) {
-        const dx = nx - o.x, dz = nz - o.z, rr = r + o.r;
-        if (dx * dx + dz * dz < rr * rr && y < o.top) return (hit = true);
-      }
-    });
-    return hit ? 'tree' : false;
+    return this.solidAt(nx, nz, r, y) ? 'tree' : false;
   }
 
+  /** Does any obstacle (circle or capsule) overlap a circle of radius r at (x, z) below its top? No allocation. */
+  solidAt(x: number, z: number, r: number, y: number) {
+    const cx = Math.floor(x / CH), cz = Math.floor(z / CH);
+    for (let i = -1; i <= 1; i++)
+      for (let j = -1; j <= 1; j++) {
+        const c = this.chunks.get(key(cx + i, cz + j));
+        if (!c) continue;
+        const obs = c.obs;
+        for (let k = 0; k < obs.length; k++) if (y < obs[k].top && obsOverlap(obs[k], x, z, r)) return true;
+      }
+    return false;
+  }
+
+  private sw = { r: 1, y: 0, step: 1.3 };
+  private swTest = (x: number, z: number) => !!this.blocked(x, z, this.sw.r, this.sw.y, this.sw.step);
+  /**
+   * Swept move test (tunnelling guard): checks sub-steps of at most half the probe radius from (x0, z0) to (x1, z1).
+   * Returns the fraction of the move at the first blocked sub-step, or -1 when the path is clear.
+   */
+  sweep(x0: number, z0: number, x1: number, z1: number, r: number, y: number, maxStep: number) {
+    this.sw.r = r; this.sw.y = y; this.sw.step = maxStep;
+    return sweep(x0, z0, x1, z1, r, this.swTest);
+  }
+
+  private readonly _push: Push = { nx: 0, nz: 0, depth: 0 };
+  private readonly _contact = { x: 0, z: 0, depth: 0 };
   /**
    * Outward contact normal (unit, in the ground plane) and penetration depth at a blocked spot. Obstacles push out
-   * radially (a chain of armco/tyre colliders sums to the wall's normal); cliffs push downhill, water uphill.
-   * Falls back to `fx, fz` (usually minus the travel direction) when no clear normal exists.
+   * along the shortest way off their core (a capsule barrier gives its true wall normal; touching two at a joint sums
+   * them); cliffs push downhill, water uphill. Falls back to `fx, fz` (usually minus the travel direction) when no
+   * clear normal exists. Returns a shared object: read it before the next call.
    */
   contact(nx: number, nz: number, r: number, y: number, kind: 'water' | 'wall' | 'tree', fx: number, fz: number) {
     let sx = 0, sz = 0, depth = 0;
+    const out = this._contact, P = this._push;
     if (kind === 'tree') {
-      this.forNear(nx, nz, (c) => {
-        for (const o of c.obs) {
-          const dx = nx - o.x, dz = nz - o.z, rr = r + o.r, d2 = dx * dx + dz * dz;
-          if (d2 >= rr * rr || y >= o.top) continue;
-          const d = Math.sqrt(d2), pen = rr - d;
-          if (d > 1e-4) { sx += (dx / d) * pen; sz += (dz / d) * pen; }
-          depth = Math.max(depth, pen);
+      const cx = Math.floor(nx / CH), cz = Math.floor(nz / CH);
+      for (let i = -1; i <= 1; i++)
+        for (let j = -1; j <= 1; j++) {
+          const c = this.chunks.get(key(cx + i, cz + j));
+          if (!c) continue;
+          for (const o of c.obs) {
+            if (y >= o.top || !obsPush(o, nx, nz, r, P)) continue;
+            sx += P.nx * P.depth; sz += P.nz * P.depth;
+            if (P.depth > depth) depth = P.depth;
+          }
         }
-      });
     } else {
       const T = this.game.terrain, e = 1.5, sign = kind === 'wall' ? -1 : 1;
       sx = sign * (T.groundAt(nx + e, nz) - T.groundAt(nx - e, nz));
@@ -343,8 +368,9 @@ export class ChunkManager {
     const len = Math.hypot(sx, sz);
     if (len < 1e-4 || !Number.isFinite(len)) {
       const fl = Math.hypot(fx, fz) || 1;
-      return { x: fx / fl, z: fz / fl, depth };
-    }
-    return { x: sx / len, z: sz / len, depth };
+      out.x = fx / fl; out.z = fz / fl;
+    } else { out.x = sx / len; out.z = sz / len; }
+    out.depth = depth;
+    return out;
   }
 }

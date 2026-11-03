@@ -75,6 +75,7 @@ export const LANDING = {
  */
 export const WALL = {
   restitution: 0.15, // share of the into-wall speed bounced back out
+  maxRebound: 2.5, // m/s: the bounce never throws you back across the track (crumple zones eat the rest)
   friction: 0.35, // tangential speed lost per unit of into-wall speed (Coulomb-style scrape)
   maxSpin: 0.6, // rad: biggest heading change one impact can cause
   align: 0.55, // share of the heading-to-travel gap closed per impact
@@ -82,6 +83,46 @@ export const WALL = {
   stuckTime: 2, // s pinned against a wall (slow or reversing) before the auto-recovery re-aligns you
   stuckSpeed: 5, // m/s: slower than this while touching a wall counts as stuck
   realignRate: 2.2, // rad/s the recovery turns the car toward the road direction
+  /** Body radius against walls/barriers (m): about half the vehicle's width, plus a nose probe ahead for cars. */
+  radius: { bike: 0.7, car: 1.05, f1: 1.05 },
+  /** Cars: a second probe this far ahead of the centre (m) so the nose meets a head-on wall instead of sinking in. */
+  nose: { bike: 0, car: 1.2, f1: 1.6 },
+  damageMin: 8, // m/s into the wall before it costs health
+  damage: 0.55, // health per m/s of into-wall speed above damageMin (a 216 km/h head-on ≈ 29)
+  /** F1: nose-first hit (into-wall share of the speed above this) at more than wingSpeed breaks the front wing. */
+  wingAngle: 0.45, wingSpeed: 14,
+  wingDownforce: 0.3, // share of downforce a broken front wing loses (fixed at the next pit stop)
+  maxPush: 0.6, // m per step the depenetration may move the body out of a wall
+};
+
+/**
+ * Off-track surfaces on Formula 1 circuits (extra deceleration, m/s², on top of drag): gravel traps bite hard and
+ * keep biting at low speed; grass is slippery but rolls on. Other vehicles use BIKE.offroadDrag.
+ */
+export const RUNOFF = {
+  gravel: { base: 3.5, perV: 0.28, grip: 0.45 },
+  grass: { base: 0.6, perV: 0.12, grip: 0.6 },
+};
+
+/**
+ * Vehicle-vs-vehicle contact (systems/Contacts.ts). Each vehicle is a capsule along its heading; masses come from the
+ * garage spec (bikes ~ 250-400 kg with rider, cars ~ 1-2.7 t, F1 800 kg).
+ */
+export const CONTACT = {
+  /** Half width (capsule radius) and half core length (m) per class. */
+  shape: { bike: { r: 0.45, a: 0.6 }, car: { r: 0.95, a: 1.3 }, f1: { r: 1.0, a: 1.75 }, traffic: { r: 0.95, a: 1.35 } },
+  restitution: 0.12, friction: 0.35,
+  maxPush: 0.35, slowPush: 0.04, // m per physics step (slowPush: two cars spawned on the same spot ease apart)
+  spin: 0.6, maxSpin: 2.2,
+  maxDy: 1.8,
+  fxMin: 2.5, // m/s closing speed for sparks + sound
+  cooldown: 0.35, // s between effects/damage per vehicle (scraping doesn't drain health every frame)
+  damageMin: 5, // m/s closing speed before a hit costs health
+  damage: 0.9, // health per m/s above damageMin, scaled by the other vehicle's share of the total mass (x2)
+  bikeCrash: 9, // m/s: a bike hit harder than this throws the rider off
+  stunTraffic: 6, // m/s: traffic hit harder than this stops and puts its hazards on for a moment
+  aiLatDecay: 3, // 1/s: how fast an AI car's sideways shove dies out
+  heading: 0.05, // share of a contact's yaw kick (rad/s) applied to the heading at once; the rest arrives as yaw rate
 };
 
 /**
@@ -315,6 +356,20 @@ export const POI_KINDS: { kind: PoiKind; weight: number; label: string; color: s
 ];
 
 /** Formula 1 mode. Tyres wear with distance, sliding and braking; pit lane has a speed limiter. */
+/**
+ * Formula 1 trackside barriers (world/F1Track.ts), all relative to the circuit's own half width so new circuits get
+ * them automatically. Offsets are run-off in metres beyond the track edge; walls pull in (shrink factors) where
+ * another part of the circuit runs close, never closer than minRunoff (street circuits use `street`).
+ */
+export const F1_BARRIERS = {
+  runoff: 9, runoffOut: 14.6, street: 0.9, minRunoff: 2,
+  shrink: [1, 0.75, 0.55, 0.4, 0.25, 0],
+  pitBack: 0.3, // armco this far behind the pit lane's outer edge
+  armcoR: 0.3, tyreR: 0.6, pitWallR: 0.45, // capsule radii (≈ half the visual thickness + a little)
+  maxStretch: 2.4, // posts further apart than this x their spacing are not linked
+  gravel: [2, 12] as [number, number], // gravel traps span this far beyond the edge (outside of big corners)
+};
+
 export const F1 = {
   tyres: {
     soft: { label: 'Soft', color: 0xe8282e, grip: 1.07, life: 9000 }, // metres to fully worn
@@ -329,7 +384,6 @@ export const F1 = {
   overtakeGap: 1, overtakeErs: 1.35, // 2026 overtake mode: within 1 s of a car ahead, extra electric deployment
   ersTaperFrom: 80, ersTaperTo: 95, // m/s: electric power fades out between these (2026 rules taper deployment at high speed)
   rho: 1.225, rolling: 0.012, engineBrake: 1.6, drivetrain: 0.82, // 82% of engine power reaches the road
-  gravelDrag: 1.4, grassDrag: 0.6, // extra decel factor off track
   trackLimits: 3, trackLimitPenalty: 5, // warnings before a 5 s penalty
   mandatoryStopPenalty: 10, // dry races of 3+ laps: no pit stop = +10 s
   ersRegen: 22, ersIdle: 0.6, // nitro (ERS) recharge: per second under braking / otherwise

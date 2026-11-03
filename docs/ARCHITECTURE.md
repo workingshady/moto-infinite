@@ -40,7 +40,8 @@ src/
   world/
     layout.ts            RoadLayout interface: GridRoads (open world) and Circuit (race loop)
     Terrain.ts           Height/colour of the ground, world themes, ramps and pads
-    Chunks.ts            Streams 64 m chunks: terrain, instanced scenery, road markings, features
+    Chunks.ts            Streams 64 m chunks: terrain, instanced scenery, road markings, features; obstacle queries (solidAt, sweep, contact)
+    collide.ts           Pure collision math: circle/capsule obstacles, swept probe, segment-segment, vehicle capsule contact + impulse
     F1Track.ts           F1 circuit layout for a session: kerbs (inside apex, outside exit), pit lane, start lights, grid, venue dressing
     f1Circuits.ts        F1 catalogue (19 real circuits + the fictional Rookie Ring; difficulty, length, turns, flag) and pure geometry:
                          lon/lat -> metres (WGS84), Catmull-Rom, min-radius relax, scale to the official length, widths, elevation, DRS, pit (unit tested)
@@ -66,7 +67,8 @@ src/
     LbSession.ts         Posts solo laps (+ghost) and timed drift runs to the leaderboards; challenge runs + ranks feed the career
     CareerTracker.ts     Feeds a session into the career (stats, credits, XP, achievement toasts); modes/replay/online call feat()
     Replay.ts            60 s ring buffer (typed arrays) of every vehicle (riders, AI, online, traffic) + key moments; poses puppet copies for playback
-    AiRacers.ts          Computer opponents: curvature/grip speed profile with braking pass, racing line, overtakes
+    AiRacers.ts          Computer opponents: curvature/grip speed profile with braking pass, racing line, overtakes, brake-don't-ram
+    Contacts.ts          Vehicle-vs-vehicle contact every physics step (riders, split screen, AI, traffic, online players)
     Particles.ts         GPU particle pools
     Effects.ts           Shockwave rings, debris, beams, skid marks (pooled/instanced)
   modes/                 Extra formats layered on a session (Game.modes: update/dispose/results hook), local games only
@@ -154,6 +156,7 @@ worker/
 - **Terrain** = domain-warped continents + rolling hills + ridged mountains, optional river bands, a temperature-varied snow line. The world generator options (terrain, water, nature, roads, landmarks) scale these.
 - **Handling**: every vehicle drives the same physics with its own numbers (data/vehicles.ts). The travel direction chases the heading at the vehicle's traction rate; the handbrake (X) and power oversteer lower it, counter-steering raises it, sliding scrubs speed. Drift points = angle x speed x zone multiplier, chained into a growing multiplier and banked after 0.7 s of grip. Bikes wheelie on C (pivot on the rear axle).
 - **Formula 1**: downforce raises the cornering limit with v² (yaw capped at aLat/v), ~5 g braking, ERS charges under braking, straight-mode wing / DRS only in DRS zones, slipstream behind cars, tyre compounds wear with distance/sliding/braking, pit lane limiter and pit stops, five-light starts with jump-start penalty.
+- **Collisions**: obstacles are circles or capsules (`world/collide.ts`); barrier lines (F1 armco/tyre walls/pit walls, race tyre walls, drift k-rails, guard rails, quay walls) are chains of capsules post to post, so walls are continuous and smooth. F1 barrier offsets come from `F1_BARRIERS` relative to the circuit's half width and pull in where sections run close (`F1Track.fitBarrier`); `F1Track.barriers.test.ts` checks every circuit for gaps. The player's move is swept in sub-steps of half the probe radius (no tunnelling at 90 m/s); cars probe nose, centre and tail (`WALL.radius/nose`). Wall response: into-wall speed removed (rebound capped at `WALL.maxRebound`), Coulomb scrape along the wall, damage above `WALL.damageMin`, F1 nose hits break the front wing (less downforce until a pit stop). F1 run-off: gravel traps (`F1Track.runoff`) and grass slow by `RUNOFF`. Vehicle contact (`systems/Contacts.ts`): capsules with spec masses, separation + impulse + friction + yaw kick; owners apply it (AiRacers: speed + decaying sideways shove; Traffic: shove/stun; online players are never moved locally); local riders get sparks/sound/shake/damage with a cooldown, bikes crash above `CONTACT.bikeCrash`; a `bump` event tells modes (traffic chains).
 - **Riding assist** (Settings) follows the road and guards the edge only when you are not steering, lets the bike glance off obstacles, and limits crest launches.
 - **Race** builds a closed Catmull-Rom loop from the track seed. 8 gates split it into segments; progress = lap + position inside the current segment.
 - **Time and weather** run in `Environment`: sky colours blend between keys in `SKY_KEYS`; dynamic weather picks a new state every ~90 s and blends into it. Wet/snowy roads lower grip.

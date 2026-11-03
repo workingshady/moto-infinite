@@ -7,6 +7,7 @@ import type { Player } from '../entities/Player';
 import type { Standing } from '../systems/Race';
 import { Circuit } from '../world/layout';
 import type { VehicleModel } from '../entities/vehicleModels';
+import type { Contacts } from '../systems/Contacts';
 import { TimeAttack } from './TimeAttack';
 import { Elimination } from './Elimination';
 import { Traffic } from './Traffic';
@@ -18,6 +19,8 @@ export interface ModeFeature {
   results?(rows: Standing[]): Standing[];
   /** Extra vehicles for the replay recorder (traffic): called once per recorded frame. */
   replayActors?(visit: ReplayVisit): void;
+  /** Vehicles for the contact pass (systems/Contacts): called every physics step. */
+  contactBodies?(c: Contacts): void;
 }
 
 /** Records one extra vehicle (key = a stable object per vehicle; a hidden root = not on screen in that frame). */

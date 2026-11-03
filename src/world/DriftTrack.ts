@@ -529,7 +529,7 @@ export class DriftTrack implements RoadLayout {
     for (const s of this.solids) {
       if (!inside(s.x, s.z)) continue;
       const y = T.heightAt(s.x, s.z);
-      if (y >= 0.5) ch.obs.push({ x: s.x, z: s.z, r: s.r, top: y + s.top });
+      if (y >= 0.5) ch.obs.push({ x: s.x, z: s.z, r: s.r, top: y + s.top, x2: s.x2, z2: s.z2 });
     }
     for (const [id, b] of buckets) {
       const P = PARTS[id], im = new THREE.InstancedMesh(P.g, P.m, b.c.length);
@@ -565,6 +565,20 @@ export class DriftTrack implements RoadLayout {
     this.solid(ax + s * u + co * v, az + co * u - s * v, r, top);
   }
   private solid(x: number, z: number, r: number, top: number) { this.solids.push({ x, z, r, top }); }
+  /**
+   * Straight wall from (x, z) to (x2, z2) as capsule colliders (no dents or gaps along it), split into pieces of at
+   * most 8 m so every piece is found from the chunks around its start.
+   */
+  private seg(x: number, z: number, x2: number, z2: number, r: number, top: number) {
+    const k = Math.max(1, Math.ceil(Math.hypot(x2 - x, z2 - z) / 8));
+    for (let j = 0; j < k; j++)
+      this.solids.push({ x: x + ((x2 - x) * j) / k, z: z + ((z2 - z) * j) / k, x2: x + ((x2 - x) * (j + 1)) / k, z2: z + ((z2 - z) * (j + 1)) / k, r, top });
+  }
+  /** Capsule along heading h centred on (x, z): half core length u. */
+  private segH(x: number, z: number, h: number, u: number, r: number, top: number) {
+    const s = Math.sin(h) * u, c = Math.cos(h) * u;
+    this.seg(x - s, z - c, x + s, z + c, r, top);
+  }
 
   /** A container stack, long axis along heading h. */
   private container(x: number, z: number, h: number, levels: number, key: number, solid: boolean) {
@@ -572,11 +586,11 @@ export class DriftTrack implements RoadLayout {
       const c = CONTAINER_COLS[Math.floor(hash01(key, l, this.seed) * CONTAINER_COLS.length)];
       this.put('cont', x, z, 1.3 + l * 2.6, h + (l % 2 ? 0.02 : 0), 2.44, 2.6, 6.06, c);
     }
-    if (solid) for (const s of [-1.6, 1.6]) this.solid(x + Math.sin(h) * s, z + Math.cos(h) * s, 1.5, levels * 2.6);
+    if (solid) this.segH(x, z, h, 1.8, 1.25, levels * 2.6); // 6.06 x 2.44 box
   }
-  private barrier(x: number, z: number, h: number, c = CONCRETE) {
+  private barrier(x: number, z: number, h: number, c = CONCRETE, top = 0.9) {
     this.put('box', x, z, 0.45, h, 0.6, 0.9, 3, c);
-    this.solid(x, z, 1.4, 0.9);
+    this.segH(x, z, h, 1.15, 0.35, top); // the 3 m k-rail itself (a fat circle used to narrow the road and snag)
   }
   private tyreStack(x: number, z: number, levels: number, c: number) {
     for (let l = 0; l < levels; l++) this.put('tyre', x, z, 0.25 + l * 0.5, 0, 1, 1, 1, l % 2 ? WHITE : c);
@@ -763,6 +777,7 @@ export class DriftTrack implements RoadLayout {
 
   private dressTouge() {
     const n = this.n;
+    let railI = -9, railS = 0, railX = 0, railZ = 0;
     for (let i = 0; i < n; i += 2) {
       const t = this.turn[i];
       if (Math.abs(t) < 0.35) continue;
@@ -772,7 +787,10 @@ export class DriftTrack implements RoadLayout {
       if (this.edge(x, z) > 0.4) {
         this.put('box', x, z, 0.75, h, 0.12, 0.34, this.spacing * 2 + 0.2, 0xc9ced4);
         this.put('box', x, z, 0.45, h, 0.16, 0.9, 0.16, 0x8a9199);
-        this.solid(x, z, 1.1, 1);
+        // one continuous rail: link to the previous post on the same side, else a rail-length piece
+        if (railI === i - 2 && railS === side) this.seg(railX, railZ, x, z, 0.3, 1);
+        else this.segH(x, z, h, this.spacing, 0.3, 1);
+        railI = i; railS = side; railX = x; railZ = z;
       }
       // rock wall on the inside of the tight ones
       if (Math.abs(t) > 0.9 && i % 6 === 0) {
@@ -979,7 +997,7 @@ export class DriftTrack implements RoadLayout {
         this.put('box', x, z, 0.5, h, 0.8, 1, 3.05, CONCRETE);
         this.put('paint', x - ox * 1.1, z - oz * 1.1, 0.05, h, 0.3, 0.04, 3.05, 0xffd23f);
         if (j % 4 === 0) this.put('cyl', x, z, 1.3, 0, 0.3, 0.6, 0.3, 0x2b2f38);
-        this.solid(x, z, 1.5, 1);
+        this.segH(x, z, h, 1.5, 0.45, 1);
       }
     };
     wall(-420, -16, 252, -16, 0, -1);
@@ -1082,8 +1100,8 @@ export class DriftTrack implements RoadLayout {
     this.put('box', 0, 180, 18.4, 0, 242, 0.8, 58, 0x3b4048);
     this.put('glass', 0, 151.6, 3.5, 0, 30, 7, 1, 0xffffff, 0, 180);
     this.put('neon', 0, 151.4, 13.5, PI, 40, 6, 0.6, 0xffffff, 0, 180);
-    for (let x = -120; x <= 120; x += 5) this.solid(x, 154, 3, 18);
-    for (let z = 159; z <= 206; z += 5) for (const x of [-118, 118]) this.solid(x, z, 3, 18);
+    this.seg(-120, 154, 120, 154, 3, 18);
+    for (const x of [-118, 118]) this.seg(x, 159, x, 206, 3, 18);
     // cone gates down the bay row, tyre stacks on the inside of the mall hairpin
     this.zones.forEach((zn, k) => {
       if (zn.name === 'Bay Row') {
@@ -1110,9 +1128,9 @@ export class DriftTrack implements RoadLayout {
       for (const side of [-1, 1]) {
         const [x, z] = this.at(i, side * (hw + 0.8));
         if (this.edge(x, z) < 0.3) continue;
-        this.barrier(x, z, h, (i / bstep) % 2 ? CONCRETE : 0xe9e6df);
-        const [fx, fz] = this.at(i, side * (hw + 1.7));
-        if (this.edge(fx, fz) > 1) this.put('fence', fx, fz, 2.9, h, 0.05, 4, bstep * this.spacing + 0.1, WHITE);
+        const [fx, fz] = this.at(i, side * (hw + 1.7)), fence = this.edge(fx, fz) > 1;
+        this.barrier(x, z, h, (i / bstep) % 2 ? CONCRETE : 0xe9e6df, fence ? 4.9 : 0.9); // tall: the chase camera stays in front of the catch fence
+        if (fence) this.put('fence', fx, fz, 2.9, h, 0.05, 4, bstep * this.spacing + 0.1, WHITE);
       }
     }
     // city blocks: stacked facade sections with lit windows
