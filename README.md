@@ -42,7 +42,7 @@ Online: `Enter`/`T` chat · `5-0` quick chat (pad: hold Back + d-pad) · hold `T
   and sets an HttpOnly `moto_sid` session cookie (`Path=/api`, 60-day sliding). **No client secret, no paid service:**
   everything lives in a SQLite Durable Object per account (`worker/Account.ts`).
 - Endpoints: `GET /api/me` · `POST /api/logout` · `GET/PUT /api/save` (revisioned, 409 on conflict) · `DELETE /api/account` · `POST /api/admin/unpin`.
-- Privacy page: `public/privacy.html` (replace the `OWNER_EMAIL` placeholder).
+- Privacy page: `public/privacy.html` (contact: workingshady@gmail.com).
 - Details (merge rules, account switching, admin role): [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#accounts-cloud-save-and-admin).
 
 **Owner setup (Google Cloud, one time):** OAuth consent screen + a *Web application* OAuth client; its client id is in
