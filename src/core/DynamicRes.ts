@@ -43,9 +43,11 @@ export class DynamicResolution {
       this.lowered = false;
     }
     this.lastFps = fps;
+    // a Settings frame cap is a chosen ceiling, not a slow GPU: judge the fps against the cap (30 fps cap = fine at 30)
+    const cap = settings.fpsCap, low = cap ? Math.min(DYNRES.lowFps, cap * 0.8) : DYNRES.lowFps, high = cap ? Math.min(DYNRES.highFps, cap * 0.92) : DYNRES.highFps;
     let next = this.scale;
-    if (fps < DYNRES.lowFps && this.noGain < 2) next = Math.max(DYNRES.minScale, this.scale - DYNRES.step);
-    else if (fps > DYNRES.highFps) next = Math.min(1, this.scale + DYNRES.step / 2);
+    if (fps < low && this.noGain < 2) next = Math.max(DYNRES.minScale, this.scale - DYNRES.step);
+    else if (fps > high) next = Math.min(1, this.scale + DYNRES.step / 2);
     if (next === this.scale) return;
     this.lowered = next < this.scale;
     this.scale = next;

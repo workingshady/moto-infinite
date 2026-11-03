@@ -13,6 +13,7 @@ import { F1_TRACKS } from '../world/F1Track';
 import { DRIFT_TRACKS } from '../world/DriftTrack';
 import { vehicleById } from '../data/vehicles';
 import { escapeHtml } from '../utils/math';
+import { isUnlocked } from '../core/career';
 
 /** What App needs to start a leaderboard run. */
 export interface LbStart { setup: Setup; vehicle: string; challenge: Challenge | null; ghost: { time: number; s: number[] } | null }
@@ -21,6 +22,8 @@ export interface LbActions {
   again(): void;
   quit(): void;
   profile(): { vehicle?: string; f1car?: string };
+  /** Watch the run that just ended (instant replay; closing it goes back to riding). */
+  replay(): boolean;
 }
 
 let actions: LbActions | null = null;
@@ -117,7 +120,7 @@ function challengeLine(c: Challenge) {
   const v = vehicleById(c.vehicle), w = WEATHER_DEFS[c.weather];
   const what = c.mode === 'drift' ? `${LB.driftSeconds / 60}-minute score run` : `best lap of ${c.laps}`;
   return `<div class="lb-ch-title">${MODE_ICON[c.mode]} ${escapeHtml(c.trackName)}</div>
-    <div class="lb-tags"><span>🚘 ${escapeHtml(v.name)}</span><span>${w.icon} ${w.label}</span><span>${TIME_ICON[c.time]}</span><span>⏱ ${what}</span></div>`;
+    <div class="lb-tags"><span>🚘 ${escapeHtml(v.name)}${isUnlocked(v.id) ? '' : ' <em title="Everyone rides the same vehicle: yours for this run, it stays locked in the garage">🔑 loaner</em>'}</span><span>${w.icon} ${w.label}</span><span>${TIME_ICON[c.time]}</span><span>⏱ ${what}</span></div>`;
 }
 
 function youLine(top: LbTop | null | 'loading', board: string) {
@@ -286,6 +289,7 @@ function showRunCard(game: Game, info: LbRunInfo) {
       <div data-lb-top>${main ? rowsHtml('loading', main.board, 5) : ''}</div>
       <div class="lb-btns">
         <button class="btn ghost" data-lb="menu">Menu</button>
+        <button class="btn" data-lb="replay">🎬 Replay</button>
         <button class="btn" data-lb="keep">Keep drifting</button>
         <button class="btn primary" data-lb="again">↻ Run again</button>
       </div>
@@ -297,7 +301,8 @@ function showRunCard(game: Game, info: LbRunInfo) {
     const b = (e.target as HTMLElement).closest<HTMLElement>('[data-lb]');
     if (!b) return;
     close();
-    if (b.dataset.lb === 'keep') game.setMenuPaused(false);
+    if (b.dataset.lb === 'replay') { if (!actions?.replay()) game.setMenuPaused(false); }
+    else if (b.dataset.lb === 'keep') game.setMenuPaused(false);
     else if (b.dataset.lb === 'again') actions?.again();
     else actions?.quit();
   });

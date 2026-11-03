@@ -108,7 +108,6 @@ export class Hud {
       this.els.tag.style.color = hex(p.color);
     }
     this.root.classList.add('mode-' + game.opts.mode);
-    this.root.classList.add('mode-' + game.opts.mode);
     game.hudLayer.appendChild(this.root);
   }
 
@@ -116,12 +115,16 @@ export class Hud {
   private buildKeycard() {
     const b = displayBindings(this.p.ctrl), k = (l: string[]) => `<kbd>${this.key(l)}</kbd>`, car = this.p.def.kind === 'car';
     const f1 = !!this.p.def.f1 && this.game.opts.mode === 'f1';
+    // features with fixed keys: replay / photo locally, chat / players / quick chat / spectate online
+    const extra = this.game.net ? ['<kbd>Enter</kbd> <kbd>Tab</kbd> <kbd>5</kbd>–<kbd>0</kbd> <kbd>[</kbd><kbd>]</kbd>', 'chat · players · quick chat · spectate']
+      : ['<kbd>I</kbd>', 'instant replay · pause: 🎬 replay, 📷 photo'];
     const rows = f1 ? [
       [`${k(b.up)} ${k(b.down)} ${k(b.left)} ${k(b.right)}`, 'throttle · brake (~5 g) · steer'],
       [k(b.trick), 'DRS / straight mode (in DRS zones, closes when you brake)'],
       [b.nitro.filter((c) => c !== 'ShiftRight').slice(0, 2).map((c) => k([c])).join(' '), 'ERS deploy (recharges under braking)'],
       ['pit', 'drive into the pit lane, stop in the box: fresh tyres'],
       [k(b.camera), 'camera: chase · far · hood · cockpit · TV · top-down'],
+      extra,
       ['<kbd>Esc</kbd> <kbd>H</kbd>', 'pause · hide this card'],
     ] : [
       [`${k(b.up)} ${k(b.down)} ${k(b.left)} ${k(b.right)}`, 'drive · brake · steer'],
@@ -132,6 +135,7 @@ export class Hud {
       [`${k(b.fire)} ${k(b.weapon)}`, 'fire · next weapon'],
       [k(b.ride), 'get on / off'],
       [k(b.camera), 'camera: chase · far · hood · first person · cinematic · top-down'],
+      extra,
       ['<kbd>Esc</kbd> <kbd>H</kbd>', 'pause · hide this card'],
     ].filter(Boolean) as string[][];
     this.els.keycard.innerHTML = `<div class="label">KEYS · ${escapeHtml(this.p.def.name)}</div>` + rows.map(([a, c]) => `<div class="kr"><span>${a}</span><em>${c}</em></div>`).join('');
@@ -148,7 +152,7 @@ export class Hud {
 
   banner(big: string, small = '', color = '#ffd23f') {
     const b = this.els.banner;
-    b.innerHTML = `<span style="color:${color}">${escapeHtml(big)}</span>${small ? `<small>${escapeHtml(small)}</small>` : ''}`;
+    b.innerHTML = `<span style="color:${pal(color)}">${escapeHtml(big)}</span>${small ? `<small>${escapeHtml(small)}</small>` : ''}`;
     b.classList.remove('show');
     void b.offsetWidth;
     b.classList.add('show');

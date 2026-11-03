@@ -5,7 +5,7 @@ import { DynamicResolution } from './DynamicRes';
 import { Events } from './Events';
 import type { Audio } from './Audio';
 import type { Controller, Input } from './Input';
-import { activeWeathers, type FixedWeather, type GameMode, type TimeOfDay, type Weather, type WorldGen, type WorldTheme } from '../../shared/protocol';
+import { activeWeathers, type FixedWeather, type GameMode, type RaceVariant, type TimeOfDay, type Weather, type WorldGen, type WorldTheme } from '../../shared/protocol';
 import type { NetClient } from '../net/NetClient';
 import type { ChallengeId } from '../data/challenges';
 import { Noise } from '../utils/noise';
@@ -13,7 +13,6 @@ import { Circuit, GridRoads, type Pose, type RoadLayout } from '../world/layout'
 import { DriftTrack, type DriftTrackId } from '../world/DriftTrack';
 import { F1Track, F1_TRACKS, type F1TrackId } from '../world/F1Track';
 import { AiRacers } from '../systems/AiRacers';
-import type { TyreCompound } from '../config';
 import { Terrain } from '../world/Terrain';
 import { ChunkManager } from '../world/Chunks';
 import { Environment } from '../world/Environment';
@@ -28,10 +27,9 @@ import { Spectator } from '../net/Spectate';
 import { Tutorial } from '../systems/Tutorial';
 import { CareerTracker } from '../systems/CareerTracker';
 import { Replay } from '../systems/Replay';
-import { GEN, LEVELING, NET, PHYS, QUALITY, TRACKS, WORLD, type QualityName } from '../config';
+import { GEN, LEVELING, NET, PHYS, QUALITY, TRACKS, WORLD, type QualityName, type TyreCompound } from '../config';
 import { STORY } from '../data/story';
 import { createModes, type ModeFeature } from '../modes';
-import type { RaceVariant } from '../../shared/protocol';
 import { skipFrame } from './settings';
 import { feelUpdate, stopRumble } from './rumble';
 

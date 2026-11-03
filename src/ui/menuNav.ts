@@ -96,6 +96,7 @@ export function initMenuNav(menu: HTMLElement) {
     for (const p of list) {
       if (!p?.connected) continue;
       const B = p.buttons, ax = p.axes[0] ?? 0, ay = p.axes[1] ?? 0;
+      if (B[8]?.pressed) continue; // Back/View + d-pad = quick chat in online rooms (Social), not menu focus
       cur.up ||= !!B[12]?.pressed || ay < -0.6;
       cur.down ||= !!B[13]?.pressed || ay > 0.6;
       cur.left ||= !!B[14]?.pressed || ax < -0.6;

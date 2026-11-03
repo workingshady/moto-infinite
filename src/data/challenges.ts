@@ -1,4 +1,5 @@
 import type { EntityType } from '../entities/EntityManager';
+import { fmtSpeed } from '../core/settings';
 
 export type ChallengeId =
   | 'gem' | 'air' | 'speed' | 'crate' | 'drone' | 'flip' | 'barrel' | 'dist'
@@ -19,7 +20,7 @@ const pick = (min: number, steps: number, step = 1) => min + step * Math.floor(M
 export const CHALLENGES: ChallengeDef[] = [
   { id: 'gem', mode: 'sum', text: (n) => `Collect ${n} gems`, target: () => pick(6, 5), time: 40 },
   { id: 'air', mode: 'max', text: (n) => `Stay airborne ${n}s in one jump`, target: () => 1.4, time: 50, fmt: (v) => v.toFixed(1) + 's' },
-  { id: 'speed', mode: 'max', text: (n) => `Hit ${n} km/h`, target: () => pick(130, 4, 10), time: 30 },
+  { id: 'speed', mode: 'max', text: (n) => `Hit ${fmtSpeed(n)}`, target: () => pick(130, 4, 10), time: 30 },
   { id: 'crate', mode: 'sum', text: (n) => `Smash ${n} crates`, target: () => pick(4, 3), time: 45, spawn: { type: 'crate', extra: 2 } },
   { id: 'drone', mode: 'sum', text: (n) => `Destroy ${n} drone${n > 1 ? 's' : ''}`, target: () => pick(1, 2), time: 60, spawn: { type: 'drone', extra: 0, minD: 40, maxD: 80 } },
   { id: 'flip', mode: 'sum', text: (n) => `Land ${n} flip${n > 1 ? 's' : ''}`, target: () => pick(1, 2), time: 60 },

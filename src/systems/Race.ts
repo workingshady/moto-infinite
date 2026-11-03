@@ -229,7 +229,8 @@ export const fmt = (t: number) => {
 function load(id: string): GhostData | null {
   try {
     const raw = localStorage.getItem('moto:ghost:' + id);
-    return raw ? (JSON.parse(raw) as GhostData) : null;
+    const d = raw ? (JSON.parse(raw) as Partial<GhostData> | null) : null;
+    return d && typeof d.time === 'number' && d.time > 0 && Array.isArray(d.s) ? (d as GhostData) : null; // damaged saves = no ghost
   } catch {
     return null;
   }

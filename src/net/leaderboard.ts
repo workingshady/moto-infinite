@@ -7,8 +7,9 @@ const TIMEOUT = 7000;
 
 function read<T>(k: string, fallback: T): T {
   try {
-    const v = localStorage.getItem('moto:' + k);
-    return v ? (JSON.parse(v) as T) : fallback;
+    const v = localStorage.getItem('moto:' + k), o: unknown = v ? JSON.parse(v) : null;
+    // damaged values (null, wrong type) fall back instead of crashing the board / queue code
+    return o !== null && typeof o === typeof fallback && Array.isArray(o) === Array.isArray(fallback) ? (o as T) : fallback;
   } catch {
     return fallback;
   }

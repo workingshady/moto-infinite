@@ -7,6 +7,7 @@ import type { Player } from '../entities/Player';
 import type { Standing } from '../systems/Race';
 import type { TrackLine } from '../world/layout';
 import { fmt } from '../systems/Race';
+import { mountTopCentre } from './index';
 import { paceProfile, type PaceProfile } from './pace';
 import type { ModeFeature } from './index';
 
@@ -60,7 +61,7 @@ export class TimeAttack implements ModeFeature {
       const times = MEDALS.map((m) => paceProfile(track, p.def, m.skill, m.topMul).lap);
       const key = `moto:ta:${where}:${p.def.id}`, el = document.createElement('div');
       el.className = 'panel md-panel md-attack';
-      p.hud.root.appendChild(el);
+      mountTopCentre(p, el);
       this.riders.push({ p, times, pace: paceProfile(track, p.def, 1), key, rec: load(key), medal: 0, lapsSeen: 0, el, html: '' });
     }
     setTimeout(() => this.riders.forEach((r) => r.p.storyBeat('TIME ATTACK', `Beat the medal times: ${MEDALS.map((m, i) => `${m.icon} ${fmt(r.times[i])}`).reverse().join('  ')}. Every lap counts, your best lap wins the medal.`)), 900);
@@ -89,9 +90,12 @@ export class TimeAttack implements ModeFeature {
       g.effects.ring(r.p.P.x, r.p.P.y + 0.5, r.p.P.z, 10, parseInt(def.color.slice(1), 16));
     }
     if (!r.rec.best || t < r.rec.best) {
+      const before = r.rec.medal;
       r.rec.best = t;
       r.rec.medal = Math.max(r.rec.medal, m);
       save(r.key, r.rec);
+      // career pays once per track x vehicle and medal step (a better medal than ever before here)
+      if (r.rec.medal > before) g.career?.feat('medal', r.rec.medal);
     }
   }
 

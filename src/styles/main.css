@@ -429,45 +429,6 @@ kbd.key { display: inline-flex; align-items: center; justify-content: center; mi
   .z-bl { display: none; }
 }
 
-/* ================================================================ HUD layout zones (no overlaps)
-   tl: status + objective + leaderboard | tc: race/challenge/drift | tr: map + checklist
-   bl: key help | bc: prompts, meters, F1 dash | br: gauges. Children are laid out by the zone, not absolutely. */
-.hud .zone { position: absolute; display: flex; flex-direction: column; gap: 10px; pointer-events: none; z-index: 2; }
-.hud .zone > * { position: relative !important; left: auto !important; right: auto !important; top: auto !important; bottom: auto !important; transform: none !important; margin: 0; }
-.hud .zone .panel { pointer-events: auto; }
-.z-tl { left: 16px; top: 16px; width: 220px; max-height: calc(100% - 200px); }
-.z-tc { left: 50%; top: 16px; transform: translateX(-50%); align-items: center; }
-.z-tr { right: 16px; top: 16px; align-items: flex-end; }
-.z-bl { left: 16px; bottom: 16px; align-items: flex-start; }
-.z-bc { left: 50%; bottom: 16px; transform: translateX(-50%); align-items: center; flex-direction: column; }
-.z-br { right: 12px; bottom: 10px; }
-.z-tl .stats { width: auto; }
-.z-tl .objective { max-width: 220px; }
-.z-tl .tower { width: auto; overflow: hidden; }
-.z-bl .keycard { width: 290px; }
-.z-bc .f1dash { width: 320px; }
-.hud .camtag { margin-top: 2px; }
-/* stories and countdowns sit mid-screen so they never cover the dash or the gauges */
-.hud .story { bottom: auto; top: 58%; }
-.hud .countdown { top: 40%; }
-/* per mode: F1 shows racing info only (ERS lives in the dash), races hide open-world stats */
-.hud.mode-f1 .xp-row, .hud.mode-f1 .open-row, .hud.mode-f1 .nitro-row, .hud.mode-f1 .buffs { display: none; }
-.hud.mode-race .open-row, .hud.mode-drift .open-row { display: none; }
-/* cards open: clear the bottom of the screen */
-.hud.cards-open .z-bc, .hud.cards-open .z-bl { opacity: 0; }
-/* split screen: smaller panels, tighter margins */
-.hud.split .zone { gap: 6px; }
-.hud.split .z-tl { left: 10px; top: 10px; width: 186px; transform: scale(0.9); transform-origin: top left; }
-.hud.split .z-tr { right: 10px; top: 10px; transform: scale(0.82); transform-origin: top right; }
-.hud.split .z-bl { display: none; }
-.hud.split .z-bc { transform: translateX(-50%) scale(0.85); transform-origin: bottom center; }
-/* small screens */
-@media (max-width: 760px) {
-  .z-tl { transform: scale(0.82); transform-origin: top left; }
-  .z-tr { transform: scale(0.72); transform-origin: top right; }
-  .z-bl { display: none; }
-}
-
 /* minimap: round local map, square overview for circuits */
 .mapwrap { padding: 5px; border-radius: 50%; }
 .hud.mode-race .mapwrap, .hud.mode-f1 .mapwrap { border-radius: 14px; }
@@ -539,8 +500,10 @@ kbd.key { display: inline-flex; align-items: center; justify-content: center; mi
 }
 /* tablets / narrow windows: one column, the whole page scrolls */
 @media (max-width: 1100px) {
+  /* the card grows with its content and #menu scrolls (a stretched card squeezed the line-up over the riders and buttons) */
+  #menu.lobby-screen { align-items: flex-start; }
   #menu.lobby-screen > .card-wrap { height: auto; min-height: 0; overflow: visible; }
-  .lobby-grid { grid-template-columns: 1fr; }
+  .lobby-grid { flex: none; grid-template-columns: 1fr; }
   .lobby-side .lineup-host { flex: none; height: 46vh; min-height: 240px; }
   .lobby-main { border-left: 0; padding: 0; overflow: visible; -webkit-mask-image: none; mask-image: none; }
 }
@@ -570,6 +533,12 @@ kbd.key { display: inline-flex; align-items: center; justify-content: center; mi
   #menu.lobby-screen .row-buttons .btn.primary { flex: 1; }
 }
 @media (hover: none) { .lineup-hint::after { content: ' (swipe)'; } }
+/* landscape phones: keep Start / Ready reachable while the page scrolls */
+@media (max-width: 1100px) and (max-height: 560px) {
+  #menu.lobby-screen .row-buttons { position: sticky; bottom: 0; z-index: 3; margin: 10px -12px 0; padding: 8px 12px;
+    background: rgba(10, 13, 26, 0.96); backdrop-filter: blur(8px); }
+  .lobby-side .lineup-host { height: 58vh; min-height: 180px; }
+}
 @media (prefers-reduced-motion: reduce) { #menu *, #menu *::before { animation: none !important; transition: none !important; } }
 
 /* start-up crash screen (instead of a blank page) */

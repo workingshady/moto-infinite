@@ -11,11 +11,26 @@ type DOEvent = typeof DeviceOrientationEvent & { requestPermission?: () => Promi
 /** A quick tap must survive until the game's next input poll, even if the finger lifts in the same frame. */
 const MIN_PRESS_MS = 60;
 
-export function createTouch(input: Input, game: Game): TouchControls | null {
-  return isTouchDevice() ? new TouchControls(input, game) : null;
+/** What the touch layer needs from App: whether a pause it started may end, and the replay entry point. */
+export interface TouchHooks {
+  /** False while a menu, replay or photo mode is open: then lifting the rotate hint / sheet must not resume the game. */
+  canResume(): boolean;
+  /** Instant replay (local games); returns false when there is nothing to show. */
+  replay?(): boolean;
+}
+
+export function createTouch(input: Input, game: Game, hooks: TouchHooks): TouchControls | null {
+  return isTouchDevice() ? new TouchControls(input, game, hooks) : null;
+}
+
+/** Settings → Touch controls changed the shared touch settings: re-lay out the live controls (if any). */
+export function touchSettingsChanged() {
+  TouchControls.current?.reload();
 }
 
 export class TouchControls {
+  /** The controls of the running session (one at a time). */
+  static current: TouchControls | null = null;
   readonly root: HTMLDivElement;
   private btns = new Map<string, HTMLButtonElement>();
   private stick: HTMLDivElement;
@@ -39,7 +54,8 @@ export class TouchControls {
   private chip: HTMLButtonElement;
   private offs: (() => void)[] = [];
 
-  constructor(private input: Input, private game: Game) {
+  constructor(private input: Input, private game: Game, private hooks: TouchHooks) {
+    TouchControls.current = this;
     this.ctx = this.readCtx();
     const root = (this.root = document.createElement('div'));
     root.id = 'touch';
@@ -49,6 +65,7 @@ export class TouchControls {
       <div class="tc-sys">
         <button data-sys="pause" aria-label="Pause">❚❚</button>
         <button data-sys="camera" aria-label="Camera">🎥</button>
+        ${hooks.replay && game.replay && !game.net ? '<button data-sys="replay" aria-label="Instant replay">🎬</button>' : ''}
         <button data-sys="level" aria-label="Level tilt">⟲</button>
         ${fullscreenSupported() ? '<button data-sys="fs" aria-label="Fullscreen">⛶</button>' : ''}
         <button data-sys="settings" aria-label="Touch settings">⚙</button>
@@ -322,6 +339,7 @@ export class TouchControls {
     else if (id === 'fs') void toggleFullscreen();
     else if (id === 'level') this.tilt.zero = this.tilt.have ? this.tilt.raw : null;
     else if (id === 'settings') this.openSheet();
+    else if (id === 'replay') { this.releaseAll(); this.hooks.replay?.(); }
   }
 
   private holdPause(on: boolean) {
@@ -330,7 +348,8 @@ export class TouchControls {
       this.game.setMenuPaused(true);
     } else if (!on && this.wePaused && !this.sheet && !this.editing && !this.hintShown()) {
       this.wePaused = false;
-      this.game.setMenuPaused(false);
+      // the pause menu (e.g. opened by locking the phone meanwhile), replay or photo mode keep their own pause
+      if (this.hooks.canResume()) this.game.setMenuPaused(false);
     }
   }
 
@@ -403,6 +422,21 @@ export class TouchControls {
     this.holdPause(true);
   }
 
+  /** App resumed from a menu / replay: if the rotate hint, sheet or layout editor is still up, keep holding the game. */
+  afterResume() {
+    if (!this.sheet && !this.editing && !this.hintShown()) return;
+    this.wePaused = false;
+    this.holdPause(true);
+  }
+
+  /** Touch settings were edited elsewhere (Settings screen). */
+  reload() {
+    this.input.touchSteer = 0;
+    this.applyStyle();
+    this.ctx = this.readCtx();
+    this.refresh(true);
+  }
+
   private changed() {
     saveTouchSettings();
     this.applyStyle();
@@ -430,6 +464,7 @@ export class TouchControls {
   }
 
   remove() {
+    if (TouchControls.current === this) TouchControls.current = null;
     cancelAnimationFrame(this.raf);
     this.offs.forEach((off) => off());
     this.releaseAll();

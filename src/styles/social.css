@@ -79,3 +79,13 @@
   .soc-quick { left: 52px; top: calc(30% + 46px); }
   .soc-spec { bottom: 150px; font-size: 12px; }
 }
+
+/* touch controls on, riding: the dock joins the top bar right of the touch system buttons (❚❚ 🎥 ⟲ ⛶ ⚙), so it never
+   covers the status panel (top left) or the thumb clusters; feed and quick chat sit under it. Portrait: right edge, mid height. */
+body.touch-on #social[data-view="play"] .soc-dock { top: calc(env(safe-area-inset-top, 0px) + 6px); left: calc(env(safe-area-inset-left, 0px) + 272px); flex-direction: row; gap: 6px; }
+body.touch-on #social[data-view="play"] .soc-dock button { width: 44px; height: 44px; border-radius: 12px; }
+body.touch-on #social[data-view="play"] .soc-feed { left: calc(env(safe-area-inset-left, 0px) + 178px); top: 60px; width: max(170px, min(300px, calc(100vw - 440px))); }
+body.touch-on #social[data-view="play"] .soc-quick { left: calc(env(safe-area-inset-left, 0px) + 272px); top: 58px; }
+body.touch-on.touch-portrait #social[data-view="play"] .soc-dock { top: 38%; left: auto; right: 8px; flex-direction: column; }
+body.touch-on.touch-portrait #social[data-view="play"] .soc-quick { left: auto; right: 60px; top: 38%; }
+body.touch-on.touch-portrait #social[data-view="play"] .soc-feed { left: 10px; right: 10px; width: auto; top: auto; bottom: 280px; }

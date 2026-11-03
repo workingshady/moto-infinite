@@ -196,7 +196,7 @@ export class PhotoMode implements ViewOverride {
     g.env.beforeRender(this.pivot.x, this.pivot.y, this.pivot.z, c, r.pixelHeight(vp));
     g.fx.setScale(r.pixelHeight(vp));
     r.render(g.scene, c, vp, false);
-    if (this.shoot) { this.shoot = false; this.capture(); } // read the drawing buffer right after rendering it
+    if (this.shoot) { this.shoot = false; this.capture(); this.game.career?.feat('photo'); } // read the drawing buffer right after rendering it
   }
 
   private move(dt: number) {

@@ -7,13 +7,15 @@ import { createTouch, type TouchControls } from './ui/Touch';
 import { autoQuality } from './core/device';
 import { NetClient, newRoomCode } from './net/NetClient';
 import { SocialUI } from './ui/Social';
-import { PLAYER_COLORS, TRACKS, type QualityName } from './config';
+import { PLAYER_COLORS, QUALITY, TRACKS, type QualityName } from './config';
 import { DEFAULT_GEN, ROOM_CODE_RE, type LobbySettings } from '../shared/protocol';
 import type { Standing } from './systems/Race';
 import { prefs } from './core/prefs';
 import { DRIFT_TRACKS } from './world/DriftTrack';
 import { F1_TRACKS } from './world/F1Track';
 import { vehicleById } from './data/vehicles';
+import { isUnlocked } from './core/career';
+import { toast } from './ui/toast';
 import { driftSeed } from './ui/Preview';
 import { attachLeaderboards, configureLeaderboards, type LbStart } from './ui/LeaderboardPanel';
 import type { LbSession } from './systems/LbSession';
@@ -21,12 +23,13 @@ import { applySettings } from './core/settings';
 import { watchPads } from './core/gamepad';
 import { initMenuNav } from './ui/menuNav';
 import { ReplayStudio, type StudioFrom } from './ui/ReplayStudio';
+import { mergeSaved, parseJson, sameShape } from './utils/store';
 
 const store = {
   get<T>(k: string, fallback: T): T {
     try {
-      const v = localStorage.getItem('moto:' + k);
-      return v ? (JSON.parse(v) as T) : fallback;
+      const v = parseJson(localStorage.getItem('moto:' + k));
+      return v !== null && sameShape(v, fallback) ? (v as T) : fallback;
     } catch {
       return fallback;
     }
@@ -40,6 +43,9 @@ const store = {
   },
 };
 
+/** A saved quality name, or the first-run guess when it is missing / unknown. */
+const validQuality = (q: string): QualityName => (q in QUALITY ? (q as QualityName) : autoQuality());
+
 export class App {
   private input = new Input();
   private audio = new Audio();
@@ -48,7 +54,7 @@ export class App {
   private net: NetClient | null = null;
   private lastLocal: Setup | null = null;
   private touch: TouchControls | null = null;
-  private quality: QualityName = store.get<QualityName>('quality', autoQuality());
+  private quality: QualityName = validQuality(store.get<string>('quality', ''));
   private studio: ReplayStudio | null = null;
   private lastRows: Standing[] = [];
   /** Leaderboard run (daily/weekly challenge, forced vehicle, #1 ghost) and the current session's board hook-up. */
@@ -56,13 +62,14 @@ export class App {
   private lb: LbSession | null = null;
 
   constructor() {
-    const profile = store.get<Profile>('profile', { name: 'Rider', color: PLAYER_COLORS[0], name2: 'Player 2', color2: PLAYER_COLORS[1] });
+    const base: Profile = { name: 'Rider', color: PLAYER_COLORS[0], name2: 'Player 2', color2: PLAYER_COLORS[1], vehicle: 'street', vehicle2: 'street', f1car: 'f1_2026' };
+    const profile = mergeSaved(base, store.get<unknown>('profile', {})); // damaged saves keep the defaults for the bad fields
     this.menu = new Menu(this.actions(), profile, this.quality, () => this.audio.muted);
     this.input.onUserGesture = () => this.audio.init();
     this.input.onPause = () => this.togglePause();
     this.input.onMute = () => this.audio.toggleMute();
     this.input.onToggleHelp = () => document.body.classList.toggle('nohelp');
-    configureLeaderboards({ play: (r) => this.startLocal(r.setup, r), again: () => this.raceAgain(), quit: () => this.quit(), profile: () => this.menu.profile });
+    configureLeaderboards({ play: (r) => this.startLocal(r.setup, r), again: () => this.raceAgain(), quit: () => this.quit(), profile: () => this.menu.profile, replay: () => this.instantReplay() });
     applySettings(); // HUD scale/opacity, colourblind palette, reduced motion
     watchPads(); // controller hot-plug toasts
     initMenuNav(this.menu.root); // keyboard / gamepad menu navigation
@@ -168,6 +175,8 @@ export class App {
     this.withLoading(() => {
       this.replaceGame({ ...this.session(s, locals, null), ghost: lb?.ghost ?? undefined });
       this.enterPlay(!s.split);
+      // challenge / ghost runs bring their own vehicle: a locked one is lent for this run only (no unlock)
+      if (lb && !isUnlocked(lb.vehicle)) toast(`🔑 Loaner: ${vehicleById(lb.vehicle).name} for this run only. Unlock it in the garage to keep it.`);
     });
   }
 
@@ -191,7 +200,7 @@ export class App {
     this.menu.inGame = true;
     this.input.reset();
     this.game!.setMenuPaused(false);
-    if (touch) this.touch = createTouch(this.input, this.game!);
+    if (touch) this.touch = createTouch(this.input, this.game!, { canResume: () => !this.menu.visible && !this.studio?.active, replay: () => this.instantReplay() });
   }
 
   // ------------------------------------------------------------------ online
@@ -217,7 +226,8 @@ export class App {
     ev.on('closed', (m) => { this.net = null; this.attract(); this.menu.show('online', m.reason); });
     // back after a dropped link: carry on, or catch up if the session moved on meanwhile
     ev.on('reconnected', (m) => { if (!m.changed) return; if (net.phase === 'playing') this.startOnline(); else { this.attract(); this.showLobby(); } });
-    new SocialUI(net, { game: () => this.game, view: () => (this.menu.visible ? (this.menu.current === 'lobby' ? 'lobby' : 'menu') : this.menu.inGame ? 'play' : 'menu'), resume: () => this.resume() });
+    // replay / photo mode own the keyboard while open (Tab, [ ], Enter, digits): the social layer counts them as a menu
+    new SocialUI(net, { game: () => this.game, view: () => (this.menu.visible ? (this.menu.current === 'lobby' ? 'lobby' : 'menu') : this.menu.inGame && !this.studio?.active ? 'play' : 'menu'), resume: () => this.resume() });
     if (net.isHost) net.send({ t: 'settings', settings: { ...net.settings, seed: Math.floor(Math.random() * 1e9) } });
     if (net.phase === 'playing') this.startOnline();
     else this.showLobby();
@@ -259,6 +269,13 @@ export class App {
     this.menu.hide();
     this.input.reset();
     this.game?.setMenuPaused(false);
+    this.touch?.afterResume(); // still in portrait / touch sheet open: stay held
+  }
+
+  /** Instant replay from play (touch 🎬, leaderboard run card); closing it resumes riding. */
+  private instantReplay() {
+    if (!this.studio || this.menu.visible) return false;
+    return this.studio.openReplay('play');
   }
 
   private results(rows: Standing[]) {

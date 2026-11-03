@@ -8,6 +8,7 @@ public/                  Static files served as-is (favicon)
 shared/protocol.ts       Online message types + lobby settings, used by client AND worker
 shared/leaderboard.ts    Daily/weekly seed challenges, board ids + plausibility rules, leaderboard API shapes
 shared/social.ts         Quick-chat list, chat sanitising, rate/anti-cheat limits (client AND worker)
+shared/logReport.ts      Client error report shape, scrubbing, de-dup/rate limits (client AND worker)
 src/
   main.ts                Entry: new App()
   App.ts                 Flow: menu ⇄ game sessions ⇄ online rooms
@@ -27,8 +28,11 @@ src/
     gamepad.ts           Pad dead zone / curve / analog triggers, Xbox/PlayStation detection and glyphs, hot-plug
     rumble.ts            Controller rumble + phone vibration, derived from player state each frame
     device.ts            Touch/coarse detection, first-run quality guess, fullscreen + orientation lock, screen wake lock
-    DynamicRes.ts        Lowers/raises the render pixel ratio to hold the frame rate (detects 30 fps caps)
-  data/                  Pure data tables: weapons, upgrades, challenges, story, vehicles (garage stats)
+    DynamicRes.ts        Lowers/raises the render pixel ratio to hold the frame rate (detects 30 fps caps, honours the Settings cap)
+    career.ts            Persistent career (moto:career): level/XP, credits, lifetime stats, garage unlocks, achievements, feats (recordFeat)
+    pwa.ts               Service worker registration, update toast, install prompt
+    errorReport.ts       Uncaught errors / WebGL context loss → POST /api/log
+  data/                  Pure data tables: weapons, upgrades, challenges, story, vehicles (garage stats + unlocks), achievements
   world/
     layout.ts            RoadLayout interface: GridRoads (open world) and Circuit (race loop)
     Terrain.ts           Height/colour of the ground, world themes, ramps and pads
@@ -48,7 +52,9 @@ src/
     Race.ts              Countdown, checkpoints, laps, positions, best-lap ghost
     Challenges.ts        Timed challenges per player with streaks
     Tutorial.ts          Guided training ride checklist
-    LbSession.ts         Posts solo laps (+ghost) and timed drift runs to the leaderboards
+    LbSession.ts         Posts solo laps (+ghost) and timed drift runs to the leaderboards; challenge runs + ranks feed the career
+    CareerTracker.ts     Feeds a session into the career (stats, credits, XP, achievement toasts); modes/replay/online call feat()
+    Replay.ts            60 s ring buffer (typed arrays) of every vehicle (riders, AI, online, traffic) + key moments; poses puppet copies for playback
     AiRacers.ts          Computer opponents: curvature/grip speed profile with braking pass, racing line, overtakes
     Particles.ts         GPU particle pools
     Effects.ts           Shockwave rings, debris, beams, skid marks (pooled/instanced)
@@ -58,7 +64,6 @@ src/
     Traffic.ts           Open-world civilian cars in the right lane; near-miss chains (XP + nitro), slipstream nitro, crashes
     pace.ts              Lap-time estimate from track curvature + vehicle speed/grip/accel
     menu.ts              Setup rows (Format, Traffic) and their option handling
-    Replay.ts            60 s ring buffer (typed arrays) of every vehicle + key moments; poses puppet copies for playback
   net/
     NetClient.ts         WebSocket to a room: heartbeat/ping, auto-reconnect with resume token
     RemotePlayers.ts     Other online riders, interpolated, emote bubbles
@@ -75,6 +80,10 @@ src/
     SettingsPanel.ts     Tabbed Settings screen (Graphics, Audio, Controls, Gameplay, Accessibility) and rebinding UI
     menuNav.ts           Keyboard / gamepad menu navigation (focus ring, arrows/D-pad, Enter/A, Esc/B)
     toast.ts             Small notifications
+    CareerPanel.ts       Career screen, home strip, session summary, garage lock badges / buy box
+    AchievementToast.ts  HUD achievement / career level toasts
+    menuExtras.ts        Install button, offline notes, pause-menu bug button (added after each Menu render)
+    bugReport.ts         "Report a bug" dialog
     Social.ts            Online overlay: chat dock, quick chat, player list (Tab), reconnect banner, spectate bar
     ChatPanel.ts         Chat log/input and fading feed (text only, never innerHTML)
     Gauges.ts            Canvas speedometer, tachometer, nitro ring
@@ -87,11 +96,20 @@ src/
   styles/mobile.css      Touch controls, rotate hint, settings sheet, phone menus (bottom sheets, 44 px targets)
   utils/                 math helpers, seeded noise
 worker/
-  index.ts               Cloudflare Worker: /api/health, /api/room/:code
+  index.ts               Cloudflare Worker: /api/health, /api/room/:code, /api/lb/*, /api/log
+  log.ts                 Client error reports → Workers observability
   Room.ts                Durable Object per room (WebSocket Hibernation): lobby + relay, held slots (30 s) for
                          dropped players, host migration, chat, message validation/rate limits, finish-time checks
   Leaderboard.ts         SQLite Durable Object per board: best per player, ranks, top ghosts, rate limits, sanity checks
 ```
+
+## How the features fit together
+
+- **Pause / overlays**: Esc / Start toggles the pause menu (App.togglePause). Replay and photo mode (ReplayStudio) pause the game themselves when opened from play and return to where they were opened from; while one is open Esc/Start belong to it, and the online social layer treats it as a menu. Touch's rotate hint and settings sheet hold the game paused but never resume it behind a menu or the studio. Online games never pause (Game.setMenuPaused only disables input), so instant replay is off online; replay/photo from the pause menu still work (the recorder freezes while watching).
+- **Fixed keys** next to the rebindable ones (core/bindings.ts `SYSTEM_KEYS`): I instant replay (local), Enter/T chat, Tab player list, 5–0 quick chat, [ ] spectate (online). Rebinding a game action onto one of them works but shows a note. Typing in any input never reaches the game.
+- **Career feats** (core/career.ts `recordFeat`): Time Attack medal steps (once per track x vehicle), Elimination wins, traffic near misses, daily/weekly challenge runs (once per challenge), leaderboard ranks, first replay/photo, chat, online races. Nothing counts while a replay or photo mode is open. A daily/weekly or ghost run in a vehicle you don't own lends it for that run only (shown as 🔑 loaner); it stays locked in the garage.
+- **Leaderboards**: every local single-player circuit format (plain, Time Attack, Elimination) posts its best flying lap to the track board: a lap is a lap. Split screen, online, training never post.
+- **Saved data** (localStorage, all `moto:` prefixed): career, settings, prefs, touch, profile, quality, muted, ghost:<track>, ta:<track>:<vehicle>, lbid/lbbest/lbqueue. Loaders merge onto defaults and drop wrong-typed values (utils/store.ts).
 
 ## Rules that keep it easy to change
 

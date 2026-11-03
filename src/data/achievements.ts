@@ -4,7 +4,7 @@ import type { Career, CareerStats } from '../core/career';
 import { THEMES } from '../../shared/protocol';
 import { F1_TRACKS } from '../world/F1Track';
 
-export type AchievementCat = 'Riding' | 'Tricks' | 'Drift' | 'Racing' | 'Formula 1' | 'Combat' | 'Exploration' | 'Weather' | 'Career';
+export type AchievementCat = 'Riding' | 'Tricks' | 'Drift' | 'Racing' | 'Formula 1' | 'Modes' | 'Combat' | 'Exploration' | 'Weather' | 'Online' | 'Career';
 
 export interface AchievementDef {
   id: string;
@@ -50,6 +50,21 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   { id: 'f1_debut', cat: 'Formula 1', icon: '🏎', name: 'Grand Prix debut', desc: 'Start a Formula 1 race', xp: 200, credits: 60, test: (s) => s.f1Started >= 1 },
   { id: 'f1_win', cat: 'Formula 1', icon: '🍾', name: 'Champagne', desc: 'Win a Formula 1 race', xp: 900, credits: 300, test: (s) => s.f1Won >= 1 },
   { id: 'f1_tour', cat: 'Formula 1', icon: '🌐', name: 'World tour', desc: `Race on all ${F1_TRACKS.length} F1 circuits`, xp: 1200, credits: 400, test: (s) => s.f1Tracks.length >= F1_TRACKS.length, prog: (s) => ratio(s.f1Tracks.length, F1_TRACKS.length) },
+  // modes, leaderboards, replay (stats fed by recordFeat in core/career.ts)
+  { id: 'medal_gold', cat: 'Modes', icon: '🥇', name: 'Gold standard', desc: 'Win a gold medal in Time Attack', xp: 500, credits: 150, test: (s) => s.bestMedal >= 3, prog: (s) => ratio(s.bestMedal, 3) },
+  { id: 'medal_ace', cat: 'Modes', icon: '💎', name: 'Ace', desc: 'Beat an Ace time in Time Attack', xp: 1000, credits: 350, test: (s) => s.bestMedal >= 4 },
+  { id: 'elim_win', cat: 'Modes', icon: '🪓', name: 'Last one standing', desc: 'Win an Elimination race', xp: 500, credits: 150, test: (s) => s.elimWins >= 1 },
+  { id: 'near_chain', cat: 'Modes', icon: '🚗', name: 'Thread the needle', desc: 'Chain 10 near misses in traffic', xp: 600, credits: 180, test: (s) => s.bestNearChain >= 10, prog: (s) => ratio(s.bestNearChain, 10) },
+  { id: 'near_100', cat: 'Modes', icon: '💨', name: 'Rush hour', desc: 'Pass 100 cars with a near miss', xp: 700, credits: 220, test: (s) => s.nearMisses >= 100, prog: (s) => ratio(s.nearMisses, 100) },
+  { id: 'daily_1', cat: 'Modes', icon: '📅', name: 'Daily driver', desc: 'Finish a daily or weekly challenge', xp: 300, credits: 100, test: (s) => s.challengesDone >= 1 },
+  { id: 'daily_7', cat: 'Modes', icon: '🗓', name: 'Regular', desc: 'Finish 7 daily or weekly challenges', xp: 900, credits: 300, test: (s) => s.challengesDone >= 7, prog: (s) => ratio(s.challengesDone, 7) },
+  { id: 'lb_top10', cat: 'Modes', icon: '🏆', name: 'Top ten', desc: 'Reach the top 10 of any leaderboard', xp: 600, credits: 200, test: (s) => s.bestRank >= 1 && s.bestRank <= 10 },
+  { id: 'director', cat: 'Modes', icon: '🎬', name: 'Director', desc: 'Watch a replay', xp: 80, credits: 20, test: (s) => s.replays >= 1 },
+  { id: 'photographer', cat: 'Modes', icon: '📷', name: 'Say cheese', desc: 'Take a photo in photo mode', xp: 80, credits: 20, test: (s) => s.photos >= 1 },
+  // online
+  { id: 'chatty', cat: 'Online', icon: '💬', name: 'Say hi', desc: 'Send a chat message or quick chat in an online room', xp: 60, credits: 20, test: (s) => s.chats >= 1 },
+  { id: 'online_race', cat: 'Online', icon: '🌐', name: 'Netcode', desc: 'Finish an online race', xp: 200, credits: 60, test: (s) => s.onlineRaces >= 1 },
+  { id: 'online_win', cat: 'Online', icon: '👑', name: 'Room champion', desc: 'Win an online race', xp: 800, credits: 250, test: (s) => s.onlineWins >= 1 },
   // combat
   { id: 'first_drone', cat: 'Combat', icon: '🛸', name: 'Drone down', desc: 'Destroy a drone', xp: 120, credits: 40, test: (s) => s.drones >= 1 },
   { id: 'drone_50', cat: 'Combat', icon: '🎯', name: 'Sky cleaner', desc: 'Destroy 50 drones', xp: 1000, credits: 350, test: (s) => s.drones >= 50, prog: (s) => ratio(s.drones, 50) },
@@ -68,4 +83,4 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   { id: 'collector', cat: 'Career', icon: '🔑', name: 'Collector', desc: 'Unlock 5 vehicles in the garage', xp: 600, credits: 0, test: (_s, c) => c.unlocked.length >= 5, prog: (_s, c) => ratio(c.unlocked.length, 5) },
 ];
 
-export const ACHIEVEMENT_CATS: AchievementCat[] = ['Riding', 'Tricks', 'Drift', 'Racing', 'Formula 1', 'Combat', 'Exploration', 'Weather', 'Career'];
+export const ACHIEVEMENT_CATS: AchievementCat[] = ['Riding', 'Tricks', 'Drift', 'Racing', 'Formula 1', 'Modes', 'Combat', 'Exploration', 'Weather', 'Online', 'Career'];

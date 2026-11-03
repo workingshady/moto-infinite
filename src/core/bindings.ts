@@ -16,6 +16,27 @@ export const LAYOUT_LABEL: Record<Layout, string> = { solo: 'Solo / online', p1:
 
 /** Keys the game reserves: pause, mute, help card. */
 export const RESERVED_KEYS = ['Escape', 'KeyM', 'KeyH'];
+/** Fixed keys of other features (not rebindable). Binding a game action to one of them works, but both fire, so say so.
+ *  'online' = only in online rooms (they always use the solo layout); 'local' = in local games, every layout. */
+export const SYSTEM_KEYS: Record<string, { what: string; where: 'online' | 'local' }> = {
+  KeyI: { what: 'instant replay', where: 'local' },
+  Enter: { what: 'open chat', where: 'online' },
+  KeyT: { what: 'open chat', where: 'online' },
+  Tab: { what: 'player list', where: 'online' },
+  BracketLeft: { what: 'spectate', where: 'online' },
+  BracketRight: { what: 'spectate', where: 'online' },
+  Digit5: { what: 'quick chat', where: 'online' }, Digit6: { what: 'quick chat', where: 'online' }, Digit7: { what: 'quick chat', where: 'online' },
+  Digit8: { what: 'quick chat', where: 'online' }, Digit9: { what: 'quick chat', where: 'online' }, Digit0: { what: 'quick chat', where: 'online' },
+};
+
+/** Warning for a key that another feature also uses in this layout ('' when there is no clash). Default keys that
+ *  were designed to share (T reroll / Tab cards: chat and the list wait while the cards are open) stay quiet. */
+export function keyNote(l: Layout, a: Action, code: string) {
+  const s = SYSTEM_KEYS[code];
+  if (!s || (s.where === 'online' && l !== 'solo') || DEF_KEYS[l][a].includes(code)) return '';
+  return `note: ${keyLabel(code)} also does ${s.what}${s.where === 'online' ? ' in online rooms' : ''}`;
+}
+
 /** Start always pauses. */
 export const RESERVED_PAD = [9];
 /** Max keys / buttons per action. */
@@ -32,10 +53,13 @@ const canShare = (a: Action, b: Action) =>
 
 /** Write overrides (or defaults) into the live tables. Call after loading or changing settings. */
 export function applyBindings() {
+  // saved overrides are only trusted when they are lists of key codes / button numbers (old or damaged saves fall back)
+  const keys = (v: unknown) => (Array.isArray(v) && v.every((k) => typeof k === 'string') ? (v as string[]) : null);
+  const btns = (v: unknown) => (Array.isArray(v) && v.every((b) => Number.isInteger(b)) ? (v as number[]) : null);
   for (const l of Object.keys(BINDINGS) as Layout[]) {
-    for (const a of Object.keys(BINDINGS[l]) as Action[]) BINDINGS[l][a] = [...(settings.keys[l]?.[a] ?? DEF_KEYS[l][a])];
+    for (const a of Object.keys(BINDINGS[l]) as Action[]) BINDINGS[l][a] = [...(keys(settings.keys[l]?.[a]) ?? DEF_KEYS[l][a])];
   }
-  for (const a of Object.keys(PAD) as Action[]) PAD[a] = [...(settings.pad[a] ?? DEF_PAD[a])];
+  for (const a of Object.keys(PAD) as Action[]) PAD[a] = [...(btns(settings.pad[a]) ?? DEF_PAD[a])];
 }
 
 function storeKeys(l: Layout) {
@@ -50,7 +74,7 @@ function storePad() {
 }
 
 /** Generic rebind with conflict swap. Returns a message describing what happened. */
-function rebind<T>(table: Record<Action, T[]>, a: Action, slot: number, v: T, label: (v: T) => string): string {
+function rebind<T>(table: Record<Action, T[]>, a: Action, slot: number, v: T, label: (v: T) => string, note: (o: Action, v: T) => string = () => ''): string {
   const list = table[a], old = list[slot];
   if (list.includes(v) && list.indexOf(v) !== slot) return `${label(v)} is already on ${actionLabel(a)}`;
   let msg = `${actionLabel(a)} → ${label(v)}`;
@@ -59,7 +83,11 @@ function rebind<T>(table: Record<Action, T[]>, a: Action, slot: number, v: T, la
     const i = table[o].indexOf(v);
     if (i < 0) continue;
     // conflict: swap the old key onto the other action, or just take it away
-    if (old !== undefined && !table[o].includes(old)) { table[o][i] = old; msg += ` · swapped: ${actionLabel(o)} → ${label(old)}`; }
+    if (old !== undefined && !table[o].includes(old)) {
+      table[o][i] = old;
+      const n = note(o, old);
+      msg += ` · swapped: ${actionLabel(o)} → ${label(old)}${n ? ` (${n})` : ''}`;
+    }
     else { table[o].splice(i, 1); msg += ` · removed from ${actionLabel(o)}`; }
   }
   if (slot >= list.length) list.push(v);
@@ -69,7 +97,8 @@ function rebind<T>(table: Record<Action, T[]>, a: Action, slot: number, v: T, la
 
 export function bindKey(l: Layout, a: Action, slot: number, code: string) {
   if (RESERVED_KEYS.includes(code)) return `${keyLabel(code)} is reserved (pause / mute / help)`;
-  const msg = rebind(BINDINGS[l], a, slot, code, keyLabel);
+  const note = keyNote(l, a, code);
+  const msg = rebind(BINDINGS[l], a, slot, code, keyLabel, (o, k) => keyNote(l, o, k)) + (note ? ` · ${note}` : '');
   storeKeys(l);
   saveSettings();
   return msg;

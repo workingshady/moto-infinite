@@ -351,6 +351,10 @@ export const CAREER = {
   raceStart: 20, // credits for taking part in a race against at least one rival
   racePlace: [250, 150, 90], // podium credits (P1, P2, P3)
   raceXp: [600, 350, 200], // podium career XP
+  medalCredits: [60, 120, 250, 500], // Time Attack: first time a track x vehicle reaches Bronze / Silver / Gold / Ace
+  medalXp: [100, 200, 400, 800],
+  elimWin: [200, 400], // credits, career XP for winning an Elimination race
+  challenge: [150, 300], // credits, career XP for the first finished run of each daily / weekly challenge
   saveEvery: 10, // seconds between autosaves while playing
   toastTime: 4.2, // seconds an achievement toast stays up
 };

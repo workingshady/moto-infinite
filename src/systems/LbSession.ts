@@ -6,6 +6,8 @@ import type { Player } from '../entities/Player';
 import { LB, LB_CIRCUITS, LB_DRIFT, LB_F1, type Challenge, type LbSubmitResult, type VehicleClass } from '../../shared/leaderboard';
 import { submitScore } from '../net/leaderboard';
 import { fmt } from './Race';
+import { featNow, type Feat } from '../core/career';
+import { toast } from '../ui/toast';
 
 export interface LbBoardResult { board: string; label: string; res: LbSubmitResult | null }
 export interface LbRunInfo { title: string; time: boolean; value: number; boards: LbBoardResult[]; challenge: Challenge | null }
@@ -69,10 +71,22 @@ export class LbSession {
     const p = this.game.players[0], info: LbRunInfo = { title: this.title, time, value, boards: [], challenge: this.challenge };
     const results = await Promise.all(this.boards.map((b) => submitScore(b, value, p.name, p.def.id, ghost)));
     info.boards = this.boards.map((b, i) => ({ board: b, label: boardLabel(b), res: results[i] }));
+    this.careerFeats(info);
     const main = info.boards[0], r = main?.res;
     if (this.disposed) return info;
     this.toast(r?.ok ? `🏆 ${main.label} #${r.rank} of ${r.total}${r.improved ? ' · new best' : ''}` : r ? `⚠ ${r.error ?? 'Not accepted'}` : '📴 Offline: saved, will upload later');
     return info;
+  }
+
+  /** Career: a posted challenge run counts once per challenge (offline too: it is queued), best ranks feed achievements.
+   *  The answer can arrive after the session ended; then the career is updated directly. */
+  private careerFeats(info: LbRunInfo) {
+    const feat = (f: Feat, v = 1, key = '') => {
+      if (!this.disposed && this.game.career) this.game.career.feat(f, v, key);
+      else for (const a of featNow(f, v, key)) toast(`${a.icon} Achievement: ${a.name}`);
+    };
+    if (this.challenge) feat('challenge', 1, this.challenge.board);
+    for (const b of info.boards) if (b.res?.ok && b.res.rank) feat('lbRank', b.res.rank);
   }
 
   private toast(text: string) {

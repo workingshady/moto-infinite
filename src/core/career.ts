@@ -38,6 +38,20 @@ export interface CareerStats {
   themes: string[];
   f1Tracks: string[];
   driftVenues: string[];
+  // modes, leaderboards, replay and online (all optional in old saves: migrate() fills zeros)
+  medals: number; // Time Attack medals won (best medal per track x vehicle improved)
+  bestMedal: number; // 0 none, 1 bronze .. 4 ace
+  elimWins: number;
+  nearMisses: number;
+  bestNearChain: number;
+  challengesDone: number; // daily / weekly challenges finished (each counts once)
+  challengeKeys: string[]; // recent challenge board ids already counted
+  bestRank: number; // best leaderboard rank (0 = none yet)
+  replays: number;
+  photos: number;
+  chats: number;
+  onlineRaces: number;
+  onlineWins: number;
 }
 
 export interface Career {
@@ -59,6 +73,8 @@ const freshStats = (): CareerStats => ({
   bestDrift: 0, driftTotal: 0, longestWheelie: 0, wheelieTime: 0, flips: 0, spins: 0, styleTricks: 0, bestAir: 0, bestCombo: 0,
   drones: 0, crates: 0, barrels: 0, gems: 0, powerups: 0, ramps: 0, bestRunLevel: 0, nightDist: 0,
   weatherDist: {}, themes: [], f1Tracks: [], driftVenues: [],
+  medals: 0, bestMedal: 0, elimWins: 0, nearMisses: 0, bestNearChain: 0, challengesDone: 0, challengeKeys: [], bestRank: 0,
+  replays: 0, photos: 0, chats: 0, onlineRaces: 0, onlineWins: 0,
 });
 
 const num = (v: unknown, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
@@ -185,6 +201,51 @@ export function checkAchievements(out: AchievementDef[]): AchievementDef[] {
   }
   if (out.length) saveCareer();
   return out;
+}
+
+// ---------------------------------------------------------------- feats from modes, leaderboards, replay and online
+export type Feat = 'medal' | 'elimWin' | 'nearMiss' | 'challenge' | 'lbRank' | 'replay' | 'photo' | 'chat';
+
+/** Count a feat in the lifetime stats and pay its reward. `v`: medal 1..4, near-miss chain length, leaderboard rank;
+ *  `key`: the challenge board id (each challenge pays once). Returns false when nothing was counted.
+ *  Achievements are checked by the caller (CareerTracker flush, or checkAchievements() outside a session). */
+export function recordFeat(f: Feat, v = 1, key = ''): boolean {
+  const st = career.stats;
+  switch (f) {
+    case 'medal': {
+      const m = Math.round(v);
+      if (m < 1 || m > 4) return false;
+      st.medals++;
+      st.bestMedal = Math.max(st.bestMedal, m);
+      earn(CAREER.medalXp[m - 1], CAREER.medalCredits[m - 1]);
+      return true;
+    }
+    case 'elimWin': st.elimWins++; earn(CAREER.elimWin[1], CAREER.elimWin[0]); return true;
+    case 'nearMiss': st.nearMisses++; st.bestNearChain = Math.max(st.bestNearChain, Math.round(v)); return true; // credits come from the XP it scores
+    case 'challenge':
+      if (!key || st.challengeKeys.includes(key)) return false;
+      st.challengeKeys = [...st.challengeKeys, key].slice(-20);
+      st.challengesDone++;
+      earn(CAREER.challenge[1], CAREER.challenge[0]);
+      return true;
+    case 'lbRank':
+      if (!(v >= 1)) return false;
+      st.bestRank = st.bestRank ? Math.min(st.bestRank, Math.round(v)) : Math.round(v);
+      return true;
+    case 'replay': st.replays++; return true;
+    case 'photo': st.photos++; return true;
+    case 'chat': st.chats++; return true;
+  }
+  return false;
+}
+
+/** A feat outside a running session (lobby chat, a leaderboard answer that arrived after quitting): count it, check
+ *  achievements and save right away. Returns the achievements it unlocked (the caller shows them). */
+export function featNow(f: Feat, v = 1, key = ''): AchievementDef[] {
+  if (!recordFeat(f, v, key)) return [];
+  const got = checkAchievements([]).slice();
+  saveCareer();
+  return got;
 }
 
 /** Add a unique string to a list stat (themes, tracks, venues). */

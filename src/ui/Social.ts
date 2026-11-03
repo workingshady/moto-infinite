@@ -7,6 +7,8 @@ import type { PlayerInfo } from '../../shared/protocol';
 import { QUICK_CHAT } from '../../shared/social';
 import { ChatPanel } from './ChatPanel';
 import { mutes } from '../net/mutes';
+import { career, featNow } from '../core/career';
+import { toast } from './toast';
 import '../styles/social.css';
 
 export interface SocialHost {
@@ -80,6 +82,7 @@ export class SocialUI {
 
     this.chat = new ChatPanel(this.root, (text) => {
       net.send({ t: 'chat', text });
+      this.chatFeat();
       if (this.host.view() === 'play') this.chat.close(); // back to riding after sending
     }, (i) => this.quick(i), () => this.host.game()?.input.reset());
     this.chat.onUnread = (n) => { this.badge.hidden = n === 0; this.badge.textContent = n > 9 ? '9+' : String(n); };
@@ -132,6 +135,15 @@ export class SocialUI {
   private quick(i: number) {
     if (!QUICK_CHAT[i]) return;
     this.net.send({ t: 'emote', e: i });
+    this.chatFeat();
+  }
+
+  /** Career "Say hi": in a session through its tracker (HUD toast), in the lobby straight away. */
+  private chatFeat() {
+    if (career.stats.chats > 0) { career.stats.chats++; return; } // only the first one can unlock anything (saved with the career)
+    const c = this.host.game()?.career;
+    if (c && this.host.view() !== 'lobby') c.feat('chat');
+    else for (const a of featNow('chat')) toast(`${a.icon} Achievement: ${a.name}`);
   }
 
   private showBanner(text: string) {
@@ -203,8 +215,9 @@ export class SocialUI {
     const down = (i: number) => !!pad.buttons[i]?.pressed;
     const hit = (i: number) => down(i) && !this.padPrev[i];
     const sp = g?.spectator, watching = !!sp?.active || this.net.spectating;
-    // d-pad = quick chat in the lobby, while watching, or with Back/View held while riding
-    if (view !== 'play' || watching || down(8)) for (const b in PAD_QUICK) if (hit(+b)) this.quick(PAD_QUICK[b]);
+    // d-pad = quick chat while watching, or with Back/View held while riding. In the lobby and menus the d-pad
+    // moves the menu focus (menuNav), so quick chat there needs Back/View held too.
+    if ((view === 'play' && watching) || down(8)) for (const b in PAD_QUICK) if (hit(+b)) this.quick(PAD_QUICK[b]);
     if (view === 'play' && sp?.available && watching) {
       if (hit(4)) sp.cycle(-1);
       if (hit(5)) sp.cycle(1);
