@@ -59,6 +59,21 @@ export const LB_DRIFT: Record<string, string> = {
 const RACE_VEHICLES = ['street', 'superbike', 'dirt', 'cafe', 'cruiser', 'gt', 'muscle', 'rally', 'hyper', 'touring', 'roadster', 'trophy', 'drift_coupe', 'rotary'];
 const DRIFT_VEHICLES = ['drift_coupe', 'hatch', 'rotary', 'muscle', 'roadster'];
 const F1_CARS = ['f1_2026', 'f1_v10', 'f1_classic'];
+/**
+ * Expansion-pack vehicles join the pools for challenges that START on/after POOL_V2_FROM (a Monday, 00:00 UTC), so
+ * a running daily/weekly never changes its vehicle when this ships. Picked for fair ranked runs: no Tesla Roadster
+ * (flight), no monster truck / rock crawler / 1910s board-track bike / kei car (too slow to be fun over 3 laps).
+ */
+export const POOL_V2_FROM = Date.UTC(2026, 10, 9);
+const RACE_VEHICLES_V2 = [...RACE_VEHICLES,
+  'gp250', 'supermoto', 'adventure', 'e_superbike', 'tesla_model3',
+  'race_spyder', 'race_canam', 'race_groupc', 'race_stock', 'race_lmh', 'muscle_pony', 'muscle_aero', 'muscle_widow', 'muscle_hell',
+  'rally_berlin', 'rally_wedge', 'rally_groupb', 'rally_rx', 'rally_r1', 'hyper_wedge', 'hyper_v12', 'hyper_w16', 'hyper_ev', 'hyper_fan',
+  'off_buggy', 'off_dakar', 'classic_gullwing', 'classic_fins', 'classic_mini', 'classic_rr'];
+const DRIFT_VEHICLES_V2 = [...DRIFT_VEHICLES, 'drift_wagon', 'drift_kreis', 'drift_swap', 'drift_ev'];
+const F1_CARS_V2 = [...F1_CARS, 'f1_1955', 'f1_1967', 'f1_1986', 'f1_1992', 'f1_2035'];
+/** Every id any challenge can pick, with the leaderboard class it is ranked in (tests check it against data/vehicles.ts). */
+export const CHALLENGE_POOLS = { race: RACE_VEHICLES_V2, drift: DRIFT_VEHICLES_V2, f1: F1_CARS_V2 } as const;
 const CHALLENGE_TIMES: TimeOfDay[] = ['day', 'dawn', 'sunset', 'night'];
 /** Fair, readable weathers only (no sandstorm/blizzard white-outs on a ranked run). */
 const CHALLENGE_WEATHERS: FixedWeather[] = FIXED_WEATHERS.filter((w) => w === 'clear' || w === 'cloudy' || w === 'drizzle' || w === 'rain' || w === 'fog' || w === 'snow' || w === 'wind');
@@ -136,28 +151,35 @@ const pick = <T>(rng: () => number, list: readonly T[]) => list[Math.floor(rng()
 export function challengeFor(kind: 'daily' | 'weekly', t = Date.now()): Challenge {
   const key = kind === 'daily' ? utcDay(t) : isoWeek(t);
   const seed = hashStr(`moto:${kind}:${key}`), rng = mulberry32(seed);
+  // the period's start decides the pool (daily: that day, weekly: its Monday), so it never changes mid-period
+  const v2 = resetAt(kind, t) - (kind === 'daily' ? 864e5 : 7 * 864e5) >= POOL_V2_FROM;
   const roll = rng(), mode: ChallengeMode = roll < 0.5 ? 'race' : roll < 0.7 ? 'f1' : 'drift';
   const time = pick(rng, CHALLENGE_TIMES), weather = pick(rng, CHALLENGE_WEATHERS), theme = pick(rng, THEMES);
   let trackId: string, trackName: string, vehicle: string, laps = 3;
   if (mode === 'race') {
     trackId = `ch-${key.toLowerCase()}`;
     trackName = `${kind === 'daily' ? 'Daily' : 'Weekly'} circuit #${seed % 10000}`;
-    vehicle = pick(rng, RACE_VEHICLES);
+    vehicle = pick(rng, v2 ? RACE_VEHICLES_V2 : RACE_VEHICLES);
   } else if (mode === 'f1') {
     trackId = pick(rng, Object.keys(LB_F1));
     trackName = LB_F1[trackId].name;
-    vehicle = pick(rng, F1_CARS);
+    vehicle = pick(rng, v2 ? F1_CARS_V2 : F1_CARS);
     laps = trackId === 'spa' ? 2 : 3;
   } else {
     trackId = pick(rng, Object.keys(LB_DRIFT));
     trackName = LB_DRIFT[trackId];
-    vehicle = pick(rng, DRIFT_VEHICLES);
+    vehicle = pick(rng, v2 ? DRIFT_VEHICLES_V2 : DRIFT_VEHICLES);
     laps = 0;
   }
   return { kind, key, seed: seed % 1e9, mode, trackId, trackName, laps, time, weather, theme, vehicle, board: `${kind}:${key.toLowerCase()}:${mode}`, endsAt: resetAt(kind, t) };
 }
 
-/** Lower is better for lap times, higher for drift scores. */
+/**
+ * Lower is better for lap times, higher for drift scores.
+ * Tesla Roadster: its laps count like any car's, but only ground laps. The client (systems/Race.ts, `race.lifted`)
+ * never submits a lap that used lift-off, hops or kickflips, since flight can cut the infield; the server cannot see
+ * flight, so it applies the same speed / path checks as for every other car.
+ */
 export interface BoardRule { order: 'asc' | 'desc'; min: number; max: number; /** Minimum lap length in metres (ghost check). */ minLen: number; maxSpeed: number }
 
 const lapRule = (minLen: number, maxSpeed: number): BoardRule => ({ order: 'asc', min: minLen / maxSpeed, max: LB.maxLap, minLen, maxSpeed });

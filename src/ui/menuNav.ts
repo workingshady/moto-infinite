@@ -90,7 +90,9 @@ export function initMenuNav(menu: HTMLElement) {
   let repeatT = 0;
   const loop = (now: number) => {
     requestAnimationFrame(loop);
-    if (!visible() || isRebinding()) return;
+    // hidden: treat every button as held, so a button still down when a menu opens (B = Roadster lift, A = throttle
+    // while pausing with Start) needs a release first instead of instantly going back / clicking
+    if (!visible() || isRebinding()) { prev = { up: true, down: true, left: true, right: true, a: true, b: true }; return; }
     const list = navigator.getGamepads ? Array.from(navigator.getGamepads()) : [];
     const cur = { up: false, down: false, left: false, right: false, a: false, b: false };
     for (const p of list) {

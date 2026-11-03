@@ -63,7 +63,11 @@ export class Player {
   };
   readonly buffs: Record<PowerupKind, number> = { heal: 0, shield: 0, magnet: 0, xp2: 0 };
   readonly cam = { yaw: 0, shake: 0, fovKick: 0, boost: 0, pos: new THREE.Vector3(), look: new THREE.Vector3() };
-  readonly race = { lap: 0, nextCp: 0, lapStart: 0, lastLap: 0, best: 0, finished: false, finishTime: 0, prog: -1, place: 1 };
+  readonly race = {
+    lap: 0, nextCp: 0, lapStart: 0, lastLap: 0, best: 0, finished: false, finishTime: 0, prog: -1, place: 1,
+    /** Thruster lifts (EvDrive.lifts) at the lap start; `lifted` = the last finished lap used flight/hop/kickflip. */
+    lapLifts: 0, lifted: false,
+  };
   /** Position used by everything else: bike when riding, rider when walking. */
   readonly P = { x: 0, y: 0, z: 0, h: 0, v: 0 };
 
@@ -769,9 +773,10 @@ export class Player {
       if (this.styleDone.length) g.events.emit('progress', { player: this, id: 'style', value: this.styleDone.length });
       if (flips > 0 && spins > 0) { tricks.push('CORKSCREW'); pts += 200; }
       for (const [name, p] of ev?.tricks ?? []) { tricks.unshift(name); pts += p; }
-      if (air > 0.9) { tricks.push('BIG AIR ' + air.toFixed(1) + 's'); pts += Math.round(air * 80); }
+      // a powered thruster flight is not a jump: no BIG AIR / airtime challenge credit (it feeds bestFlight instead)
+      if (air > 0.9 && !ev?.flew) { tricks.push('BIG AIR ' + air.toFixed(1) + 's'); pts += Math.round(air * 80); }
       if (Math.abs(pErr) < 0.15 && tricks.length) { tricks.push('PERFECT'); pts += 100; }
-      g.events.emit('progress', { player: this, id: 'air', value: air });
+      if (!ev?.flew) g.events.emit('progress', { player: this, id: 'air', value: air });
       if (tricks.length) {
         const s = this.s;
         s.combo = s.comboT > 0 ? s.combo + 1 : 1;

@@ -86,6 +86,7 @@ export class Race {
           p.controlsLocked = false;
           p.hud.countdown('GO!');
           p.race.lapStart = g.time;
+          p.race.lapLifts = p.ev?.lifts ?? 0;
         }
       }
       return;
@@ -118,9 +119,12 @@ export class Race {
         if (r.lap > 0) {
           const lapTime = g.time - r.lapStart;
           r.lastLap = lapTime;
-          const best = !r.best || lapTime < r.best;
+          // a lap that used the Roadster's lift thrusters can cut across the infield: no ghost, no leaderboard, no medal
+          r.lifted = (p.ev?.lifts ?? 0) !== r.lapLifts;
+          const best = !r.lifted && (!r.best || lapTime < r.best);
           if (best) r.best = lapTime;
-          if (p.index === 0) this.lapDone(lapTime);
+          if (p.index === 0 && !r.lifted) this.lapDone(lapTime);
+          else if (p.index === 0) p.hud.float('THRUSTER LAP · not timed for ghost / leaderboard', p.P.x, p.P.y + 3, p.P.z, '#9fb6c8', 16);
           if (r.lap >= this.laps) {
             r.finished = true;
             // F1 regulations at the flag: time penalties, and a dry race of 3+ laps needs at least one tyre change
@@ -138,6 +142,7 @@ export class Race {
         }
         r.lap++;
         r.lapStart = g.time;
+        r.lapLifts = p.ev?.lifts ?? 0;
         if (p.index === 0) { this.rec = []; this.recT = 0; }
       } else g.audio.play('select');
       r.nextCp = (r.nextCp + 1) % C;
@@ -168,6 +173,7 @@ export class Race {
         p.controlsLocked = false;
         p.hud.countdown('LIGHTS OUT!');
         p.race.lapStart = g.time;
+        p.race.lapLifts = p.ev?.lifts ?? 0;
       }
     }
   }

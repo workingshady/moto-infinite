@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { LB, LB_CIRCUITS, LB_DRIFT, LB_F1, boardIsTime, boardRule, challengeFor, circuitMinLength } from './leaderboard';
+import { CHALLENGE_POOLS, LB, LB_CIRCUITS, LB_DRIFT, LB_F1, POOL_V2_FROM, boardIsTime, boardRule, challengeFor, circuitMinLength } from './leaderboard';
 
 const T = Date.UTC(2026, 10, 3, 12); // a Tuesday
 
@@ -49,5 +49,23 @@ describe('boardRule (plausibility)', () => {
     expect(boardIsTime(`drift:${Object.keys(LB_DRIFT)[0]}`)).toBe(false);
     expect(boardIsTime('daily:2026-11-03:drift')).toBe(false);
     expect(boardIsTime('track:coast:car')).toBe(true);
+  });
+});
+
+describe('challenge vehicle pools', () => {
+  const OLD = ['street', 'superbike', 'dirt', 'cafe', 'cruiser', 'gt', 'muscle', 'rally', 'hyper', 'touring', 'roadster', 'trophy', 'drift_coupe', 'rotary', 'hatch', 'f1_2026', 'f1_v10', 'f1_classic'];
+  it('periods that started before POOL_V2_FROM keep the original pools (a running challenge never changes)', () => {
+    for (let t = POOL_V2_FROM - 120 * 864e5; t < POOL_V2_FROM; t += 864e5) expect(OLD).toContain(challengeFor('daily', t).vehicle);
+    // the week before the cutoff, checked late in that week
+    expect(OLD).toContain(challengeFor('weekly', POOL_V2_FROM - 3600e3).vehicle);
+  });
+  it('later periods pick from the expanded pools', () => {
+    const all = new Set<string>([...CHALLENGE_POOLS.race, ...CHALLENGE_POOLS.drift, ...CHALLENGE_POOLS.f1]), seen = new Set<string>();
+    for (let t = POOL_V2_FROM; t < POOL_V2_FROM + 400 * 864e5; t += 864e5) {
+      const c = challengeFor('daily', t);
+      expect(all.has(c.vehicle), c.vehicle).toBe(true);
+      seen.add(c.vehicle);
+    }
+    expect([...seen].some((v) => !OLD.includes(v))).toBe(true);
   });
 });

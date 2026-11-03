@@ -74,7 +74,8 @@ export class TimeAttack implements ModeFeature {
       const pr = r.p.race, laps = pr.lap + (pr.finished ? 1 : 0);
       if (laps !== r.lapsSeen) {
         r.lapsSeen = laps;
-        if (pr.lastLap > 0) this.lapDone(r, pr.lastLap);
+        if (pr.lastLap > 0 && !pr.lifted) this.lapDone(r, pr.lastLap);
+        else if (pr.lastLap > 0) r.p.hud.banner('THRUSTER LAP', 'Laps with lift-off, hops or kickflips do not count for medals', '#9fb6c8');
       }
     }
     if (this.frame++ % 4 === 0) for (const r of this.riders) this.paint(r);

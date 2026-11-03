@@ -24,6 +24,7 @@ export const TOUCH = {
   gap: 10,
   margin: 14,
   stick: 128, // joystick base diameter at size 1
+  topBand: 110, // px at the top kept for the minimap / stats panel (default slots only)
   dead: 0.12, // joystick / tilt dead zone
   sizes: [0.8, 1.3] as const,
 };
@@ -96,8 +97,14 @@ export const TOUCH_BUTTONS: TouchButton[] = [
 /** Default centre of a button in px inside a box of w x h (safe area already removed), honouring left-handed mirroring. */
 export function defaultCentre(b: TouchButton, c: TouchCtx, w: number, h: number, s: TouchSettings) {
   const u = TOUCH.unit * s.size, g = TOUCH.gap * s.size, m = TOUCH.margin;
-  let { side, col } = b.slot(c);
-  const { row } = b.slot(c);
+  let { side, col, row } = b.slot(c);
+  // the 4th row (Roadster FLIP) moves out to a 4th column when it would reach into the top band (minimap / stats
+  // panel) of a short landscape screen, at the height of its old column; landscape has the width for it
+  const fit = Math.max(1, Math.floor((h - m - TOUCH.topBand) / (u + g)));
+  if (row >= 3 && row >= fit) {
+    row = Math.min(col, fit - 1);
+    col = 3;
+  }
   if (s.leftHanded) {
     side = side === 'l' ? 'r' : 'l';
     if (b.id === 'left' || b.id === 'right') col = 1 - col; // ◀ stays left of ▶

@@ -64,7 +64,7 @@ const SLIDES: { title: string; art: string; body: string; result?: string }[] = 
   },
   {
     title: 'Drift, wheelies & the garage',
-    art: `<div class="trick-row"><div>${K('X')}<small>handbrake drift</small></div><div>${K('C')}<small>wheelie (ground)</small></div><div><span class="big-emoji" style="font-size:40px">🏎️</span><small>15 vehicles</small></div></div>`,
+    art: `<div class="trick-row"><div>${K('X')}<small>handbrake drift</small></div><div>${K('C')}<small>wheelie (ground)</small></div><div><span class="big-emoji" style="font-size:40px">🏎️</span><small>${VEHICLES.length} vehicles</small></div></div>`,
     body: `Pick from <b>5 motorcycles and 10 cars</b> in the 🏁 Garage, each with real-world-style handling. Tap ${K('X')} (handbrake) into a corner to kick the tail out, then steer <b>against</b> the slide to hold the angle. Angle × speed = points, longer chains = bigger multiplier, hitting a wall loses the chain. On a bike, hold ${K('C')} on the ground for a wheelie at any speed (even with nitro): ${K('↑')}/${K('↓')} adjust the angle without braking, release ${K('C')} to land.`,
     result: 'DRIFT 4,820 · x2.5 · 6.1s · Crane Corner',
   },

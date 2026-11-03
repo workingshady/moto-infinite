@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TOUCH, TOUCH_BUTTONS, defaultCentre, type TouchCtx, type TouchScheme, type TouchSettings } from './TouchLayout';
+import { TOUCH, TOUCH_BUTTONS, defaultCentre, stickCentre, type TouchCtx, type TouchScheme, type TouchSettings } from './TouchLayout';
 
 const S = (o: Partial<TouchSettings> = {}): TouchSettings => ({ scheme: 'buttons', size: 1, opacity: 0.75, leftHanded: false, tiltRange: 22, tiltInvert: false, pos: {}, ...o });
 
@@ -54,6 +54,28 @@ describe('touch button table', () => {
           }
       }
     }
+  });
+
+  it.each([[844, 390], [390, 844], [740, 360], [360, 740], [568, 320]])('Roadster LIFT / FLIP stay clear of every other button and the joystick (%i x %i)', (w, h) => {
+    for (const size of [0.8, 1, 1.3])
+      for (const leftHanded of [false, true]) {
+        const s = S({ leftHanded, size }), u = TOUCH.unit * size;
+        for (const c of contexts()) {
+          if (!c.thrusters || !c.riding) continue;
+          const pts = shown(c).map((b) => ({ id: b.id, ...defaultCentre(b, c, w, h, s) }));
+          for (const t of pts.filter((p) => p.id === 'hover' || p.id === 'kickflip')) {
+            expect(t.x - u / 2, `${t.id} off screen`).toBeGreaterThanOrEqual(0);
+            expect(t.y - u / 2, `${t.id} off screen`).toBeGreaterThanOrEqual(0);
+            // the extra 4th row (FLIP) never reaches into the minimap / stats band
+            if (t.id === 'kickflip') expect(t.y - u / 2, 'FLIP under the minimap band').toBeGreaterThanOrEqual(TOUCH.topBand - TOUCH.margin);
+            for (const o of pts) if (o !== t) expect(Math.hypot(t.x - o.x, t.y - o.y), `${t.id} / ${o.id} size ${size} ${JSON.stringify(c)}`).toBeGreaterThanOrEqual(u * 0.9);
+            if (c.scheme === 'stick') {
+              const st = stickCentre(w, h, s);
+              expect(Math.hypot(t.x - st.x, t.y - st.y), `${t.id} / joystick`).toBeGreaterThanOrEqual((TOUCH.stick * size) / 2 + u * 0.45);
+            }
+          }
+        }
+      }
   });
 
   it('left-handed mirrors the clusters', () => {

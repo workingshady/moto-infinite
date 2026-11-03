@@ -32,6 +32,8 @@ export class EvDrive {
   alt = 0;
   /** Seconds of the current flight. */
   flightT = 0;
+  /** Counts every thruster lift (flight, hop, kickflip): Time Attack / leaderboards skip laps where it changed. */
+  lifts = 0;
   private hiss: Engine | null = null;
   private hissLevel = 0;
   private hopCd = 0;
@@ -137,6 +139,7 @@ export class EvDrive {
     if (liftKey && !steep && this.liftHeld >= F.holdDelay && s.nitro > EV.tank.min && !this.flying) {
       this.flying = this.flew = true;
       this.flightT = 0;
+      this.lifts++;
       B.vy = Math.max(B.vy, F.liftoffVy);
       p.cam.shake = Math.max(p.cam.shake, 0.25);
       g.audio.noise(0.5, 0.25, 5200, 'highpass');
@@ -200,6 +203,7 @@ export class EvDrive {
       return false;
     }
     s.nitro -= cost;
+    this.lifts++;
     B.vy = Math.max(B.vy, vy);
     this.hoverT = EV.hop.hover;
     this.hopCd = EV.hop.cooldown;
@@ -221,6 +225,7 @@ export class EvDrive {
     }
     if (!B.air && (steep || !this.hop(K.vy, '', 0))) return;
     s.nitro -= K.cost;
+    this.lifts++;
     this.kickDir = B.steer < -0.2 ? -1 : 1;
     this.kickT = 1e-4;
     this.hoverT = Math.max(this.hoverT, 0.35); // side + down thrusters hold it up through the roll
@@ -243,11 +248,11 @@ export class EvDrive {
   }
 
   /**
-   * Touchdown: finishes or fails a kickflip, ends the flight. Returns a crash reason (null = fine) and the tricks
-   * to add to Player's landing score.
+   * Touchdown: finishes or fails a kickflip, ends the flight. Returns a crash reason (null = fine), the tricks
+   * to add to Player's landing score and whether this air time was a powered flight (it counts as flight, not as a jump).
    */
-  onLand(air: number): { crash: string | null; tricks: [string, number][] } {
-    const B = this.p.B, g = this.p.game, out: { crash: string | null; tricks: [string, number][] } = { crash: null, tricks: [] };
+  onLand(air: number): { crash: string | null; tricks: [string, number][]; flew: boolean } {
+    const B = this.p.B, g = this.p.game, out: { crash: string | null; tricks: [string, number][]; flew: boolean } = { crash: null, tricks: [], flew: this.flew };
     if (!this.thrusters) return out;
     if (this.kicking) {
       if (this.kickT / EV.kick.time > 0.85) this.kicks++; // close enough: the suspension takes the last few degrees
