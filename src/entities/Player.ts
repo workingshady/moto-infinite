@@ -8,7 +8,7 @@ import type { EngineSound } from '../core/EngineSound';
 import type { Entity } from './EntityManager';
 import type { Pose } from '../world/layout';
 import type { NetState } from '../../shared/protocol';
-import { ASSIST, BIKE, DRIFT, F1, type TyreCompound, LEVELING, CONTROL, LANDING, PHYS, PLAYER, POWERUPS, ROAD, WHEELIE, type PowerupKind } from '../config';
+import { ASSIST, BIKE, DRIFT, F1, type TyreCompound, LEVELING, CONTROL, LANDING, PHYS, PLAYER, POWERUPS, ROAD, WALL, WHEELIE, type PowerupKind } from '../config';
 import { clamp, damp, lerp, rnd, TAU, wrapPi } from '../utils/math';
 import { buildRider, seatRider, type RiderModel } from './models';
 import { buildVehicleModel, type VehicleModel } from './vehicleModels';
@@ -79,6 +79,10 @@ export class Player {
   private screech: Engine | null = null;
   private _v = new THREE.Vector3();
   private nitroOn = false;
+  /** Wall contact: impact-effect cooldown, recent-contact timer, time spent pinned against a wall. */
+  private wallCd = 0;
+  private wallTouch = 0;
+  private stuckT = 0;
   private style: Style | null = null;
   private styleT = 0;
   private styleDone: Style[] = [];
@@ -344,44 +348,15 @@ export class Player {
     if (!B.air && E.windPush > 0.05 && Math.abs(B.v) > 3) B.moveH += (E.windPush * Math.sin(E.windDir - B.moveH) / Math.max(12, Math.abs(B.v))) * Math.sign(B.v) * dt;
 
     // horizontal move + collisions
+    if (!Number.isFinite(B.v) || !Number.isFinite(B.moveH) || !Number.isFinite(B.h)) { B.v = 0; B.moveH = B.h = Number.isFinite(B.h) ? B.h : 0; }
+    this.wallCd = Math.max(0, this.wallCd - dt);
+    this.wallTouch = Math.max(0, this.wallTouch - dt);
     const nx = B.x + Math.sin(B.moveH) * B.v * dt, nz = B.z + Math.cos(B.moveH) * B.v * dt;
     if (B.v !== 0) {
       const rad = this.isCar ? 1.5 : 1;
       const blk = g.chunks.blocked(nx, nz, rad, B.y, B.air ? 99 : 1.3);
-      let glanced = false;
-      if (blk === 'tree' || blk === 'wall') {
-        // try sliding past at a small angle before treating it as a head-on hit
-        const A = ASSIST[prefs.assist] ?? ASSIST[1];
-        for (const turn of [0.35, -0.35, 0.7, -0.7]) {
-          const h2 = B.moveH + turn, sx = B.x + Math.sin(h2) * B.v * dt, sz = B.z + Math.cos(h2) * B.v * dt;
-          if (!g.chunks.blocked(sx, sz, rad, B.y, B.air ? 99 : 1.3)) {
-            B.h += turn * 0.5;
-            B.moveH = B.h;
-            B.v *= A.glance;
-            B.x = sx;
-            B.z = sz;
-            this.cam.shake = Math.max(this.cam.shake, 0.15);
-            glanced = true;
-            break;
-          }
-        }
-        if (glanced) {
-          g.audio.play('thud');
-          g.fx.burst(B.x, B.y + 0.6, B.z, { n: 8, speed: 4, life: 0.5, size: [0.8, 1.6], colors: [0x9a8a70], gravity: -1, drag: 2, smoke: true, alpha: 0.5 });
-        }
-      }
-      if (glanced) {
-        // slid past the obstacle, position already updated
-      } else if (blk) {
-        this.failDrift();
-        if (Math.abs(B.v) > LANDING.wallDamageSpeed) {
-          this.cam.shake = 0.5;
-          g.audio.play('crash');
-          this.hurt(Math.abs(B.v) * 0.3 * (1 - st.crashArmor) * (ASSIST[prefs.assist] ?? ASSIST[1]).crash, undefined, true);
-          g.fx.burst(nx, B.y + 1, nz, { n: 20, speed: 6, life: 0.8, size: [1, 3], colors: [0x9a8a70], gravity: -1, drag: 2, smoke: true, alpha: 0.6 });
-        }
-        B.v *= -0.25;
-      } else {
+      if (blk) this.hitWall(blk, nx, nz, rad, dt);
+      else {
         const e = g.entities.hitTest(nx, B.y, nz, this.isCar ? 1.4 : 0.9);
         if (e) {
           if (e.type === 'cone') { g.entities.destroy(e, this); B.v *= 0.97; }
@@ -403,6 +378,7 @@ export class Player {
         }
       }
     }
+    if (this.riding) this.wallRecover(dt);
     // vertical
     const gy = T.groundAt(B.x, B.z);
     B.vy -= PHYS.gravity * dt;
@@ -630,6 +606,92 @@ export class Player {
     this.cam.shake = Math.max(this.cam.shake, 0.4);
   }
 
+  /**
+   * Contact with a wall, barrier, tree, cliff or shoreline at the proposed spot (nx, nz). Removes the into-wall part of
+   * the velocity (with a small rebound), keeps the speed along the wall minus friction, swings the heading toward the
+   * wall a limited amount and slides along it. Damage, sound and particles are rate-limited so scraping a barrier does
+   * not fire them every physics step.
+   */
+  private hitWall(kind: 'water' | 'wall' | 'tree', nx: number, nz: number, rad: number, dt: number) {
+    const B = this.B, g = this.game, A = this.assist, maxStep = B.air ? 99 : 1.3;
+    const mx = Math.sin(B.moveH) * B.v, mz = Math.cos(B.moveH) * B.v, spd = Math.hypot(mx, mz);
+    const n = g.chunks.contact(nx, nz, rad, B.y, kind, -mx, -mz);
+    const vn = mx * n.x + mz * n.z; // < 0: moving into the wall
+    let vx = mx, vz = mz;
+    if (vn < 0) {
+      const tx = mx - vn * n.x, tz = mz - vn * n.z, vt = Math.hypot(tx, tz);
+      let keep = vt > 1e-4 ? Math.max(0, vt - WALL.friction * -vn) / vt : 0;
+      const hard = -vn > LANDING.wallDamageSpeed;
+      if (hard) keep *= A.glance;
+      vx = tx * keep - WALL.restitution * vn * n.x;
+      vz = tz * keep - WALL.restitution * vn * n.z;
+      if (hard || -vn > 6) this.failDrift();
+      if (this.wallCd <= 0 && -vn > 4) {
+        this.wallCd = WALL.fxCooldown;
+        if (hard) {
+          this.cam.shake = Math.max(this.cam.shake, 0.5);
+          g.audio.play('crash');
+          this.hurt(-vn * 0.3 * (1 - this.stats.crashArmor) * A.crash, undefined, true);
+          g.fx.burst(nx, B.y + 1, nz, { n: 20, speed: 6, life: 0.8, size: [1, 3], colors: [0x9a8a70], gravity: -1, drag: 2, smoke: true, alpha: 0.6 });
+        } else {
+          this.cam.shake = Math.max(this.cam.shake, 0.15);
+          g.audio.play('thud');
+          g.fx.burst(nx, B.y + 0.6, nz, { n: 8, speed: 4, life: 0.5, size: [0.8, 1.6], colors: [0x9a8a70], gravity: -1, drag: 2, smoke: true, alpha: 0.5 });
+        }
+      }
+    }
+    // back to a signed speed along a travel direction that stays on the heading's side (no 180° "slide" after a rebound)
+    const sp = Math.min(Math.hypot(vx, vz), spd);
+    if (sp > 0.05) {
+      const d = Math.atan2(vx, vz);
+      if (Math.cos(d - B.h) >= 0) { B.moveH = d; B.v = sp; }
+      else { B.moveH = d + Math.PI; B.v = -sp; }
+      // the nose swings toward the wall's line, a limited amount per impact
+      const gap = wrapPi(B.moveH - B.h);
+      if (Math.abs(gap) < Math.PI / 2 && vn < 0) {
+        const turn = clamp(gap * WALL.align, -WALL.maxSpin, WALL.maxSpin);
+        B.h += turn;
+        B.yawV *= 0.3;
+      }
+    } else B.v = 0;
+    this.wallTouch = 0.25;
+    // slide along the wall if there's room, else push out along the normal (never further into it)
+    const sx = B.x + vx * dt, sz = B.z + vz * dt;
+    if (!g.chunks.blocked(sx, sz, rad, B.y, maxStep)) { B.x = sx; B.z = sz; }
+    else if (g.chunks.blocked(B.x, B.z, rad, B.y, maxStep)) {
+      const push = Math.min(Math.max(n.depth, 0.05), 0.5);
+      const px = B.x + n.x * push, pz = B.z + n.z * push;
+      if (!g.chunks.blocked(px, pz, rad, B.y, maxStep) || kind === 'tree') { B.x = px; B.z = pz; }
+    }
+  }
+
+  /**
+   * Auto-recovery: pinned against a wall (barely moving or reversing) for a couple of seconds, the car turns back to the
+   * road direction on its own instead of grinding there until the player respawns.
+   */
+  private wallRecover(dt: number) {
+    const B = this.B, g = this.game;
+    const pinned = this.wallTouch > 0 && (Math.abs(B.v) < WALL.stuckSpeed || B.v < 0);
+    this.stuckT = pinned ? this.stuckT + dt : Math.max(0, this.stuckT - dt * 2);
+    if (this.stuckT < WALL.stuckTime || B.air) return;
+    const road = g.layout.nearestRoad(B.x, B.z);
+    let target = road.h;
+    // circuits have a race direction; open-world roads run both ways, so take the one we're closer to facing
+    if (g.layout.kind === 'grid' && Math.abs(wrapPi(target - B.h)) > Math.PI / 2) target += Math.PI;
+    const err = wrapPi(target - B.h), step = clamp(err, -WALL.realignRate * dt, WALL.realignRate * dt);
+    B.h += step;
+    B.moveH = B.h;
+    B.yawV = 0;
+    if (B.v < 0) B.v = Math.min(0, B.v + 20 * dt);
+    // drift off the wall toward the road centre while turning
+    const dx = road.x - B.x, dz = road.z - B.z, dl = Math.hypot(dx, dz);
+    if (dl > 0.5) {
+      const px = B.x + (dx / dl) * 2 * dt, pz = B.z + (dz / dl) * 2 * dt;
+      if (!g.chunks.blocked(px, pz, this.isCar ? 1.5 : 1, B.y, 1.3)) { B.x = px; B.z = pz; }
+    }
+    if (Math.abs(err) < 0.05) this.stuckT = 0;
+  }
+
   /** Hitting something mid-drift loses the chain. */
   private failDrift() {
     const d = this.drift;
@@ -776,6 +838,13 @@ export class Player {
   private f1Longitudinal(dt: number, gas: boolean, brake: boolean, ers: boolean, onRoad: boolean) {
     const B = this.B, F = this.def.f1!, f = this.f1, v = Math.max(0, B.v), g = 9.81, dr = this.downforceRatio(v);
     const grip = f.gripMul * this.game.env.grip;
+    if (B.v < -0.05 && !brake) {
+      // rolling backwards (e.g. after a wall rebound) without asking to reverse: rolling resistance and engine braking
+      // oppose the motion and the throttle brakes it first, so the car comes back forward instead of running away in reverse
+      const back = F1.rolling * g + F1.engineBrake + (gas ? Math.max(F.muLong * g * grip, BIKE.brake) : 0);
+      B.v = Math.min(0, B.v + back * dt);
+      return;
+    }
     const cda = F.cda * (f.aeroOpen ? F1.straightDrag : 1) * (f.slip ? F1.slipDrag : 1);
     const drag = (0.5 * F1.rho * cda * v * v) / F.mass + F1.rolling * g;
     let a = -drag;
@@ -787,7 +856,7 @@ export class Player {
     } else if (!brake) a -= F1.engineBrake;
     if (brake) {
       if (B.v > 0.5) a -= Math.min(F.muBrake * g * (1 + dr) * grip, 6.5 * g);
-      else a -= BIKE.reverse; // creep backwards
+      else a = -BIKE.reverse; // creep backwards (forward-motion drag doesn't apply going backwards)
     }
     if (!onRoad) a -= (this.game.terrain.layout.roadDist(B.x, B.z) > ROAD.shoulder + 3 ? F1.gravelDrag : F1.grassDrag) * v * 0.2;
     B.v = Math.max(B.v + a * dt, B.v > 0 && !brake ? 0 : -BIKE.maxReverse);
@@ -954,8 +1023,9 @@ export class Player {
 
   respawn() {
     const r = this.game.layout.nearestRoad(this.P.x, this.P.z), B = this.B;
-    Object.assign(B, { x: r.x, z: r.z, h: r.h, moveH: r.h, v: 0, vy: 0, pitch: 0, pitchV: 0, flipAcc: 0, spinAcc: 0, airT: 0, air: false, steer: 0 });
+    Object.assign(B, { x: r.x, z: r.z, h: r.h, moveH: r.h, v: 0, vy: 0, pitch: 0, pitchV: 0, flipAcc: 0, spinAcc: 0, airT: 0, air: false, steer: 0, yawV: 0, lean: 0, wheelie: 0, wheelieV: 0, wheelieT: 0, flick: 0 });
     B.y = B.lastG = this.game.terrain.groundAt(B.x, B.z);
+    this.stuckT = this.wallTouch = 0;
     if (!this.riding) this.mount();
     this.syncP();
   }
@@ -1244,8 +1314,9 @@ export class Player {
     this.engine?.update(dt, {
       speed: Math.abs(B.v), top: this.stats.top, throttle: this.riding && !this.s.dead && (this.ctrl.is('up') || cam.boost > 0.2),
       boost: cam.boost, air: B.air, riding: this.riding && !this.s.dead, offroad: !this.game.terrain.onRoad(B.x, B.z),
-      volume: 1 / this.game.players.length,
+      volume: this.game.paused ? 0 : 1 / this.game.players.length, // pause menu: engine fades out instead of droning on
     });
+    if (this.game.paused) this.screech?.set(1200, 0, 0); // physics doesn't run while paused, so silence the tyres here
   }
 
   netState(): NetState {

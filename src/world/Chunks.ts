@@ -316,4 +316,35 @@ export class ChunkManager {
     });
     return hit ? 'tree' : false;
   }
+
+  /**
+   * Outward contact normal (unit, in the ground plane) and penetration depth at a blocked spot. Obstacles push out
+   * radially (a chain of armco/tyre colliders sums to the wall's normal); cliffs push downhill, water uphill.
+   * Falls back to `fx, fz` (usually minus the travel direction) when no clear normal exists.
+   */
+  contact(nx: number, nz: number, r: number, y: number, kind: 'water' | 'wall' | 'tree', fx: number, fz: number) {
+    let sx = 0, sz = 0, depth = 0;
+    if (kind === 'tree') {
+      this.forNear(nx, nz, (c) => {
+        for (const o of c.obs) {
+          const dx = nx - o.x, dz = nz - o.z, rr = r + o.r, d2 = dx * dx + dz * dz;
+          if (d2 >= rr * rr || y >= o.top) continue;
+          const d = Math.sqrt(d2), pen = rr - d;
+          if (d > 1e-4) { sx += (dx / d) * pen; sz += (dz / d) * pen; }
+          depth = Math.max(depth, pen);
+        }
+      });
+    } else {
+      const T = this.game.terrain, e = 1.5, sign = kind === 'wall' ? -1 : 1;
+      sx = sign * (T.groundAt(nx + e, nz) - T.groundAt(nx - e, nz));
+      sz = sign * (T.groundAt(nx, nz + e) - T.groundAt(nx, nz - e));
+      depth = 0.3;
+    }
+    const len = Math.hypot(sx, sz);
+    if (len < 1e-4 || !Number.isFinite(len)) {
+      const fl = Math.hypot(fx, fz) || 1;
+      return { x: fx / fl, z: fz / fl, depth };
+    }
+    return { x: sx / len, z: sz / len, depth };
+  }
 }
