@@ -8,6 +8,7 @@ import type { TrackLine } from '../world/layout';
 import { WEAPONS } from '../data/weapons';
 import { F1, POI_KINDS, POWERUPS, ROAD, WHEELIE, type PoiKind, type PowerupKind } from '../config';
 import { prefs } from '../core/prefs';
+import { showToast } from './AchievementToast';
 
 const POI_COLOR = Object.fromEntries(POI_KINDS.map((k) => [k.kind, k.color])) as Record<PoiKind, string>;
 import { clamp, escapeHtml, hex, lerpAngle, TAU } from '../utils/math';
@@ -582,6 +583,11 @@ export class Hud {
     mm.textAlign = 'start'; mm.textBaseline = 'alphabetic';
     mm.strokeStyle = 'rgba(255,255,255,.25)'; mm.lineWidth = 2;
     mm.beginPath(); mm.arc(W / 2, H / 2, W / 2 - 1, 0, TAU); mm.stroke();
+  }
+
+  /** Corner toast (achievements, career level-ups). */
+  toast(icon: string, title: string, sub: string, label?: string) {
+    showToast(this.root, icon, title, sub, label);
   }
 
   dispose() {

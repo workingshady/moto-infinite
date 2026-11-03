@@ -34,7 +34,11 @@ export interface VehicleDef {
   f1?: F1Spec;
   /** Fluff for the garage card. */
   spec: { power: string; weight: string; layout: string };
+  /** Career unlock: needs this career level and costs these credits. No rule = starter, always owned. */
+  unlock?: VehicleUnlock;
 }
+
+export interface VehicleUnlock { level: number; price: number }
 
 /**
  * Real-world-style F1 numbers. Physics derives everything from these:
@@ -117,4 +121,25 @@ export const VEHICLES: VehicleDef[] = [
     spec: { power: '~480 hp (3.0 V8)', weight: '575 kg', layout: 'MR · 3.0 V8' } },
 ];
 
-export const vehicleById = (id: string) => VEHICLES.find((v) => v.id === id) ?? VEHICLES[0];
+/**
+ * Career garage: level needed + credit price. Starters (Street 600, Dust Devil 450, Kitsune S-Spec,
+ * Panda 86, Formula 2026) have no rule, so every mode stays playable on a fresh save.
+ */
+export const VEHICLE_UNLOCKS: Partial<Record<VehicleModelId, VehicleUnlock>> = {
+  cafe: { level: 2, price: 300 },
+  rally: { level: 2, price: 400 },
+  cruiser: { level: 3, price: 500 },
+  roadster: { level: 3, price: 450 },
+  touring: { level: 4, price: 700 },
+  muscle: { level: 4, price: 800 },
+  f1_classic: { level: 4, price: 900 },
+  rotary: { level: 5, price: 1000 },
+  superbike: { level: 6, price: 1500 },
+  trophy: { level: 6, price: 1200 },
+  f1_v10: { level: 7, price: 1800 },
+  gt: { level: 8, price: 2000 },
+  hyper: { level: 12, price: 4000 },
+};
+for (const v of VEHICLES) v.unlock ??= VEHICLE_UNLOCKS[v.id];
+
+export const vehicleById =(id: string) => VEHICLES.find((v) => v.id === id) ?? VEHICLES[0];
