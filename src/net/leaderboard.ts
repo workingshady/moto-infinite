@@ -1,6 +1,7 @@
 // Leaderboard API client (/api/lb/*). Every call fails soft: offline or server errors resolve to null, and the
 // player's own bests are also kept in localStorage so the menu can show them without a connection.
 // Failed submissions are queued and retried the next time a board is fetched.
+import { fullPower } from '../admin/state';
 import { boardIsTime, type LbGhost, type LbSubmit, type LbSubmitResult, type LbTop } from '../../shared/leaderboard';
 
 const TIMEOUT = 7000;
@@ -63,9 +64,9 @@ async function call<T>(path: string, init?: RequestInit): Promise<T | null> {
 
 /** Submit a result. Resolves to the server's answer, or null when offline (then it is queued for later). */
 export async function submitScore(board: string, value: number, name: string, vehicle: string, ghost?: number[]): Promise<LbSubmitResult | null> {
-  if (!Number.isFinite(value)) return null;
+  if (!Number.isFinite(value) || fullPower()) return null; // admin Full Power: never posted (the server rejects fp too)
   const localImproved = keepLocalBest(board, value);
-  const body: LbSubmit = { board, pid: playerId(), name, value, vehicle, ghost: ghost?.map((v) => Math.round(v * 100) / 100) };
+  const body: LbSubmit = { board, pid: playerId(), name, value, vehicle, ghost: ghost?.map((v) => Math.round(v * 100) / 100), fp: fullPower() || undefined };
   const res = await call<LbSubmitResult>('submit', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
   if (!res && localImproved) queue(body);
   return res;

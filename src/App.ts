@@ -24,6 +24,8 @@ import { watchPads } from './core/gamepad';
 import { initMenuNav } from './ui/menuNav';
 import { ReplayStudio, type StudioFrom } from './ui/ReplayStudio';
 import { mergeSaved, parseJson, sameShape } from './utils/store';
+import { markChanged } from './core/syncBus';
+import { initCloudSave } from './net/cloudSave';
 
 const store = {
   get<T>(k: string, fallback: T): T {
@@ -73,6 +75,11 @@ export class App {
     applySettings(); // HUD scale/opacity, colourblind palette, reduced motion
     watchPads(); // controller hot-plug toasts
     initMenuNav(this.menu.root); // keyboard / gamepad menu navigation
+    initCloudSave({
+      get: () => ({ ...this.menu.profile }),
+      set: (d) => { Object.assign(this.menu.profile, mergeSaved(this.menu.profile, d)); store.set('profile', this.menu.profile); },
+      applied: () => this.refreshMenu(),
+    });
     this.attract();
     const code = new URLSearchParams(location.search).get('room')?.toUpperCase();
     if (code && ROOM_CODE_RE.test(code)) this.menu.showJoin(code); // pick name/colour first
@@ -94,7 +101,7 @@ export class App {
         this.menu.profile.name = name;
         this.menu.profile.color = color;
         if (vehicle) this.menu.profile.vehicle = vehicle;
-        store.set('profile', this.menu.profile);
+        this.saveProfile();
         this.net?.send({ t: 'profile', name, color, vehicle: this.menu.profile.vehicle ?? 'street' });
       },
       kick: (id: string) => this.net?.send({ t: 'kick', id }),
@@ -112,8 +119,19 @@ export class App {
       toggleMute: () => this.audio.toggleMute(),
       volumes: () => this.audio.applyVolumes(),
       hearEngine: (id: string) => void this.audio.previewEngine(vehicleById(id).engine),
-      saveProfile: (p: Profile) => store.set('profile', p),
+      saveProfile: () => this.saveProfile(),
     };
+  }
+
+  /** Redraw the menu after cloud data or the admin mode changed what it shows (never mid-ride). */
+  refreshMenu() {
+    const s = this.menu.current;
+    if (this.menu.visible && (s === 'home' || s === 'career' || s === 'garage' || s === 'settings')) this.menu.show(s);
+  }
+
+  private saveProfile() {
+    store.set('profile', this.menu.profile);
+    markChanged('profile');
   }
 
   // ------------------------------------------------------------------ sessions

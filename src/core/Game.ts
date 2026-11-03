@@ -27,6 +27,7 @@ import { RemotePlayers } from '../net/RemotePlayers';
 import { Spectator } from '../net/Spectate';
 import { Tutorial } from '../systems/Tutorial';
 import { CareerTracker } from '../systems/CareerTracker';
+import { progressPaused } from '../admin/state';
 import { Replay } from '../systems/Replay';
 import { GEN, LEVELING, NET, PHYS, QUALITY, TRACKS, WORLD, type QualityName, type TyreCompound } from '../config';
 import { STORY } from '../data/story';
@@ -170,7 +171,7 @@ export class Game {
       if ((opts.mode === 'race' && this.layout instanceof Circuit) || (opts.mode === 'f1' && this.layout instanceof F1Track)) this.race = new Race(this, this.layout, opts.laps, opts.trackId);
       if (this.net) this.wireNet(this.net);
       if (opts.tutorial) this.tutorial = new Tutorial(this);
-      this.career = new CareerTracker(this);
+      this.career = progressPaused() ? null : new CareerTracker(this); // admin Full Power: career paused
       this.modes = createModes(this);
       this.replay = new Replay(this);
     }

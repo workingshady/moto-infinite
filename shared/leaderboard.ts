@@ -192,8 +192,10 @@ function ruleFor(mode: ChallengeMode, seed: number, trackId: string): BoardRule 
 export const boardIsTime = (board: string) => !board.startsWith('drift:') && !board.endsWith(':drift');
 
 // ---------------------------------------------------------------- API shapes
-export interface LbRow { rank: number; name: string; value: number; vehicle: string; me?: boolean; ghost?: boolean }
+/** `verified`: posted by a signed-in (Google) account; the name is still the rider name they chose. */
+export interface LbRow { rank: number; name: string; value: number; vehicle: string; me?: boolean; ghost?: boolean; verified?: boolean }
 export interface LbTop { board: string; rows: LbRow[]; you: LbRow | null; total: number }
-export interface LbSubmit { board: string; pid: string; name: string; value: number; vehicle: string; ghost?: number[] }
+/** `fp`: sent honestly by the client when the admin "Full Power" mode is on (the server rejects those). */
+export interface LbSubmit { board: string; pid: string; name: string; value: number; vehicle: string; ghost?: number[]; fp?: boolean }
 export interface LbSubmitResult { ok: boolean; error?: string; improved?: boolean; rank?: number; best?: number; total?: number }
 export interface LbGhost { name: string; value: number; vehicle: string; s: number[] }

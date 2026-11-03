@@ -6,6 +6,7 @@ import type { Game } from '../core/Game';
 import type { Player } from '../entities/Player';
 import type { Standing } from '../systems/Race';
 import type { TrackLine } from '../world/layout';
+import { markChanged } from '../core/syncBus';
 import { fmt } from '../systems/Race';
 import { mountTopCentre } from './index';
 import { paceProfile, type PaceProfile } from './pace';
@@ -49,6 +50,7 @@ function save(key: string, r: Best) {
   } catch {
     /* not persisted */
   }
+  markChanged('ta');
 }
 
 export class TimeAttack implements ModeFeature {

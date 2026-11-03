@@ -5,6 +5,7 @@ import type { Game } from '../core/Game';
 import type { Player } from '../entities/Player';
 import { LB, LB_CIRCUITS, LB_DRIFT, LB_F1, type Challenge, type LbSubmitResult, type VehicleClass } from '../../shared/leaderboard';
 import { submitScore } from '../net/leaderboard';
+import { progressPaused } from '../admin/state';
 import { fmt } from './Race';
 import { featNow, type Feat } from '../core/career';
 import { toast } from '../ui/toast';
@@ -35,7 +36,7 @@ export class LbSession {
   /** Returns null when this session can't post to any board. */
   static create(game: Game, challenge: Challenge | null, onRunEnd: (info: LbRunInfo) => void) {
     const o = game.opts;
-    if (o.attract || o.tutorial || game.net || game.players.length !== 1) return null;
+    if (o.attract || o.tutorial || game.net || game.players.length !== 1 || progressPaused()) return null; // Full Power runs are never ranked
     const s = new LbSession(game, challenge, onRunEnd);
     return s.boards.length ? s : (s.dispose(), null);
   }

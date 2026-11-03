@@ -1,2 +1,4 @@
 # Copy to .dev.vars (git-ignored) for local Worker secrets. Set production values with: npx wrangler secret put NAME
 APP_VERSION=dev
+# Local automated tests only: enables POST /api/auth/dev (test sign-in) on http://localhost. Never set in production.
+# DEV_AUTH=1

@@ -3,13 +3,18 @@
 // Runtime types generated with workerd@1.20261023.1 2026-10-01
 interface __BaseEnv_Env {
 	APP_VERSION: string;
+	/** Comma-separated @gmail.com addresses that may bootstrap the admin pin (worker/admin.ts). Not a secret. */
+	ADMIN_EMAILS: string;
 	ROOMS: DurableObjectNamespace<import("./worker/index").Room>;
 	LEADERBOARDS: DurableObjectNamespace<import("./worker/index").Leaderboard>;
+	ACCOUNTS: DurableObjectNamespace<import("./worker/index").Account>;
+	/** Local tests only (.dev.vars): enables POST /api/auth/dev on localhost. Never set in production. */
+	DEV_AUTH?: string;
 }
 declare namespace Cloudflare {
 	interface GlobalProps {
 		mainModule: typeof import("./worker/index");
-		durableNamespaces: "Room" | "Leaderboard";
+		durableNamespaces: "Room" | "Leaderboard" | "Account";
 	}
 	interface Env extends __BaseEnv_Env {}
 }
@@ -18,7 +23,7 @@ type StringifyValues<EnvType extends Record<string, unknown>> = {
 	[Binding in keyof EnvType]: EnvType[Binding] extends string ? EnvType[Binding] : string;
 };
 declare namespace NodeJS {
-	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "APP_VERSION">> {}
+	interface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "APP_VERSION" | "ADMIN_EMAILS">> {}
 }
 declare module "*.txt" {
 	const value: string;
