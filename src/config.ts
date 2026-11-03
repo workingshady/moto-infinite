@@ -369,8 +369,12 @@ export const REPLAY = {
 
 /**
  * Electric cars (data/vehicles.ts `ev`) and the Tesla Roadster's cold-gas "SpaceX package" thrusters.
- * Thrusters replace nitro: while boost is held they add push, retro-thrust when braking (↓) and side-thruster grip;
- * the hover hop (C, or double-tap jump) is a short, limited lift: Musk's hover/flight talk is a claim, not a spec.
+ * Thrusters replace nitro: the boost meter becomes the NITROGEN TANK (s.nitro, 0..nitroMax = one fill).
+ * Reveal (15 Oct 2026, McGregor TX): an uncrewed, remotely driven car launched over a line of Teslas with a mid-air
+ * "kickflip", rotated with thrusters and drove a ramp upside down (held by suction fans). Claimed, not shown: Thrust trim
+ * = 4 rear thrusters, 200 L COPV at ~10,000 psi in the trunk, ~5 s of thrust per fill, refill 2-7 h (aim 30 min);
+ * Rocket trim = 10 thrusters (4 rear, 4 down at the corners, 2 front for yaw) + a 400 L tank in place of the passenger seat.
+ * The game gives the Roadster the Rocket set so it can fly; numbers below are game units (PHYS.gravity = 30 m/s²).
  */
 export const EV = {
   regenMinSpeed: 3, // m/s: below this lifting off just coasts
@@ -381,19 +385,73 @@ export const EV = {
     brake: 26, // m/s² of retro-thrust while braking with thrusters held
     grip: 5, // extra rate the travel direction locks to the heading (less slide)
     yaw: 0.35, // extra turn rate (rad/s at full steer) from the side thrusters
-    hiss: 0.1, // loop level
+    hiss: 0.16, // loop level at full thrust
     puffs: 1, // particles per nozzle per physics step (scaled by quality)
     color: 0xf4f8ff,
     nozzles: [[-0.62, 0.4, -2.36], [-0.3, 0.4, -2.36], [0.3, 0.4, -2.36], [0.62, 0.4, -2.36]] as [number, number, number][],
     side: [1.0, 0.35, 1.95] as [number, number, number], // side nozzle (x mirrored), local metres
     front: [0.7, 0.3, 2.36] as [number, number, number], // retro nozzles for thrust braking (x mirrored)
+    down: [[-0.82, 0.22, 1.55], [0.82, 0.22, 1.55], [-0.82, 0.22, -1.6], [0.82, 0.22, -1.6]] as [number, number, number][], // lift nozzles
+  },
+  /** Nitrogen tank = the boost meter (0..BIKE.nitroMax). One fill = `fullSecs` of every thruster at full output. */
+  tank: {
+    fullSecs: 5, // claimed ~5 s of thrust per 200 L / 10,000 psi fill
+    // share of the full flow each thruster group uses at 100 %: lift (4 down) + rear (4) + side/front (2-4), capped at 1
+    lift: 1, rear: 0.5, side: 0.3,
+    min: 2, // meter units needed to start the lift thrusters
+  },
+  /** Thruster flight: hold the hover/lift key. Lift is a climb-rate controller, so it stays controllable. */
+  flight: {
+    mass: 1700, // kg (claimed target weight)
+    lift: 2.6, // max lift thrust / weight (4 corner nozzles); hovering uses ~1/2.6 of it
+    climb: 8, // m/s climb rate while the key is held
+    descent: 3.5, // m/s gentle assisted descent when released (tank permitting)
+    response: 4, // 1/s: how fast vertical speed follows the target
+    ceiling: 38, // m above ground: climb fades out over the last 8 m
+    holdDelay: 0.12, // s the key must be held before lift-off (a quick double tap = hop instead)
+    liftoffVy: 4, // m/s kick at lift-off
+    push: 14, // m/s² forward (↑, rear nozzles)
+    retro: 14, // m/s² backward (↓, front nozzles)
+    maxBack: 12, // m/s flying backwards
+    dragQ: 0.0016, dragL: 0.06, // horizontal air drag: v² and linear terms (1/m, 1/s)
+    yaw: 1.3, // extra rad/s at full steer (side/front nozzles)
+    align: 3, // 1/s: velocity swings toward the nose (thrust vectoring)
+    pitch: 0.2, // rad nose down/up while pushing / braking
+    crashImpact: 30, // m/s vertical impact that wrecks a landing after a flight (soft landings are fine)
+    camBack: 4, // extra chase-camera distance at full altitude
+    camUp: 1.6,
+    dust: 9, // m: ground dust from the lift nozzles below this height
+    rumble: 0.28,
+  },
+  /** Kickflip: side-thruster barrel roll (trick key) in the air, or from the ground with a hop. */
+  kick: {
+    time: 0.85, // s for 360°
+    cost: 7, // tank units
+    vy: 12, // hop when started on the ground
+    pts: 450,
+  },
+  /** Down-force glue: thrusters firing on a steep bank/wall press the car into it (heightfield: no true inverted driving). */
+  stick: {
+    steep: 0.55, // rad (~31°): above this the lift key presses into the surface instead of lifting off
+    maxStep: 4.5, // m per step the car may climb while glued (normal: 1.3)
+    crest: 3, // m/s max upward speed a crest can give while glued (sticks over the lip)
+    burn: 0.45, // share of full flow while gluing
+    slide: 9, // m/s² down-slope slide on the demo wall when NOT glued, per radian over `free`
+    free: 0.6, // rad of bank anyone can hold without thrusters
+  },
+  /** Thruster demo wall near the open-world spawn: a curved bank beside the road (quarter-pipe profile). */
+  wall: {
+    ahead: 45, length: 110, // m from the spawn along its road; wall length
+    offset: 13, // m from the spawn line to the foot of the bank
+    radius: 8, // quarter-pipe radius: top lip ~6 m high at ~76°
+    deck: 3, back: 5, taper: 18, // flat top, back slope, height fade at both ends
   },
   hop: {
     vy: 11, // m/s launch
     hover: 0.9, // seconds of reduced gravity after the hop
     lift: 0.72, // share of gravity cancelled while hovering
-    cost: 30, // boost meter
-    cooldown: 1.6,
-    doubleTap: 0.3, // seconds between two jump presses
+    cost: 10, // tank units
+    cooldown: 1.2,
+    doubleTap: 0.3, // seconds between two lift-key presses
   },
 };

@@ -30,6 +30,8 @@ npm run dev        # http://localhost:5173
 `↑ ↓` throttle / brake · `← →` steer · `E` get on/off · `Shift`/`Space` nitro / jump ·
 `F` or click fire · `Q`/`1-3` weapon · in air: arrows flip/spin · `R` respawn · `M` mute · `H` help
 
+Tesla Roadster: hold `Space`/`G` (pad B) = thruster lift-off and flight (↑↓ push, ←→ yaw), double-tap = hop, `C` = kickflip, `Shift` = rear thrusters (glue to steep banks). Thrust runs off a nitrogen tank (~5 s at full thrust), refilled slowly while driving, fully at gas stations or on respawn.
+
 Online: `Enter`/`T` chat · `5-0` quick chat (pad: hold Back + d-pad) · hold `Tab` players & pings · `[` `]` spectate (pad: LB/RB)
 
 ## Project layout

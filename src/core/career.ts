@@ -22,6 +22,8 @@ export interface CareerStats {
   flips: number;
   spins: number;
   styleTricks: number;
+  kickflips: number; // Roadster side-thruster rolls
+  bestFlight: number; // seconds of one thruster flight
   bestAir: number; // seconds
   bestCombo: number;
   drones: number;
@@ -56,7 +58,7 @@ const VERSION = 1;
 
 const freshStats = (): CareerStats => ({
   distance: 0, topSpeed: 0, playTime: 0, sessions: 0, racesStarted: 0, racesWon: 0, podiums: 0, f1Started: 0, f1Won: 0,
-  bestDrift: 0, driftTotal: 0, longestWheelie: 0, wheelieTime: 0, flips: 0, spins: 0, styleTricks: 0, bestAir: 0, bestCombo: 0,
+  bestDrift: 0, driftTotal: 0, longestWheelie: 0, wheelieTime: 0, flips: 0, spins: 0, styleTricks: 0, kickflips: 0, bestFlight: 0, bestAir: 0, bestCombo: 0,
   drones: 0, crates: 0, barrels: 0, gems: 0, powerups: 0, ramps: 0, bestRunLevel: 0, nightDist: 0,
   weatherDist: {}, themes: [], f1Tracks: [], driftVenues: [],
 });

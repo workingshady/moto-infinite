@@ -3,6 +3,7 @@
 // Reads player state once per frame, so gameplay code needs no rumble calls.
 import type { Player } from '../entities/Player';
 import { settings } from './settings';
+import { EV } from '../config';
 
 interface Feel { shake: number; fireCd: number; offroad: boolean; dead: boolean }
 interface Motor { weak: number; strong: number; t: number }
@@ -78,6 +79,9 @@ export function feelUpdate(players: Player[], dt: number) {
     const live = p.riding && !s.dead && !B.air;
     let weak = 0, strong = 0;
     if (p.cam.boost > 0.3) weak = Math.max(weak, 0.12 + p.cam.boost * 0.12);
+    // Roadster thrusters: a steady buzz that grows with output (also in the air while flying)
+    const th = p.riding && !s.dead && p.ev?.thrusters ? p.ev.thrust : 0;
+    if (th > 0.05) { weak = Math.max(weak, EV.flight.rumble * th + 0.05); strong = Math.max(strong, EV.flight.rumble * 0.5 * th); }
     if (live) {
       const d = p.dash;
       if (d.redline > 0 && d.rpm >= d.redline * 0.97) weak = Math.max(weak, 0.28);

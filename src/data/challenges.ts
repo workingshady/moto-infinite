@@ -2,7 +2,8 @@ import type { EntityType } from '../entities/EntityManager';
 
 export type ChallengeId =
   | 'gem' | 'air' | 'speed' | 'crate' | 'drone' | 'flip' | 'barrel' | 'dist'
-  | 'pad' | 'combo' | 'spin' | 'nohit' | 'powerup' | 'ramp' | 'style' | 'drift' | 'wheelie';
+  | 'pad' | 'combo' | 'spin' | 'nohit' | 'powerup' | 'ramp' | 'style' | 'drift' | 'wheelie'
+  | 'kickflip' | 'flight'; // Tesla Roadster thrusters (career stats only, no timed challenge)
 
 export interface ChallengeDef {
   id: ChallengeId;

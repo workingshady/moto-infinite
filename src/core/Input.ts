@@ -4,7 +4,8 @@ import { readPad } from './gamepad';
 
 export type Action =
   | 'up' | 'down' | 'left' | 'right' | 'nitro' | 'jump' | 'fire'
-  | 'ride' | 'weapon' | 'respawn' | 'trick' | 'drift' | 'upgrade' | 'reroll' | 'pick1' | 'pick2' | 'pick3' | 'camera';
+  | 'ride' | 'weapon' | 'respawn' | 'trick' | 'drift' | 'upgrade' | 'reroll' | 'pick1' | 'pick2' | 'pick3' | 'camera'
+  | 'hover'; // Tesla Roadster lift thrusters (shares keys with nitro/jump: thruster cars ignore nitro while it is held)
 
 type Bindings = Record<Action, string[]>;
 
@@ -13,16 +14,19 @@ export const BINDINGS: Record<'solo' | 'p1' | 'p2', Bindings> = {
     up: ['ArrowUp', 'KeyW'], down: ['ArrowDown', 'KeyS'], left: ['ArrowLeft', 'KeyA'], right: ['ArrowRight', 'KeyD'],
     nitro: ['ShiftLeft', 'ShiftRight', 'Space', 'KeyN', 'KeyB'], jump: ['Space'], fire: ['KeyF'], ride: ['KeyE'], weapon: ['KeyQ'],
     respawn: ['KeyR'], trick: ['KeyC'], drift: ['KeyX'], upgrade: ['Tab'], reroll: ['KeyT'], pick1: ['Digit1'], pick2: ['Digit2'], pick3: ['Digit3'], camera: ['KeyV'],
+    hover: ['Space', 'KeyG'],
   },
   p1: {
     up: ['KeyW'], down: ['KeyS'], left: ['KeyA'], right: ['KeyD'],
     nitro: ['ShiftLeft', 'Space'], jump: ['Space'], fire: ['KeyF'], ride: ['KeyE'], weapon: ['KeyQ'],
     respawn: ['KeyR'], trick: ['KeyC'], drift: ['KeyX'], upgrade: ['Tab'], reroll: ['KeyT'], pick1: ['Digit1'], pick2: ['Digit2'], pick3: ['Digit3'], camera: ['KeyV'],
+    hover: ['Space', 'KeyG'],
   },
   p2: {
     up: ['ArrowUp'], down: ['ArrowDown'], left: ['ArrowLeft'], right: ['ArrowRight'],
     nitro: ['ShiftRight', 'Numpad0'], jump: ['ShiftRight', 'Numpad0'], fire: ['Slash', 'Numpad1'], ride: ['Enter', 'NumpadEnter'],
     weapon: ['Period', 'Numpad2'], respawn: ['Backspace', 'Numpad3'], trick: ['Quote', 'Numpad4'], drift: ['Semicolon', 'Numpad5'], upgrade: ['Backslash', 'NumpadAdd'], reroll: ['BracketRight', 'NumpadSubtract'], pick1: ['Digit8', 'Numpad7'], pick2: ['Digit9', 'Numpad8'], pick3: ['Digit0', 'Numpad9'], camera: ['KeyL', 'NumpadDecimal'],
+    hover: ['Numpad0'],
   },
 };
 
@@ -31,6 +35,7 @@ export const BINDINGS: Record<'solo' | 'p1' | 'p2', Bindings> = {
 export const PAD: Record<Action, number[]> = {
   up: [0, 7, 12], down: [6, 13], left: [14], right: [15], nitro: [1, 5], jump: [1], fire: [2],
   ride: [3], weapon: [8], respawn: [], trick: [10], drift: [4], upgrade: [11], reroll: [], pick1: [14], pick2: [12], pick3: [15], camera: [],
+  hover: [1], // B lifts the Roadster; RB stays the rear thrusters
 };
 
 export class Controller {

@@ -144,7 +144,7 @@ export class ChunkManager {
 
     for (let t = 0, n = Math.round(WORLD.scenery * T.flora); t < n; t++) {
       const x = x0 + rng() * CH, z = z0 + rng() * CH, y = T.heightAt(x, z), rd = T.layout.roadDist(x, z);
-      if (rd < (this.game.layout.kind === 'f1' ? 40 : ROAD.clear) || y < 1.8) continue;
+      if (rd < (this.game.layout.kind === 'f1' ? 40 : ROAD.clear) || y < 1.8 || (T.walls.length && T.wallHeight(x, z, rd) > 0)) continue;
       const b = T.biome(x, z), roll = rng(), s = 0.8 + rng() * 0.6;
       const snow = T.snowAt(x, z);
       if (y > snow - 4) {

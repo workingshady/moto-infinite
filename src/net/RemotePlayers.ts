@@ -5,7 +5,7 @@ import type { NetState, PlayerInfo } from '../../shared/protocol';
 import { buildRider, nameTag, seatRider, type RiderModel } from '../entities/models';
 import { buildVehicleModel, type VehicleModel } from '../entities/vehicleModels';
 import { vehicleById } from '../data/vehicles';
-import { NET } from '../config';
+import { EV, NET } from '../config';
 import { lerp, lerpAngle } from '../utils/math';
 
 export interface Remote {
@@ -23,6 +23,8 @@ export interface Remote {
 }
 
 const BUBBLE_TIME = 3.5;
+/** Electric cars: no exhaust flame when boosting. */
+const EV_IDS = new Set(['tesla_roadster', 'tesla_model3']);
 
 export class RemotePlayers {
   private map = new Map<string, Remote>();
@@ -85,6 +87,17 @@ export class RemotePlayers {
     b.t = BUBBLE_TIME;
   }
 
+  /** Cheap cold-gas plumes for a remote Roadster: down nozzles when high, rear otherwise (no per-nozzle detail). */
+  private plumes(r: Remote, th: number, alt: number) {
+    const g = this.game, R = r.bike.root, h = R.rotation.y, fx = Math.sin(h), fz = Math.cos(h), up = alt > 0.8, amt = g.fx.amount * th;
+    for (let i = 0; i < 3; i++) {
+      if (Math.random() > amt) continue;
+      const sx = (Math.random() - 0.5) * 1.6, along = up ? (Math.random() - 0.5) * 3 : -2.4;
+      const x = R.position.x + fx * along + fz * sx, z = R.position.z + fz * along - fx * sx;
+      g.fx.emit(x, R.position.y + 0.3, z, up ? (Math.random() - 0.5) * 2 : -fx * 12, up ? -16 : Math.random(), up ? (Math.random() - 0.5) * 2 : -fz * 12, 0.55, 0.35, 2.2, EV.thrust.color, 0.6, -0.4, 3.2, true);
+    }
+  }
+
   forEach(fn: (r: Remote) => void) {
     this.map.forEach(fn);
   }
@@ -102,10 +115,11 @@ export class RemotePlayers {
       const bx = lerp(a.bx, s.bx, f), by = lerp(a.by, s.by, f), bz = lerp(a.bz, s.bz, f);
       r.bike.root.visible = !s.dead && !r.away;
       r.bike.root.position.set(bx, by, bz);
-      r.bike.root.rotation.set(lerp(a.bp, s.bp, f), lerpAngle(a.bh, s.bh, f), lerp(a.bl, s.bl, f));
+      r.bike.root.rotation.set(lerp(a.bp, s.bp, f), lerpAngle(a.bh, s.bh, f), lerpAngle(a.bl, s.bl, f)); // lean wraps after a Roadster kickflip
       r.wheel += (s.v * dt) / r.bike.wheelRadius;
       r.bike.wheels.forEach((w) => (w.rotation.x = r.wheel));
-      r.bike.flame.scale.y = s.boost > 0.1 ? 1.4 + Math.random() : 0.01;
+      r.bike.flame.scale.y = s.boost > 0.1 && !s.th && !EV_IDS.has(r.vehicle) ? 1.4 + Math.random() : 0.01;
+      if (s.th && r.bike.root.visible) this.plumes(r, s.th, by - this.game.terrain.groundAt(bx, bz));
       if (s.riding !== r.seated) {
         r.seated = s.riding;
         if (s.riding) { seatRider(r.rider, r.bike); r.rider.root.visible = r.bike.kind === 'bike'; }

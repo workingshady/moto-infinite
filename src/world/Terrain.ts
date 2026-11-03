@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { Noise } from '../utils/noise';
 import type { RoadLayout } from './layout';
 import { lerp, smooth } from '../utils/math';
-import { GEN, ROAD, THEME_DEFS } from '../config';
+import { EV, GEN, ROAD, THEME_DEFS } from '../config';
 import { DEFAULT_GEN, type WorldGen, type WorldTheme } from '../../shared/protocol';
 
 export const RAMP = { L: 10, W: 10, H: 3.2 };
@@ -10,6 +10,18 @@ const [F0, F1] = ROAD.flatten;
 
 export interface Ramp { x: number; z: number; tx: number; tz: number; y: number }
 export interface Pad { x: number; z: number; y: number; cd: number }
+/** Thruster demo wall: foot line from (x, z) along (tx, tz) for `len` m; the bank rises on the (nx, nz) side. */
+export interface StuntWall { x: number; z: number; tx: number; tz: number; nx: number; nz: number; len: number }
+
+/** Quarter-pipe bank profile across the wall (s = metres out from the foot line), see EV.wall. */
+export function wallProfile(s: number) {
+  const W = EV.wall, R = W.radius, a = R * 0.97, top = R - Math.sqrt(R * R - a * a);
+  if (s <= 0) return 0;
+  if (s < a) return R - Math.sqrt(R * R - s * s);
+  if (s < a + W.deck) return top;
+  return s < a + W.deck + W.back ? top * (1 - (s - a - W.deck) / W.back) : 0;
+}
+export const wallDepth = () => EV.wall.radius * 0.97 + EV.wall.deck + EV.wall.back;
 
 const C = {
   road: new THREE.Color(0x4b4f56), shoulder: new THREE.Color(0xcbb48a), sand: new THREE.Color(0xe6d29a), under: new THREE.Color(0xb79f6c),
@@ -22,6 +34,8 @@ const _a = new THREE.Color(), _b = new THREE.Color(), _d = new THREE.Color();
 export class Terrain {
   readonly ramps: Ramp[] = [];
   readonly pads: Pad[] = [];
+  /** Open world: the thruster demo wall near the spawn (empty elsewhere). */
+  readonly walls: StuntWall[] = [];
 
   private th: (typeof THEME_DEFS)['mixed'];
   /** F1 circuits: the land around follows the nearest track height (mown parkland), cached on a coarse grid. */
@@ -104,7 +118,20 @@ export class Terrain {
         const u = dx * r.tx + dz * r.tz, v = -dx * r.tz + dz * r.tx;
         if (Math.abs(u) <= RAMP.L && Math.abs(v) <= RAMP.W / 2) g = Math.max(g, r.y + RAMP.H * (1 - Math.abs(u) / RAMP.L));
       }
+    if (this.walls.length) g += this.wallHeight(x, z, rd);
     return g;
+  }
+
+  /** Height the demo wall adds over the natural ground (0 off it). Never touches the road itself. */
+  wallHeight(x: number, z: number, rd = this.layout.roadDist(x, z)) {
+    let h = 0;
+    for (const w of this.walls) {
+      const dx = x - w.x, dz = z - w.z, u = dx * w.tx + dz * w.tz, s = dx * w.nx + dz * w.nz;
+      if (u < 0 || u > w.len || s <= 0 || s > wallDepth()) continue;
+      const T = EV.wall.taper;
+      h = Math.max(h, wallProfile(s) * smooth(0, T, u) * smooth(w.len, w.len - T, u) * smooth(ROAD.shoulder, ROAD.shoulder + 2, rd));
+    }
+    return h;
   }
 
   get snowLine() {
