@@ -93,3 +93,9 @@ worker/
 ## Hosting
 
 One Cloudflare Worker (`wrangler.jsonc`): static build from the edge, `/api/*` to Worker code, one Durable Object (`Room`) per room code, one (`Leaderboard`, migration v2) per leaderboard board id (`/api/lb/top|ghost|submit`).
+
+## PWA, error reports and tests
+
+- **Installable + offline**: `public/manifest.webmanifest` + `public/icons/` (regenerate with `node scripts/make-icons.mjs`). `scripts/vite-pwa.ts` emits `/sw.js` from `scripts/sw.template.js` at build time with the bundle's file list as precache: `/assets/*` cache-first, pages network-first with the cached shell offline, `/api/*` never cached. `src/core/pwa.ts` registers it (production only), shows the "Update available" toast and keeps the install prompt. `src/ui/menuExtras.ts` adds the Install button, offline notes and the pause-menu bug button after each menu render (Menu.ts is untouched).
+- **Error reports**: `src/core/errorReport.ts` sends uncaught errors, unhandled rejections and WebGL context loss (with a restore/reload screen) to `POST /api/log` (`worker/log.ts`), de-duplicated and rate limited on both sides by `shared/logReport.ts`, which also strips query strings, origins and e-mails. Reports appear in Workers observability as `client-report` lines.
+- **Tests**: `npm test` (Vitest in Node, no WebGL) runs the `*.test.ts` files next to the code. CI runs typecheck, lint, tests and build.

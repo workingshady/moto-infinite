@@ -1,0 +1,30 @@
+/* PWA toasts, offline notes, bug report dialog, WebGL-lost screen (src/core/pwa.ts, src/core/errorReport.ts, src/ui/menuExtras.ts, src/ui/bugReport.ts) */
+.pwa-toast { position: fixed; left: 50%; bottom: max(16px, env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 90;
+  display: flex; align-items: center; gap: 10px; max-width: calc(100vw - 32px); box-sizing: border-box; padding: 10px 10px 10px 16px;
+  background: var(--panel-solid, rgba(12, 16, 28, 0.92)); backdrop-filter: blur(10px); border: 1px solid rgba(255, 210, 63, 0.35);
+  border-radius: 14px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4); font-size: 14px; animation: pwaIn 0.25s ease-out both; }
+.pwa-toast b { color: var(--accent, #ffd23f); margin-right: 6px; }
+.pwa-toast .btn { padding: 8px 14px; white-space: nowrap; }
+.pwa-toast .btn.ghost { padding: 8px 10px; }
+@keyframes pwaIn { from { opacity: 0; transform: translate(-50%, 12px); } }
+
+.pwa-offline { margin: 8px 0 12px; padding: 10px 14px; border-radius: 12px; background: rgba(255, 77, 94, 0.14); border: 1px solid rgba(255, 77, 94, 0.45); font-size: 14px; line-height: 1.45; }
+.pwa-offline.flash { animation: pwaFlash 0.6s ease-out; }
+@keyframes pwaFlash { 30% { background: rgba(255, 77, 94, 0.45); } }
+.btn.pwa-needs-net { opacity: 0.6; }
+.btn.pwa-needs-net::after { content: ' · offline'; font-weight: 600; font-size: 0.8em; color: var(--bad, #ff4d5e); }
+.pwa-ios-help { flex-basis: 100%; margin: 8px 0 0; }
+
+.bug-dialog { position: fixed; inset: 0; z-index: 95; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(4, 6, 14, 0.6); }
+.bug-card { width: min(520px, 100%); max-height: 100%; overflow-y: auto; box-sizing: border-box; padding: 22px 24px; border-radius: 20px;
+  background: var(--panel-solid, rgba(12, 16, 28, 0.95)); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5); }
+.bug-card h2 { margin: 0 0 10px; }
+.bug-card textarea { display: block; width: 100%; box-sizing: border-box; margin: 6px 0 10px; padding: 10px 12px; border-radius: 12px; resize: vertical;
+  border: 1px solid rgba(255, 255, 255, 0.18); background: rgba(255, 255, 255, 0.06); color: inherit; font: inherit; font-size: 14px; }
+.bug-card details { margin-bottom: 4px; }
+.bug-card summary { cursor: pointer; }
+.bug-card pre { max-height: 140px; overflow: auto; white-space: pre-wrap; word-break: break-word; font-size: 11px; padding: 8px; border-radius: 8px; background: rgba(0, 0, 0, 0.3); }
+
+.gl-lost { position: fixed; inset: 0; z-index: 99; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(8, 10, 20, 0.82); }
+.gl-lost-card { max-width: 440px; text-align: center; }
+.gl-lost-card p { color: var(--dim, rgba(255, 255, 255, 0.7)); line-height: 1.5; }
