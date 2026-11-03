@@ -73,7 +73,7 @@ export interface Bot extends DriveBody {
   /** Speed cap from following / yielding (m/s, Infinity = none). */
   cap: number;
   mistake: number; mistakeT: number; mistakeSide: number;
-  stuckT: number; recover: number; recT: number;
+  stuckT: number; recover: number; recT: number; recTotal: number;
   hp: number; wallCd: number; damage: number;
   started: boolean; finished: boolean; finishTime: number; mistakes: number; spins: number;
   /** Hard wall hits and car contacts that cost health (diagnostics, results). */
@@ -93,7 +93,7 @@ export function makeBot(id: string, def: VehicleDef, prof: BotProfile, vmax: Flo
     x, z, y: 0, lean: 0, lastSteerSign: 0, lastSteerT: 0, idx: 0, sIdx: 0, s: 0, lat: 0, vmax, top: topEstimate(def),
     thr: 0, brk: 0, integ: 0, noise: 0, paceLap: prof.pace, lapSeen: -99, adj: 0,
     tact: 0, tactCur: 0, tactT: 0, defended: false, defending: false, yieldT: 0, cap: Infinity, gapAhead: Infinity, gapBehind: Infinity, inZone: false,
-    mistake: 0, mistakeT: 0, mistakeSide: 0, stuckT: 0, recover: 0, recT: 0,
+    mistake: 0, mistakeT: 0, mistakeSide: 0, stuckT: 0, recover: 0, recT: 0, recTotal: 0,
     hp: AI.hp, wallCd: 0, damage: 0, started: false, finished: false, finishTime: 0, mistakes: 0, spins: 0, wallHits: 0, carHits: 0,
     f1: compound ? {
       compound, startCompound: compound, wear: 0, gripMul: tyreGrip(compound, 0), ers: 100, aeroOpen: false, slip: false, overtake: false,
@@ -220,9 +220,11 @@ export function stepBot(b: Bot, w: BotWorld, dt: number, t: number, started: boo
   b.thr = lerp(b.thr, gas, lag);
   b.brk = lerp(b.brk, brake, lag * 1.5);
   if (b.recover === 1) {
-    // reversing: swing the nose back toward the race direction (yaw sign follows the speed sign in the shared model)
+    // reversing: swing the nose toward a point on the racing line ahead, so the next forward run leaves the wall
+    // (yaw sign follows the speed sign in the shared model)
     b.thr = 0; b.brk = 1;
-    const hErr = wrapPi(Math.atan2(T.tx[b.idx], T.tz[b.idx]) - b.h), rate = (b.def.grip * env * clamp(Math.abs(b.v) / 6, 0, 1)) || 0.05;
+    const k = (b.idx + 10) % n, o = L.off[k], tx = T.px[k] + T.tz[k] * o, tz = T.pz[k] - T.tx[k] * o;
+    const hErr = wrapPi(Math.atan2(tx - b.x, tz - b.z) - b.h), rate = (b.def.grip * env * clamp(Math.abs(b.v) / 6, 0, 1)) || 0.05;
     want = clamp(((1.5 * hErr) / rate) * Math.sign(b.v || -1), -1, 1);
   }
   // ---- physics: the same model the player drives
@@ -322,7 +324,7 @@ function pitSpeed(b: Bot, w: BotWorld) {
     if (!inRange(b.idx, p.i0, p.i1)) cap = toEntry < 600 ? Math.sqrt(F1.pitLimit ** 2 + 2 * 20 * Math.max(0, toEntry - 30)) : Infinity;
     else cap = F1.pitLimit - 1;
   }
-  if (f1.pit === 1 && inRange(b.idx, p.i0, p.i1)) cap = Math.min(cap, Math.sqrt(2 * 7 * Math.max(0, fwd(b.idx, f1.box, n) * sp - 1)));
+  if (f1.pit === 1 && inRange(b.idx, p.i0, p.i1)) { const toBox = fwd(b.idx, f1.box, n); cap = Math.min(cap, toBox > n - 10 ? 0 : Math.sqrt(2 * 7 * Math.max(0, toBox * sp - 1))); } // overshot by a little: stop
   if (f1.pit === 2) cap = 0;
   return cap;
 }
@@ -398,14 +400,15 @@ function recovery(b: Bot, w: BotWorld, dt: number) {
   if (!b.recover) {
     const stuck = Math.abs(b.v) < 2 && b.thr > 0.4 && !(b.f1 && b.f1.pit === 2);
     b.stuckT = stuck || (dirErr > 1.9 && Math.abs(b.v) < 10) ? b.stuckT + dt : Math.max(0, b.stuckT - dt);
-    if (b.stuckT > R.stuckTime || (Math.abs(b.lat) > hw + R.offTrack && !(b.f1 && b.f1.pit))) { b.recover = 1; b.recT = 0; b.stuckT = 0; }
+    if (b.stuckT > R.stuckTime || (Math.abs(b.lat) > hw + R.offTrack && !(b.f1 && b.f1.pit))) { b.recover = 1; b.recT = 0; b.recTotal = 0; b.stuckT = 0; }
     return;
   }
   b.recT += dt;
+  b.recTotal += dt;
   if (b.recover === 1 && b.recT > R.reverseTime) b.recover = 2;
   if (b.recover === 2 && Math.abs(b.lat) < hw - 1 && dirErr < 0.5 && Math.abs(b.v) > 6) { b.recover = 0; b.recT = 0; b.tact = 0; }
   if (b.recover === 2 && Math.abs(b.v) < 1 && b.recT > R.reverseTime + 2.5) { b.recover = 1; b.recT = 0; } // try again
-  if (b.recT > R.resetTime) resetBot(b, w);
+  if (b.recTotal > R.resetTime) resetBot(b, w); // total time recovering (the reverse / rejoin phases restart recT)
 }
 
 /** Last resort: back onto the racing line a few metres back, pointing the right way, standing still. */
@@ -414,6 +417,6 @@ export function resetBot(b: Bot, w: BotWorld) {
   b.x = T.px[i] + T.tz[i] * o;
   b.z = T.pz[i] - T.tx[i] * o;
   b.h = b.moveH = Math.atan2(T.tx[i], T.tz[i]);
-  b.v = 0; b.yawV = 0; b.steer = 0; b.recover = 0; b.recT = 0; b.stuckT = 0; b.tact = b.tactCur = 0;
+  b.v = 0; b.yawV = 0; b.steer = 0; b.recover = 0; b.recT = 0; b.recTotal = 0; b.stuckT = 0; b.tact = b.tactCur = 0;
   trackIndex(b, w);
 }

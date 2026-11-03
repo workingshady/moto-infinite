@@ -57,8 +57,12 @@ export function tactics(b: Bot, me: Car, cars: Car[], w: BotWorld, dt: number) {
         if (!room(sideSign)) sideSign = -sideSign;
         if (room(sideSign)) { b.tact = clamp(ahead.lat + sideSign * R.passOffset, -limit, limit) - off; b.tactT = R.commit * (0.6 + b.prof.aggression); }
       }
-      // still lined up behind: keep the follow gap so we don't run into the gearbox
-      if (Math.abs(me.lat - ahead.lat) < R.clearance && aGap < follow) b.cap = Math.max(0, ahead.v - 1 + (aGap - follow * 0.6) * 0.8);
+    }
+    // still lined up behind (no room beside it yet): never closer than a car length + margin, and arrive at its speed with
+    // a braking distance the car can really make, so a queue into a hairpin doesn't turn into bumper cars
+    if (Math.abs(me.lat - ahead.lat) < R.clearance) {
+      const len = b.def.f1 ? 7 : b.isCar ? 6 : 3.5, dec = b.def.f1 ? 14 : 8;
+      b.cap = Math.max(0, ahead.v + Math.sqrt(2 * dec * Math.max(0, aGap - len - follow * 0.25)) - (aGap < len ? 2 : 0));
     }
   } else if (b.tactT <= 0 && !b.mistake) b.tact *= 0.9; // back onto the line
 

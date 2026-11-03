@@ -16,7 +16,7 @@ import { damage, makeBot, placeBot, stepBot, trackIndex, type Bot, type BotWorld
 import { makeField, type AiLevel } from '../ai/personality';
 import { halfWidthOf, lapEstimate, speedProfile, type HalfWidthFn } from '../ai/racingLine';
 import { tactics, trackGap, type Car } from '../ai/tactics';
-import { chooseCompound, shouldPit } from '../ai/strategy';
+import { chooseCompound, shouldPit, wearPerLap } from '../ai/strategy';
 import { botNames, buildLearned, disciplineOf, fetchLeaderGhost, playerRating, SkillTracker } from '../ai/racecraft';
 import type { Learned } from '../ai/learn';
 import { learnedProfile } from '../ai/learn';
@@ -45,6 +45,8 @@ export class AiRacers implements ContactOwner {
   private catchT = 0;
   private stratLap = new Map<string, number>();
   private justPitted = new Map<string, number>();
+  private wearLog = new Map<string, { s: number; wear: number; stops: number }>();
+  private wearScale = new Map<string, number>();
   private readonly hw: HalfWidthFn;
   private readonly L: number;
   private disposed = false;
@@ -175,7 +177,12 @@ export class AiRacers implements ContactOwner {
         this.yAt = b.y;
         stepBot(b, w, step, raceTime, started);
         this.pitStop(b, step);
-        if (!b.finished && b.s >= this.laps * this.L) { b.finished = true; b.finishTime = raceTime; }
+        if (!b.finished && b.s >= this.laps * this.L) {
+          b.finished = true;
+          // F1 rules at the flag, as for the player: a dry race of 3+ laps needs a tyre change, else +10 s
+          const noStop = !!b.f1 && this.laps >= 3 && b.f1.stops === 0 && this.world.wet < 0.5;
+          b.finishTime = raceTime + (noStop ? F1.mandatoryStopPenalty : 0);
+        }
       }
     }
     for (const b of this.list) this.render(b, dt);
@@ -254,15 +261,23 @@ export class AiRacers implements ContactOwner {
       const toEntry = (p.i0 - b.idx + n) % n, lap = Math.floor(b.s / this.L);
       if (toEntry * this.track.spacing > 900 || toEntry * this.track.spacing < 300 || this.stratLap.get(b.id) === lap) continue;
       this.stratLap.set(b.id, lap);
+      // measured wear: how fast this car really eats this compound here (sliding and braking add a lot), vs the estimate
+      const prev = this.wearLog.get(b.id);
+      if (prev && prev.stops === f.stops && b.s - prev.s > this.L * 0.5) {
+        const meas = ((f.wear - prev.wear) / ((b.s - prev.s) / this.L)) / wearPerLap(f.compound, this.L);
+        if (Number.isFinite(meas) && meas > 0) this.wearScale.set(b.id, clamp(meas, 0.5, 4));
+      }
+      this.wearLog.set(b.id, { s: b.s, wear: f.wear, stops: f.stops });
+      const wearScale = this.wearScale.get(b.id) ?? 1.3;
       const ahead = this.carAhead(b), behind = this.carBehind(b);
       const wet = w.wet > 0.5;
       const d = shouldPit({
         lap: lap + 1, laps: this.laps, lapLen: this.L, compound: f.compound, startCompound: f.startCompound, wear: f.wear, stops: f.stops, pitWear: f.pitWear,
-        gapAhead: b.gapAhead, gapBehind: b.gapBehind, aheadPitted: !!ahead?.f1 && ahead.f1.stops > f.stops, behindJustPitted: !!behind && (this.justPitted.get(behind.id) ?? -9) >= lap - 0, wet,
+        gapAhead: b.gapAhead, gapBehind: b.gapBehind, aheadPitted: !!ahead?.f1 && ahead.f1.stops > f.stops, behindJustPitted: !!behind && (this.justPitted.get(behind.id) ?? -9) >= lap - 0, wet, wearScale,
       });
       if (d.pit) {
         f.pit = 1;
-        f.next = chooseCompound({ lap: lap + 1, laps: this.laps, lapLen: this.L, startCompound: f.startCompound, compound: f.compound, wet });
+        f.next = chooseCompound({ lap: lap + 1, laps: this.laps, lapLen: this.L, startCompound: f.startCompound, compound: f.compound, wet, wearScale });
       }
     }
   }
@@ -275,7 +290,8 @@ export class AiRacers implements ContactOwner {
     if (!f || !p || !f.pit) return;
     if (f.pit === 1) {
       const toBox = (f.box - b.idx + n) % n;
-      if ((toBox <= 1 || toBox > n - 3) && Math.abs(b.v) < 1.5 && this.inPitRange(b.idx)) { f.pit = 2; f.pitT = F1.pitStop + Math.random() * 0.8; b.v = 0; }
+      // on the box (or just past it after braking late): stop there
+      if ((toBox <= 2 || toBox > n - 10) && Math.abs(b.v) < 3 && this.inPitRange(b.idx)) { f.pit = 2; f.pitT = F1.pitStop + Math.random() * 0.8; b.v = 0; }
       else if (!this.inPitRange(b.idx) && (b.idx - p.i1 + n) % n < n / 2 && (b.idx - p.i1 + n) % n > 5) f.pit = 0; // missed the entry: next lap
     } else if (f.pit === 2) {
       b.v = 0;

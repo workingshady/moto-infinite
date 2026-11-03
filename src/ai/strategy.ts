@@ -22,6 +22,8 @@ export interface StratInput {
   aheadPitted: boolean;
   behindJustPitted: boolean;
   wet: boolean;
+  /** Measured wear multiplier for this car and track (actual wear per lap / the estimate below); 1 = unknown. */
+  wearScale?: number;
 }
 
 /** Wear one lap adds on a compound (distance part only; sliding and braking add ~25 %). */
@@ -34,9 +36,9 @@ const lapsLeft = (s: StratInput) => Math.max(0, s.laps - s.lap);
  * Pick the next compound: the softest one that lasts the remaining distance below the wear limit; in the dry the
  * rules want two different compounds, so a car that has not yet run a second compound takes a different one.
  */
-export function chooseCompound(s: Pick<StratInput, 'lap' | 'laps' | 'lapLen' | 'startCompound' | 'compound' | 'wet'>): TyreCompound {
+export function chooseCompound(s: Pick<StratInput, 'lap' | 'laps' | 'lapLen' | 'startCompound' | 'compound' | 'wet' | 'wearScale'>): TyreCompound {
   const left = Math.max(0.5, s.laps - s.lap);
-  const fits = COMPOUNDS.filter((c) => wearPerLap(c, s.lapLen) * left <= AI.f1.lastWear);
+  const fits = COMPOUNDS.filter((c) => wearPerLap(c, s.lapLen) * (s.wearScale ?? 1) * left <= AI.f1.lastWear);
   let pick: TyreCompound = fits[0] ?? 'hard';
   if (!s.wet && pick === s.startCompound && s.compound === s.startCompound) pick = fits.find((c) => c !== s.startCompound) ?? COMPOUNDS.find((c) => c !== s.startCompound)!;
   return pick;
@@ -47,7 +49,7 @@ export function shouldPit(s: StratInput): { pit: boolean; why: string } {
   const left = lapsLeft(s);
   if (left <= 1) return { pit: false, why: 'last lap' }; // left counts the lap now running: never pit into the flag
   const mandatory = !s.wet && s.laps >= 3 && s.stops === 0;
-  const perLap = wearPerLap(s.compound, s.lapLen), wearAtFlag = s.wear + perLap * left;
+  const perLap = wearPerLap(s.compound, s.lapLen) * (s.wearScale ?? 1), wearAtFlag = s.wear + perLap * left;
   // the tyre can't make the flag: must stop before it's gone
   if (s.wear + perLap > AI.f1.lastWear) return { pit: true, why: 'worn out' };
   // mandatory stop not yet made and this is the last chance
