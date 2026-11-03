@@ -52,11 +52,11 @@ describe('rebinding', () => {
   });
   it('saves only the differences and loads them back', async () => {
     const first = await load();
-    first.bindKey('solo', 'camera', 0, 'KeyG');
+    first.bindKey('solo', 'camera', 0, 'KeyJ'); // a free key (G is the Roadster lift)
     const saved = JSON.parse(first.s.data.get('moto:settings')!);
-    expect(saved.keys.solo).toEqual({ camera: ['KeyG'] });
+    expect(saved.keys.solo).toEqual({ camera: ['KeyJ'] });
     const again = await load(first.s);
-    expect(again.BINDINGS.solo.camera).toEqual(['KeyG']);
+    expect(again.BINDINGS.solo.camera).toEqual(['KeyJ']);
   });
   it('corrupt overrides fall back to the defaults', async () => {
     const { BINDINGS, PAD } = await load(storage({ keys: { solo: { fire: 'KeyF', ride: [1, 2] } }, pad: { fire: 7, jump: ['a'] } }));

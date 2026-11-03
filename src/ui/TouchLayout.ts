@@ -88,8 +88,8 @@ export const TOUCH_BUTTONS: TouchButton[] = [
   // drift venues put a bike's FIRE one row up (DRIFT takes its slot), so GUN moves up one more
   { id: 'weapon', actions: ['weapon'], label: () => 'GUN', show: (c) => c.weapons, slot: (c) => (c.mode === 'drift' && !c.car ? R(2, 2) : R(2, 1)) },
   { id: 'ride', actions: ['ride'], label: (c) => (c.riding ? 'OFF' : 'RIDE'), show: (c) => c.canWalk, slot: (c) => (c.scheme === 'tilt' ? L(0, 1) : R(0, 2)) },
-  { id: 'hover', actions: ['hover'], label: () => 'LIFT', show: (c) => c.riding && c.thrusters, slot: () => R(3, 0), big: true },
-  { id: 'kickflip', actions: ['trick'], label: () => 'FLIP', show: (c) => c.riding && c.thrusters, slot: () => R(3, 1) },
+  { id: 'hover', actions: ['hover'], label: () => 'LIFT', show: (c) => c.riding && c.thrusters, slot: () => R(2, 2) }, // free slot above FIRE/GUN (col 3 hits ◀ ▶ on phones)
+  { id: 'kickflip', actions: ['trick'], label: () => 'FLIP', show: (c) => c.riding && c.thrusters, slot: () => R(1, 3) },
   { id: 'upgrade', actions: ['upgrade'], label: () => '⬆', show: (c) => c.cards, slot: (c) => (c.scheme === 'tilt' ? L(1, 0) : R(1, 2)) },
 ];
 

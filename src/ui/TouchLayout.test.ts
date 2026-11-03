@@ -10,11 +10,13 @@ function* contexts(): Generator<TouchCtx> {
       for (const kind of ['bike', 'car', 'f1'] as const)
         for (const riding of [true, false])
           for (const pvp of [false, true])
-            for (const cards of [false, true]) {
+            for (const cards of [false, true])
+            for (const thrusters of [false, true]) {
+              if (thrusters && kind !== 'car') continue; // only the Tesla Roadster has thrusters
               const f1 = kind === 'f1' && mode === 'f1';
               if (kind === 'f1' && mode !== 'f1') continue;
               if (!riding && mode !== 'open') continue; // only the open world lets you get off
-              yield { mode, scheme, f1, car: kind !== 'bike', riding, weapons: !f1 && (mode === 'open' || pvp), canWalk: mode === 'open', cards: cards && mode === 'open' };
+              yield { mode, scheme, f1, car: kind !== 'bike', riding, weapons: !f1 && (mode === 'open' || pvp), canWalk: mode === 'open', cards: cards && mode === 'open', thrusters };
             }
 }
 
