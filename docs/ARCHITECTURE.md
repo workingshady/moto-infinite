@@ -21,6 +21,10 @@ src/
     Events.ts            Typed event bus (challenge progress etc.)
     cameraViews.ts       Chase, far, hood, first person, cinematic, top-down
     prefs.ts             Saved player preferences (riding assist, nitro toggle, onboarding seen)
+    settings.ts          Extra saved settings (FOV, units, shake, HUD scale/opacity, colourblind, frame cap, pad feel) + helpers
+    bindings.ts          Key / gamepad rebinding (overrides written into Input's tables), key + button labels
+    gamepad.ts           Pad dead zone / curve / analog triggers, Xbox/PlayStation detection and glyphs, hot-plug
+    rumble.ts            Controller rumble + phone vibration, derived from player state each frame
   data/                  Pure data tables: weapons, upgrades, challenges, story, vehicles (garage stats)
   world/
     layout.ts            RoadLayout interface: GridRoads (open world) and Circuit (race loop)
@@ -61,6 +65,9 @@ src/
     Hud.ts               Per-player HUD (stats, minimap, reticle, story, race panel)
     Touch.ts             Phone/tablet buttons
     LeaderboardPanel.ts  Daily challenge card, leaderboard overlay (daily/weekly/all-time), run result card
+    SettingsPanel.ts     Tabbed Settings screen (Graphics, Audio, Controls, Gameplay, Accessibility) and rebinding UI
+    menuNav.ts           Keyboard / gamepad menu navigation (focus ring, arrows/D-pad, Enter/A, Esc/B)
+    toast.ts             Small notifications
     Gauges.ts            Canvas speedometer, tachometer, nitro ring
   styles/main.css
   utils/                 math helpers, seeded noise

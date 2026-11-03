@@ -29,6 +29,8 @@ import { GEN, LEVELING, NET, PHYS, QUALITY, TRACKS, WORLD, type QualityName } fr
 import { STORY } from '../data/story';
 import { createModes, type ModeFeature } from '../modes';
 import type { RaceVariant } from '../../shared/protocol';
+import { skipFrame } from './settings';
+import { feelUpdate, stopRumble } from './rumble';
 
 export interface LocalPlayerSpec { name: string; color: number; controller: Controller; vehicle: string }
 
@@ -203,6 +205,7 @@ export class Game {
 
   setMenuPaused(on: boolean) {
     this.input.enabled = !on && !this.opts.attract;
+    if (on) stopRumble();
     if (this.net) return; // online games keep running behind the menu
     this.paused = on;
   }
@@ -236,6 +239,7 @@ export class Game {
 
   private loop = (now: number) => {
     this.raf = requestAnimationFrame(this.loop);
+    if (skipFrame(now, this.last)) return; // frame-rate cap (Settings)
     const dt = Math.min(Math.max((now - this.last) / 1000, 0.001), PHYS.maxDt);
     this.last = now;
     this.frame++;
@@ -245,6 +249,7 @@ export class Game {
     }
     for (const p of this.players) p.tickCards(dt);
     if (!this.paused) this.update(dt * this.timeScale);
+    if (this.input.enabled && !this.paused) feelUpdate(this.players, dt); // controller rumble / phone vibration
     this.render(dt);
   };
 
@@ -321,6 +326,7 @@ export class Game {
 
   dispose() {
     cancelAnimationFrame(this.raf);
+    stopRumble();
     this.audio.music?.setIntensity(0); // back to calm menu music
     removeEventListener('resize', this.onResize);
     this.offs.forEach((off) => off());

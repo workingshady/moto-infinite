@@ -15,6 +15,9 @@ import { vehicleById } from './data/vehicles';
 import { driftSeed } from './ui/Preview';
 import { attachLeaderboards, configureLeaderboards, type LbStart } from './ui/LeaderboardPanel';
 import type { LbSession } from './systems/LbSession';
+import { applySettings } from './core/settings';
+import { watchPads } from './core/gamepad';
+import { initMenuNav } from './ui/menuNav';
 
 const store = {
   get<T>(k: string, fallback: T): T {
@@ -57,6 +60,9 @@ export class App {
     this.input.onMute = () => this.audio.toggleMute();
     this.input.onToggleHelp = () => document.body.classList.toggle('nohelp');
     configureLeaderboards({ play: (r) => this.startLocal(r.setup, r), again: () => this.raceAgain(), quit: () => this.quit(), profile: () => this.menu.profile });
+    applySettings(); // HUD scale/opacity, colourblind palette, reduced motion
+    watchPads(); // controller hot-plug toasts
+    initMenuNav(this.menu.root); // keyboard / gamepad menu navigation
     this.attract();
     const code = new URLSearchParams(location.search).get('room')?.toUpperCase();
     if (code && ROOM_CODE_RE.test(code)) this.menu.showJoin(code); // pick name/colour first
