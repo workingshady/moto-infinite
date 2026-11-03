@@ -10,11 +10,11 @@ export type GarageSort = 'default' | 'speed' | 'accel' | 'handling' | 'drift' | 
 const SORTS: [GarageSort, string][] = [['default', 'Class'], ['speed', 'Speed'], ['accel', 'Accel'], ['handling', 'Handling'], ['drift', 'Drift'], ['era', 'Era'], ['name', 'A-Z']];
 const ICON: Record<string, string> = { Drift: '🌀', Race: '🏁', Muscle: '💪', Rally: '🌲', Hypercar: '⚡', 'Off-road': '⛰', Classic: '🎩', 'Formula 1': '🏎' };
 
-/** Tab ids: 'bike', 'car' (all cars) or a car class name. */
-export function garageTabs() {
+/** Tab ids: 'bike', 'car' (all cars) or a car class name. Counts only owned vehicles when `ownedOnly` (Player 2). */
+export function garageTabs(ownedOnly = false) {
   const classes: string[] = [];
   for (const v of VEHICLES) if (v.kind === 'car' && !classes.includes(v.cls)) classes.push(v.cls);
-  const n = (f: (v: VehicleDef) => boolean) => VEHICLES.filter(f).length;
+  const n = (f: (v: VehicleDef) => boolean) => VEHICLES.filter((v) => f(v) && (!ownedOnly || isUnlocked(v.id))).length;
   return [
     { id: 'bike', label: `🏍 Bikes`, count: n((v) => v.kind === 'bike') },
     { id: 'car', label: '🚗 All cars', count: n((v) => v.kind === 'car') },
@@ -57,9 +57,9 @@ export function garagePicker(sel: string, tab: string, sort: GarageSort, ownedOn
   const list = sorted(VEHICLES.filter((v) => inTab(v, tab) && (!ownedOnly || isUnlocked(v.id))), sort);
   const topMax = list.some((v) => v.f1) && list.every((v) => v.f1) ? 95 : 48;
   return `
-    <div class="gp-tabs" role="tablist">${garageTabs().map((t) => `<button class="chip ${t.id === tab ? 'on' : ''}" data-gtab="${escapeHtml(t.id)}" role="tab">${t.label} <small>${t.count}</small></button>`).join('')}</div>
+    <div class="gp-tabs" role="tablist">${garageTabs(ownedOnly).map((t) => `<button class="chip ${t.id === tab ? 'on' : ''}" data-gtab="${escapeHtml(t.id)}" role="tab">${t.label} <small>${t.count}</small></button>`).join('')}</div>
     <div class="gp-sort"><span>Sort</span>${SORTS.map(([id, l]) => `<button class="chip ${id === sort ? 'on' : ''}" data-gsort="${id}">${l}</button>`).join('')}</div>
-    <div class="veh-grid">${list.map((v) => card(v, sel, tab, topMax)).join('')}</div>`;
+    <div class="veh-grid">${list.map((v) => card(v, sel, tab, topMax)).join('') || '<p class="dim">Nothing here yet: unlock vehicles of this class in the Player 1 garage.</p>'}</div>`;
 }
 
 export const isGarageSort = (s: string): s is GarageSort => SORTS.some(([id]) => id === s);

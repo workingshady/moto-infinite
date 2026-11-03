@@ -177,8 +177,8 @@ export class Traffic implements ModeFeature {
       if (riding && !B.air && c.along[i] > 0 && along <= 0 && side < T.nearMissSide && speed > T.nearMissMinSpeed && !c.hit[i]) this.nearMiss(p, c, side, ch);
       if (along <= 0) c.hit[i] = false;
       c.along[i] = along;
-      // slipstream: close behind a car going the same way
-      if (riding && along > 3 && along < T.draftDist && side < 1.8 && Math.cos(c.h - B.h) > 0.8 && speed > 12) drafting = true;
+      // slipstream: close behind a car going the same way (on the ground: no drafting from a thruster flight overhead)
+      if (riding && !B.air && along > 3 && along < T.draftDist && side < 1.8 && Math.cos(c.h - B.h) > 0.8 && speed > 12) drafting = true;
     }
     if (drafting) p.s.nitro = Math.min(p.stats.nitroMax, p.s.nitro + T.draftNitro * dt);
     if (drafting !== ch.drafting) { ch.drafting = drafting; ch.draft.classList.toggle('on', drafting); }

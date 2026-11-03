@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { Basic, M, canvasTex, mesh } from './assets';
 import { PI, TAU } from '../utils/math';
 import { teslaModel3, teslaRoadster } from './teslaModels';
-import type { CoreVehicleId, VehicleKind, VehicleModelId } from '../data/vehicles';
+import { vehicleById, type CoreVehicleId, type VehicleKind, type VehicleModelId } from '../data/vehicles';
 import { SPEC_BUILDERS } from './vehicleBuilders';
 
 export interface VehicleModel {
@@ -964,8 +964,10 @@ const BUILDERS: Record<CoreVehicleId, (color: number) => VehicleModel> = {
 
 export function buildVehicleModel(id: VehicleModelId, color: number): VehicleModel {
   const extra = SPEC_BUILDERS[id];
-  if (extra) return extra(color);
-  return (BUILDERS[id as keyof typeof BUILDERS] ?? BUILDERS.street)(color);
+  const m = extra ? extra(color) : (BUILDERS[id as keyof typeof BUILDERS] ?? BUILDERS.street)(color);
+  // electric drivetrains have no exhaust: the nitro flame stays hidden everywhere (player, AI, online, replay)
+  if (vehicleById(id).engine.type === 'electric') m.flame.visible = false;
+  return m;
 }
 
 // Builder kit shared with model files that live next to this one (e.g. teslaModels.ts).

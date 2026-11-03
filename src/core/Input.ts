@@ -86,6 +86,9 @@ export class Input {
   private mouseFire = false;
   private drag: number | null = null;
   private padStart = false;
+  /** Pad buttons still held from a menu when play resumed (B = back, A = confirm): ignored until released. */
+  private padMute = [new Set<number>(), new Set<number>()];
+  private wasEnabled = false;
 
   constructor() {
     addEventListener('keydown', (e) => {
@@ -157,7 +160,14 @@ export class Input {
       c.steerMag = c.throttle = c.brake = 1;
       const pad = pads[c.gamepad];
       if (pad && pad.connected) {
-        if (this.enabled) readPad(c, pad, PAD); // menus read the pad themselves while paused
+        if (this.enabled) {
+          // menus read the pad themselves while paused; a button that closed the menu must not also act in game
+          // (B "back" would lift the Roadster, A would throttle)
+          const mute = this.padMute[i];
+          if (!this.wasEnabled) { mute.clear(); pad.buttons.forEach((b, k) => { if (b.pressed && k !== 9) mute.add(k); }); }
+          for (const k of mute) if (!pad.buttons[k]?.pressed) mute.delete(k);
+          readPad(c, pad, mute.size ? withoutButtons(mute) : PAD);
+        }
         if (pad.buttons[9]?.pressed) start = true;
       }
       if (i === 0) {
@@ -175,6 +185,7 @@ export class Input {
     this.tapped.clear();
     if (start && !this.padStart) this.onPause?.();
     this.padStart = start;
+    this.wasEnabled = this.enabled;
   }
 
   reset() {
@@ -189,6 +200,13 @@ export class Input {
       c.lookDelta = 0;
     });
   }
+}
+
+/** PAD without the given buttons (only while some are muted). */
+function withoutButtons(mute: Set<number>) {
+  const out = {} as Record<Action, number[]>;
+  for (const a of Object.keys(PAD) as Action[]) out[a] = PAD[a].filter((b) => !mute.has(b));
+  return out;
 }
 
 const isTyping = (t: EventTarget | null) => t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || t instanceof HTMLSelectElement;
