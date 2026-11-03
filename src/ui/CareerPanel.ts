@@ -7,6 +7,7 @@ import { ACHIEVEMENTS, ACHIEVEMENT_CATS } from '../data/achievements';
 import { VEHICLES, vehicleById } from '../data/vehicles';
 import { escapeHtml } from '../utils/math';
 import { fmtSpeed } from '../core/settings';
+import { racecraftCareerHtml } from '../ai/ui';
 
 const n = (v: number) => Math.floor(v).toLocaleString();
 const cr = (v: number) => `${n(v)} cr`;
@@ -67,7 +68,7 @@ export function careerPanelHtml() {
       <p class="hint">${nextUnlock()} Earn credits and career XP from gems, distance, drifts, wheelies, drones, race podiums and achievements. In-run levels and upgrades still reset every ride.</p>
       ${sessionSummaryHtml('Last ride')}
       <div class="cr-cols">
-        <section><h3>📊 Lifetime stats</h3><div class="cr-stats">${stats}</div></section>
+        <div>${racecraftCareerHtml()}<section><h3>📊 Lifetime stats</h3><div class="cr-stats">${stats}</div></section></div>
         <section><h3>🎖 Achievements <span class="dim small">${got} / ${ACHIEVEMENTS.length}</span></h3><div class="cr-achs">${cats}</div></section>
       </div>
       <div class="row-buttons"><button class="btn ghost" data-go="home">← Back</button><button class="btn" data-go="garage">🏁 Garage</button></div>

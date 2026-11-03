@@ -15,6 +15,7 @@ import { F1_TRACKS } from '../world/F1Track';
 import { buyVehicle, isUnlocked } from '../core/career';
 import { careerHomeHtml, careerPanelHtml, garageLockBox, sessionSummaryHtml } from './CareerPanel';
 import { setModeOpt, trafficRow, variantRow } from '../modes/menu';
+import { aiLevelRow, botTag, isAiLevel, racecraftResultHtml } from '../ai/ui';
 
 import { prefs, savePrefs } from '../core/prefs';
 import { mountLeaderboardHosts } from './LeaderboardPanel';
@@ -309,7 +310,7 @@ export class Menu {
         <p class="hint">${f1InfoHtml(s.trackId)}</p>
         <div class="opt"><span>Session</span><div class="chips">${chips('session', ['race', 'quali'] as const, s.session, (x) => (x === 'race' ? '🏁 Grand Prix' : '⏱ Time trial'))}</div></div>
         <div class="opt"><span>Laps</span><div class="chips">${chips('laps', [1, 3, 5, 10], LAPS.includes(s.laps) ? s.laps : -1, (n) => `${n}`)}</div></div>
-        ${s.session === 'race' ? `<div class="opt"><span>AI grid</span><div class="chips">${chips('ai', [0, 3, 5, 9, 15], s.ai, (n) => (n ? `${n} rivals` : 'None'))}</div></div>` : ''}
+        ${s.session === 'race' ? `<div class="opt"><span>AI grid</span><div class="chips">${chips('ai', [0, 3, 5, 9, 15, 19], s.ai, (n) => (n ? `${n} rivals` : 'None'))}</div></div>${aiLevelRow(s, this.screen === 'lobby')}` : ''}
         <div class="opt"><span>Tyres</span><div class="chips">${chips('tyre', ['soft', 'medium', 'hard'] as const, s.tyre, (x) => ({ soft: '🔴 Soft (fast, short)', medium: '🟡 Medium', hard: '⚪ Hard (lasts long)' })[x])}</div></div>
         <div class="opt"><span>Car</span><div class="chips">${VEHICLES.filter((x) => x.f1).map((x) => x.id).map((id) => `<button class="chip ${(this.profile.f1car ?? 'f1_2026') === id ? 'on' : ''}" data-f1car="${id}" ${isUnlocked(id) ? '' : `disabled title="Unlock in the garage: career level ${vehicleById(id).unlock?.level}"`}>${isUnlocked(id) ? '' : '🔒 '}${vehicleById(id).name} · ${vehicleById(id).era}</button>`).join('')}</div></div>
         <p class="hint"><b>Keys:</b> C = DRS / straight mode in DRS zones · Space = ERS deploy (recharges under braking) · stop in the pit box for fresh tyres (80 km/h limiter). Five red lights, then lights out: moving early = +5 s.</p>` : ''}
@@ -332,6 +333,7 @@ export class Menu {
           <label class="custom ${customLaps ? 'on' : ''}">Custom <input type="number" min="1" max="50" value="${s.laps}" data-opt="lapsCustom" ${dis}></label></div></div>
         <div class="opt"><span>AI rivals</span><div class="chips">${chips('ai', [0, 3, 5, 7], s.ai, (n) => (n ? `${n}` : 'None'))}</div></div>
         ${variantRow(s, this.screen === 'lobby')}
+        ${aiLevelRow(s, this.screen === 'lobby')}
         ${s.trackId === 'random' ? `<details class="gen"><summary>🛠 Scenery generator</summary>${genRow('terrain', 'Terrain')}${genRow('water', 'Water')}${genRow('flora', 'Nature')}</details>` : ''}`}
         <div class="opt"><span>Time</span><div class="chips">${chips('time', TIMES, s.time, (t) => TIME_LABEL[t])}</div></div>
         <div class="opt"><span>Weather</span><div class="chips">${FIXED_WEATHERS.map((w) => `<button class="chip ${activeWeathers(s).includes(w) ? 'on' : ''}" data-opt="weather" data-val="${w}" title="${WEATHER_DEFS[w].blurb}">${WEATHER_DEFS[w].icon} ${WEATHER_DEFS[w].label}</button>`).join('')}<button class="chip ${s.weather === 'dynamic' ? 'on' : ''}" data-opt="weather" data-val="dynamic" title="Rolls through every weather, sometimes two at once">🎲 Changing</button></div></div>
@@ -616,7 +618,8 @@ export class Menu {
         const rows = data as Standing[];
         return `
         <h2>🏁 Race results</h2>
-        <table class="results">${rows.map((r, i) => `<tr><td>${['🥇', '🥈', '🥉'][i] ?? i + 1}</td><td><i style="background:${hex(r.color)}"></i>${escapeHtml(r.name)}</td><td>${r.note ? escapeHtml(r.note) : r.time !== null ? fmt(r.time) : 'racing…'}</td></tr>`).join('')}</table>
+        <table class="results">${rows.map((r, i) => `<tr><td>${['🥇', '🥈', '🥉'][i] ?? i + 1}</td><td><i style="background:${hex(r.color)}"></i>${escapeHtml(r.name)}${botTag(r)}</td><td>${r.note ? escapeHtml(r.note) : r.time !== null ? fmt(r.time) : 'racing…'}</td></tr>`).join('')}</table>
+        ${racecraftResultHtml()}
         ${sessionSummaryHtml()}
         <div id="lbResult"></div>
         <div class="row-buttons"><button class="btn ghost" data-go="quit">Menu</button>${resultsExtras()}<button class="btn" data-go="replay">🎬 Replay</button><button class="btn primary" data-go="again">Race again</button></div>`;
@@ -689,6 +692,7 @@ export class Menu {
       case 'maxPlayers': s.maxPlayers = +val; break;
       case 'drones': s.drones = +val; break;
       case 'ai': s.ai = +val; break;
+      case 'aiLevel': if (isAiLevel(String(val))) s.aiLevel = String(val) as Setup['aiLevel']; break;
       case 'session': s.session = val as 'race' | 'quali'; break;
       case 'tyre': s.tyre = val as 'soft' | 'medium' | 'hard'; break;
       case 'locked': s.locked = !!val; break;

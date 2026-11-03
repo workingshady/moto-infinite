@@ -10,9 +10,13 @@ import { RACE, WEATHER_DEFS } from '../config';
 import { activeWeathers } from '../../shared/protocol';
 import { lerp, lerpAngle } from '../utils/math';
 
-export interface Standing { id: string; name: string; color: number; local: boolean; prog: number; time: number | null; lap: number; note?: string }
+export interface Standing {
+  id: string; name: string; color: number; local: boolean; prog: number; time: number | null; lap: number; note?: string;
+  /** Computer racers: personality icon + name, difficulty level, F1 tyre compound, in the pit lane, pit stops made. */
+  icon?: string; persona?: string; level?: string; tyre?: string; pit?: boolean; stops?: number;
+}
 
-interface GhostData { time: number; s: number[] } // samples: x,y,z,h,pitch per tick
+interface GhostData { time: number; s: number[]; v?: string } // samples: x,y,z,h,pitch per tick; v = vehicle id (newer saves)
 
 export class Race {
   readonly cps: number[] = [];
@@ -189,7 +193,7 @@ export class Race {
       id: String(p.index), name: p.name, color: p.color, local: true, prog: p.race.prog, lap: p.race.lap,
       time: p.race.finished ? p.race.finishTime : null,
     }));
-    for (const a of g.ai?.list ?? []) rows.push({ id: a.id, name: a.name, color: a.color, local: false, prog: g.ai!.progress(a), lap: Math.max(0, Math.floor(a.s / this.track.length) + 1), time: a.finished ? a.finishTime : null });
+    for (const a of g.ai?.list ?? []) rows.push({ id: a.id, name: a.name, color: a.color, local: false, prog: g.ai!.progress(a), lap: Math.max(0, Math.floor(a.s / this.track.length) + 1), time: a.finished ? a.finishTime : null, ...g.ai!.badge(a) });
     g.remotes?.forEach((r) => rows.push({ id: r.id, name: r.name, color: r.color, local: false, prog: r.state?.prog ?? -1, lap: r.state?.lap ?? 0, time: this.remoteFinish.get(r.id) ?? null }));
     return rows.sort((a, b) => (a.time !== null || b.time !== null ? (a.time ?? 1e9) - (b.time ?? 1e9) : b.prog - a.prog));
   }
@@ -206,7 +210,7 @@ export class Race {
     if (!this.ghost || this.trackId === 'random') return;
     this.game.hooks.onLap?.(time, this.rec);
     if (!this.ghostData || time < this.ghostData.time) {
-      this.ghostData = { time, s: this.rec.slice() };
+      this.ghostData = { time, s: this.rec.slice(), v: this.game.players[0]?.def.id };
       save(this.trackId, this.ghostData);
     }
   }
@@ -232,6 +236,10 @@ export const fmt = (t: number) => {
   return `${m}:${s < 10 ? '0' : ''}${s.toFixed(2)}`;
 };
 
+/** The saved best-lap ghost of a track (also read by the AI to learn racing lines). */
+export function loadGhost(id: string): GhostData | null {
+  return load(id);
+}
 function load(id: string): GhostData | null {
   try {
     const raw = localStorage.getItem('moto:ghost:' + id);
@@ -243,7 +251,7 @@ function load(id: string): GhostData | null {
 }
 function save(id: string, d: GhostData) {
   try {
-    localStorage.setItem('moto:ghost:' + id, JSON.stringify({ time: d.time, s: d.s.map((v) => Math.round(v * 100) / 100) }));
+    localStorage.setItem('moto:ghost:' + id, JSON.stringify({ time: d.time, s: d.s.map((v) => Math.round(v * 100) / 100), v: d.v }));
   } catch {
     /* storage full or blocked: ghost just isn't kept */
   }

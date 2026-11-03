@@ -250,7 +250,7 @@ function takeOwnership(user: PublicUser): boolean {
     const mine = get<{ save: unknown; base: CareerData | null }>(K.stash(user.uid));
     const restored = mine ? sanitizeSave(mine.save) : null;
     const blank = collectLocal();
-    blank.career = { v: 1, level: 1, xp: 0, credits: 0, earned: 0, stats: {}, unlocked: [], achievements: {} };
+    blank.career = { v: 1, level: 1, xp: 0, credits: 0, earned: 0, stats: {}, unlocked: [], achievements: {}, racecraft: {} };
     blank.ta = {};
     for (const s of Object.values(blank.sections)) s.at = 0; // the account's own settings (cloud) win
     applyLocal(restored ?? blank, true);

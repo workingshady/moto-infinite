@@ -468,7 +468,7 @@ export class F1Track implements RoadLayout {
    * for both and never on a racing surface. null = no room for a wall (a crossover or touching sections).
    */
   private fitBarrier(i: number, side: number, runoff: number, min: number) {
-    const hw = this.halfWidthAt(i); // per-sample width: walls follow street-circuit narrowings
+    const hw = this.hw[i]; // per-point width: the wall follows the track edge where it narrows / widens
     for (const f of F1_BARRIERS.shrink) {
       const ro = Math.max(min, runoff * f), [x, z] = this.at(i, side * (hw + ro));
       if (this.free(x, z, i, Math.max(0.4, ro - 1.5))) return hw + ro;
@@ -490,7 +490,7 @@ export class F1Track implements RoadLayout {
     const g = this.gravel[r.i];
     if (!g) return 1;
     const lat = ((x - this.px[r.i]) * this.tz[r.i] - (z - this.pz[r.i]) * this.tx[r.i]) * g;
-    const hw = this.halfWidthAt(r.i);
+    const hw = this.hw[r.i];
     return lat > hw + F1_BARRIERS.gravel[0] && lat < hw + F1_BARRIERS.gravel[1] ? 2 : 1;
   }
   private solidL(ax: number, az: number, h: number, u: number, v: number, r: number, top: number) {
@@ -519,8 +519,8 @@ export class F1Track implements RoadLayout {
   private dressCommon() {
     const n = this.n, mon = !!this.cfg.street, ps = this.pit.side, B = F1_BARRIERS, HW = (i: number) => this.halfWidthAt(i);
     const inPit = (i: number) => this.inRange(i, (this.pit.i0 - 10 + n) % n, (this.pit.i1 + 10) % n);
-    this.gravel = new Int8Array(n);
     const ahead = Math.round(8 / this.spacing);
+    this.gravel = new Int8Array(n);
     const armco = (x: number, z: number, h: number, len: number) => this.put('box', x, z, 0.6, h, 0.15, 0.7, len, 0xc9ced4);
     const fence = (x: number, z: number, h: number, len: number) => this.put('fence', x, z, 3, h, 0.05, 4, len, WHITE);
     // kerbs (inside through the apex, outside on the exit), gravel + tyre walls on the outside, armco + catch fence beyond

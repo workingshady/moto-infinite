@@ -13,6 +13,8 @@ import { Circuit, GridRoads, type Pose, type RoadLayout } from '../world/layout'
 import { DriftTrack, type DriftTrackId } from '../world/DriftTrack';
 import { F1Track, F1_TRACKS, type F1TrackId } from '../world/F1Track';
 import { AiRacers } from '../systems/AiRacers';
+import type { AiLevel } from '../ai/personality';
+import { recordRace } from '../ai/racecraft';
 import { Terrain } from '../world/Terrain';
 import { ChunkManager } from '../world/Chunks';
 import { buildThrusterWall } from '../world/Landmarks';
@@ -54,6 +56,8 @@ export interface SessionOptions {
   drones: number;
   /** Computer opponents in races (local only). */
   ai?: number;
+  /** Computer racer difficulty (src/ai/personality.ts); default adaptive. */
+  aiLevel?: AiLevel;
   /** F1 session and starting tyre. */
   session?: 'race' | 'quali';
   tyre?: TyreCompound;
@@ -178,6 +182,16 @@ export class Game {
       if (this.net) this.wireNet(this.net);
       if (opts.tutorial) this.tutorial = new Tutorial(this);
       this.career = progressPaused() ? null : new CareerTracker(this); // admin Full Power: career paused
+      if (this.ai && this.race) {
+        // Racecraft rating (src/ai): rated once from the final table; installed before the modes so their reordering
+        // (Elimination) wraps around it and it sees the rows the player sees
+        const show = this.hooks.onRaceResults.bind(this.hooks), ai = this.ai;
+        let rated = false;
+        this.hooks.onRaceResults = (rows) => {
+          if (!rated) { rated = true; recordRace(this, rows, ai.field); }
+          show(rows);
+        };
+      }
       this.modes = createModes(this);
       this.replay = new Replay(this);
     }

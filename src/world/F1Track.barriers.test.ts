@@ -44,13 +44,13 @@ function grid(solids: Obstacle[]) {
 
 describe.each(F1_TRACKS.map((t) => t.id))('F1 barriers: %s', (id) => {
   const t = new F1Track(new Noise(1), id) as unknown as Inside;
-  const hit = grid(t.solids), hwAt = (i: number) => t.halfWidthAt(i), street = !!t.cfg.street; // per-sample width (street circuits narrow)
+  const hit = grid(t.solids), HW = (i: number) => t.halfWidthAt(i); // per-point width (f1-tracks): every check is against that point's own edge
   const at = (i: number, off: number): [number, number] => [t.px[i] + t.tz[i] * off, t.pz[i] - t.tx[i] * off];
   const inPit = (i: number) => (t.pit.i0 <= t.pit.i1 ? i >= t.pit.i0 && i <= t.pit.i1 : i >= t.pit.i0 || i <= t.pit.i1);
 
   /** Walk sideways from `from` until a wall stops a car-sized body (ok), another part of the course is reached (ok), or 40 m pass (gap). */
   const escapes = (i: number, side: number, from: number) => {
-    for (let off = from; off < hwAt(i) + 40; off += 0.5) {
+    for (let off = from; off < HW(i) + 40; off += 0.5) {
       const [x, z] = at(i, side * off);
       if (hit(x, z, CAR)) return false;
       if (t.edgeAt(x, z, i) < 0 || (t.roadDist(x, z) < 7.5 && !t.isPit(x, z) && t.nearest(x, z).i !== i && Math.abs(t.nearest(x, z).i - i) > 30)) return false;
@@ -61,7 +61,7 @@ describe.each(F1_TRACKS.map((t) => t.id))('F1 barriers: %s', (id) => {
   it('no wall or tyre stack on the racing surface', () => {
     const touch: number[] = [];
     for (let i = 0; i < t.n; i++) for (const s of [-1, 1]) {
-      const [x, z] = at(i, s * (hwAt(i) - 1.2)); // a car's width inside the white line
+      const [x, z] = at(i, s * (HW(i) - 1.2)); // a car's width inside the white line
       if (hit(x, z, 0.05)) touch.push(i);
     }
     expect(touch.length, `samples ${touch.slice(0, 10).join(',')}`).toBe(0);
@@ -74,7 +74,7 @@ describe.each(F1_TRACKS.map((t) => t.id))('F1 barriers: %s', (id) => {
       for (const s of [-1, 1]) {
         rays++;
         // along the pits, check the pit lane's outer wall from inside the lane
-        const from = s === t.pit.side && inPit(i) ? hwAt(i) + 3 : hwAt(i) + 0.5;
+        const from = s === t.pit.side && inPit(i) ? HW(i) + 3 : HW(i) + 0.5;
         if (escapes(i, s, from)) { gaps++; if (where.length < 12) where.push(`${i}${s > 0 ? 'R' : 'L'}`); }
       }
     // a handful of rays may slip through at bridges/crossovers and the ends of the pit lane
@@ -83,11 +83,11 @@ describe.each(F1_TRACKS.map((t) => t.id))('F1 barriers: %s', (id) => {
 
   it('the walls leave run-off beyond the white line (street circuits: half a metre, others: metres)', () => {
     let tight = 0;
-    const probe = street ? 0.3 : 1.5;
+    const street = !!t.cfg.street, probe = street ? 0.3 : 1.5;
     for (let i = 0; i < t.n; i += 2)
       for (const s of [-1, 1]) {
-        if (s === t.pit.side && inPit(i)) continue; // the pit wall sits right at the white line, as in real F1
-        const [x, z] = at(i, s * (hwAt(i) + probe / 2));
+        if (s === t.pit.side && inPit(i)) continue; // the pit wall sits right at the edge along the pits (by design)
+        const [x, z] = at(i, s * (HW(i) + probe / 2));
         if (hit(x, z, probe / 2)) tight++;
       }
     expect(tight / t.n).toBeLessThan(0.05);

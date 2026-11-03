@@ -40,12 +40,17 @@ src/
   world/
     layout.ts            RoadLayout interface: GridRoads (open world) and Circuit (race loop)
     Terrain.ts           Height/colour of the ground, world themes, ramps and pads
+<<<<<<< HEAD
     Chunks.ts            Streams 64 m chunks: terrain, instanced scenery, road markings, features; obstacle queries (solidAt, sweep, contact)
     collide.ts           Pure collision math: circle/capsule obstacles, swept probe, segment-segment, vehicle capsule contact + impulse
+    F1Track.ts           Real F1 circuits (Monza, Silverstone, Spa, Monaco, Suzuka, Bahrain) from bacinger/f1-circuits (MIT), DRS zones, pit lane, start lights, venue dressing
+=======
+    Chunks.ts            Streams 64 m chunks: terrain, instanced scenery, road markings, features
     F1Track.ts           F1 circuit layout for a session: kerbs (inside apex, outside exit), pit lane, start lights, grid, venue dressing
     f1Circuits.ts        F1 catalogue (19 real circuits + the fictional Rookie Ring; difficulty, length, turns, flag) and pure geometry:
                          lon/lat -> metres (WGS84), Catmull-Rom, min-radius relax, scale to the official length, widths, elevation, DRS, pit (unit tested)
     f1Data.ts            Raw circuit traces from bacinger/f1-circuits (MIT), compact lon/lat offsets
+>>>>>>> f1-tracks
     DriftTrack.ts        Drift venues (docks, touge, skidpad, gymkhana, random): layout, zones, dressing
     Landmarks.ts         Villages, gas stations, windmills, stunt zones, drone outposts; race grandstands + tyre walls; thruster demo wall near the open-world spawn
     Environment.ts       Sky, day/night, weather (rain/snow/fog/storm), water, clouds, stars
@@ -67,10 +72,20 @@ src/
     LbSession.ts         Posts solo laps (+ghost) and timed drift runs to the leaderboards; challenge runs + ranks feed the career
     CareerTracker.ts     Feeds a session into the career (stats, credits, XP, achievement toasts); modes/replay/online call feat()
     Replay.ts            60 s ring buffer (typed arrays) of every vehicle (riders, AI, online, traffic) + key moments; poses puppet copies for playback
-    AiRacers.ts          Computer opponents: curvature/grip speed profile with braking pass, racing line, overtakes, brake-don't-ram
+    AiRacers.ts          Computer opponents (src/ai) on the real vehicle physics: world adapter (swept walls, run-off), fixed step + LOD, Contacts owner, F1 pit calls
     Contacts.ts          Vehicle-vs-vehicle contact every physics step (riders, split screen, AI, traffic, online players)
     Particles.ts         GPU particle pools
     Effects.ts           Shockwave rings, debris, beams, skid marks (pooled/instanced)
+  ai/                    Computer racers (pure logic, unit-tested; AiRacers.ts wires them into a Game)
+    driver.ts            One bot: pure-pursuit steering, predictive PI throttle/brake on the speed profile, mistakes, recovery, pit lane; drives entities/vehiclePhysics.ts
+    racingLine.ts        Minimum-curvature line inside the per-point width (biharmonic smoothing, coarse to fine) + physics speed profile and lap estimate
+    learn.ts             Learns lines / braking points from ghost laps (local best + leaderboard #1), rejects flight/cut laps, localStorage cache
+    tactics.ts           Racecraft ~10 Hz: follow gap, committed overtakes, one defensive move, blue flags, DRS detection
+    strategy.ts          F1: pit window, undercut/overcut, compound choice, DRS and ERS rules
+    personality.ts       Difficulty levels + named personalities (pace, consistency, aggression, defending, mistakes, reaction, wet skill)
+    rating.ts            Racecraft rating (Elo-like, bounded K, per discipline)
+    racecraft.ts         Game glue: names, learned-line cache, lazy leaderboard ghost, skill tracker, rating after the race
+    ui.ts                AI level chips, results tags, Racecraft lines (results + Career)
   modes/                 Extra formats layered on a session (Game.modes: update/dispose/results hook), local games only
     TimeAttack.ts        Circuit medal runs (bronze/silver/gold/ace lap times from pace.ts), live split, PB per track x vehicle
     Elimination.ts       Knockout race: last place out every N s (N from the track's pace), last one standing wins
@@ -137,7 +152,7 @@ worker/
 - **Leaderboards**: every local single-player circuit format (plain, Time Attack, Elimination) posts its best flying lap to the track board: a lap is a lap. Split screen, online, training never post.
 - **Tesla Roadster thrusters**: a lap that used lift-off, a hop or a kickflip (EvDrive.lifts changed, `race.lifted`) can cut the infield, so it sets no best lap, ghost, Time Attack medal or leaderboard post; ground laps count normally. Powered flight credits `bestFlight`, not airtime (no BIG AIR, no 'air' challenge progress), and no slipstream nitro while airborne. Gamepad B is both menu "back" and lift: a button still held when a menu opens or closes is ignored until released (menuNav / Input.padMute).
 - **Vehicles**: 65 in data/vehicles.ts (+ vehiclesExtra.ts). Electric engines hide the exhaust flame in buildVehicleModel. Daily/weekly challenge pools (shared/leaderboard.ts) add a curated set of expansion vehicles for periods starting on/after `POOL_V2_FROM`, so a running challenge never changes vehicle.
-- **Saved data** (localStorage, all `moto:` prefixed): career, settings, prefs, touch, profile, quality, muted, ghost:<track>, ta:<track>:<vehicle>, lbid/lbbest/lbqueue; cloud save bookkeeping: auth:user, sync:owner|base|rev|pending|dirty|at, acct:<uid> (parked copy of another account), admin:fp:<uid>. Loaders merge onto defaults and drop wrong-typed values (utils/store.ts).
+- **Saved data** (localStorage, all `moto:` prefixed): career (incl. `racecraft` ratings), settings, prefs, touch, profile, quality, muted, ghost:<track> (+ vehicle id), ailine:<track>:<class> + ailine:idx (learned AI lines, newest 10 tracks), aighost:<board> (+ :t fetch time), ta:<track>:<vehicle>, lbid/lbbest/lbqueue; cloud save bookkeeping: auth:user, sync:owner|base|rev|pending|dirty|at, acct:<uid> (parked copy of another account), admin:fp:<uid>. Loaders merge onto defaults and drop wrong-typed values (utils/store.ts).
 - **Cloud save**: every save function (career, settings, prefs, touch, profile, Time Attack) calls `syncBus.markChanged`; when signed in that schedules an upload (see below). Signed out nothing changes and no account request is made.
 
 ## Rules that keep it easy to change
@@ -155,6 +170,7 @@ worker/
 - **Open world** roads form an endless wavy grid. Each seed rotates the grid and gives every road line its own curves; crossroads may host landmarks. Chunks build around each local player (one per frame) and unload behind.
 - **Terrain** = domain-warped continents + rolling hills + ridged mountains, optional river bands, a temperature-varied snow line. The world generator options (terrain, water, nature, roads, landmarks) scale these.
 - **Handling**: every vehicle drives the same physics with its own numbers (data/vehicles.ts). The travel direction chases the heading at the vehicle's traction rate; the handbrake (X) and power oversteer lower it, counter-steering raises it, sliding scrubs speed. Drift points = angle x speed x zone multiplier, chained into a growing multiplier and banked after 0.7 s of grip. Bikes wheelie on C (pivot on the rear axle).
+- **Computer racers** (src/ai, `AI` block in config.ts): bots drive the player's own physics (`entities/vehiclePhysics.ts`, extracted verbatim from Player; `vehiclePhysics.test.ts` pins it to the original formulas) through the same swept wall test, run-off and `Contacts` pass. Each bot follows a minimum-curvature racing line blended with good ghost laps (thruster/flight laps are never saved or posted, and any lap leaving the track is rejected) with a speed profile from its car's real limits × its pace. AI level (setup): Rookie / Amateur / Pro / Legend / Adaptive (default); Adaptive sets the field's pace from the player's Racecraft rating. Catch-up (Rookie, Amateur, Adaptive only) changes pace by at most ±3 %, never above the car's limit, never moves a car. Racecraft rating per discipline (race / F1 / Elimination) is updated once per finished local race (`Game` wraps `onRaceResults` before the modes), saved in the career and cloud-synced (`sanitizeRacecraft`, merge: more rated races wins). F1 bots: tyre wear like the player's, measured wear drives the pit call (undercut/overcut, mandatory stop or +10 s), pit lane + limiter + box stop, DRS only in a zone within 1 s at detection, ERS deploy on straights / harvest under braking, blue flags; no wet tyres exist, so rain costs pace by wet skill.
 - **Formula 1**: downforce raises the cornering limit with v² (yaw capped at aLat/v), ~5 g braking, ERS charges under braking, straight-mode wing / DRS only in DRS zones, slipstream behind cars, tyre compounds wear with distance/sliding/braking, pit lane limiter and pit stops, five-light starts with jump-start penalty.
 - **Collisions**: obstacles are circles or capsules (`world/collide.ts`); barrier lines (F1 armco/tyre walls/pit walls, race tyre walls, drift k-rails, guard rails, quay walls) are chains of capsules post to post, so walls are continuous and smooth. F1 barrier offsets come from `F1_BARRIERS` relative to the circuit's half width and pull in where sections run close (`F1Track.fitBarrier`); `F1Track.barriers.test.ts` checks every circuit for gaps. The player's move is swept in sub-steps of half the probe radius (no tunnelling at 90 m/s); cars probe nose, centre and tail (`WALL.radius/nose`). Wall response: into-wall speed removed (rebound capped at `WALL.maxRebound`), Coulomb scrape along the wall, damage above `WALL.damageMin`, F1 nose hits break the front wing (less downforce until a pit stop). F1 run-off: gravel traps (`F1Track.runoff`) and grass slow by `RUNOFF`. Vehicle contact (`systems/Contacts.ts`): capsules with spec masses, separation + impulse + friction + yaw kick; owners apply it (AiRacers: speed + decaying sideways shove; Traffic: shove/stun; online players are never moved locally); local riders get sparks/sound/shake/damage with a cooldown, bikes crash above `CONTACT.bikeCrash`; a `bump` event tells modes (traffic chains).
 - **Riding assist** (Settings) follows the road and guards the edge only when you are not steering, lets the bike glance off obstacles, and limits crest launches.
