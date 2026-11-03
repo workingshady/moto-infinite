@@ -5,7 +5,7 @@ import type { Player } from '../entities/Player';
 import type { ChallengeId } from '../data/challenges';
 import type { AchievementDef } from '../data/achievements';
 import { CAREER } from '../config';
-import { addUnique, beginSession, career, checkAchievements, earn, saveCareer } from '../core/career';
+import { addUnique, beginSession, career, checkAchievements, earn, recordFeat, saveCareer, type Feat } from '../core/career';
 
 interface Seen { score: number; wheelie: number; finished: boolean }
 
@@ -108,10 +108,21 @@ export class CareerTracker {
     }
   }
 
+  /** Mode / leaderboard / replay / online feats (see recordFeat). Nothing counts while a replay or photo mode is open,
+   *  except opening them; online spectating never reaches here (only local players' own results do). */
+  feat(f: Feat, v = 1, key = '') {
+    if (this.game.view && f !== 'replay' && f !== 'photo') return;
+    if (recordFeat(f, v, key)) this.flush();
+  }
+
   private raceFinished(place: number) {
     const o = this.game.opts, st = career.stats;
     if (this.rivals <= 0 || o.session === 'quali' || (o.mode !== 'race' && o.mode !== 'f1')) return;
     const i = place - 1;
+    if (this.game.net) {
+      st.onlineRaces++;
+      if (i === 0) st.onlineWins++;
+    }
     if (i < 0 || i > 2) return;
     st.podiums++;
     if (i === 0) {

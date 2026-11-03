@@ -10,6 +10,9 @@ import { BINDINGS, PAD } from '../core/Input';
 import { anyPadConnected, buttonName, currentPadType, padFamily } from '../core/gamepad';
 import { testRumble } from '../core/rumble';
 import { escapeHtml } from '../utils/math';
+import { isTouchDevice } from '../core/device';
+import { TOUCH, saveTouchSettings, touchSettings, type TouchScheme } from './TouchLayout';
+import { touchSettingsChanged } from './Touch';
 import '../styles/settings.css';
 
 type Tab = 'graphics' | 'audio' | 'controls' | 'gameplay' | 'access';
@@ -97,6 +100,7 @@ export class SettingsPanel {
     }).join('');
     const pt = currentPadType();
     return `
+    ${isTouchDevice() ? this.touch() : ''}
     <div class="chips set-sub">${lays.map(([k, t]) => `<button class="chip ${k === l ? 'on' : ''}" data-blay="${k}">${t}</button>`).join('')}</div>
     <p class="hint">${listening ? (pad ? `Press a gamepad button for <b>${actionLabel(listening.a)}</b> · ${K('Esc')} cancel · ${K('Del')} clear` : `Press a key for <b>${actionLabel(listening.a)}</b> · ${K('Esc')} cancel · ${K('Del')} clear`)
       : `Click a key to change it. A key already in use is swapped onto the other action. ${pad ? `Start (${buttonName(9, pt)}) always pauses; the right stick ↑ cycles the camera.` : `${K('Esc')} pause, ${K('M')} mute and ${K('H')} help are reserved.`}`}</p>
@@ -121,6 +125,24 @@ export class SettingsPanel {
     <div class="opt"><span>Test</span><div class="chips"><button class="chip ${c.keyTest ? 'on' : ''}" data-go="keytest">⌨ Test keys</button></div></div>
     ${c.keyTest ? `<div class="keytest" data-keytest></div>
     <p class="hint">Hold the keys you play with: each one lights up while the browser receives it. If ${K('←')} goes dark when you also hold ${K('Space')} + ${K('↑')}, your keyboard is <b>ghosting</b> (a hardware limit, many keyboards drop ↑ ← Space together but not ↑ → Space). Fixes: nitro drives by itself so let go of ${K('↑')}; use ${K('W')}${K('A')}${K('S')}${K('D')}; use ${K('N')} or ${K('B')} for nitro; or pick <b>Nitro: Tap to toggle</b> above. Tip: tapping Shift 5× may open Windows Sticky Keys, so prefer ${K('N')}/${K('B')} for tapping.</p>` : ''}`;
+  }
+
+  /** Phone / tablet: the same touch settings as the in-game ⚙ sheet (saved per device in moto:touch). */
+  private touch() {
+    const S = touchSettings, chip = (on: boolean, attr: string, l: string) => `<button class="chip ${on ? 'on' : ''}" ${attr}>${l}</button>`;
+    const slider = (k: 'size' | 'opacity' | 'tiltRange', label: string, min: number, max: number, step: number, fmt: (v: number) => string) =>
+      `<div class="opt"><span>${label}</span><div class="srange"><input type="range" data-trange="${k}" min="${min}" max="${max}" step="${step}" value="${S[k]}" aria-label="${label}"><output>${fmt(S[k])}</output></div></div>`;
+    const pct = (v: number) => `${Math.round(v * 100)}%`;
+    return `
+    <h3 class="set-h">📱 Touch controls</h3>
+    <div class="opt"><span>Steering</span><div class="chips">${(([['buttons', '◀ ▶ Buttons'], ['stick', '🕹 Joystick'], ['tilt', '📱 Tilt']]) as [TouchScheme, string][]).map(([v, l]) => chip(S.scheme === v, `data-tscheme="${v}"`, l)).join('')}</div></div>
+    ${slider('size', 'Button size', TOUCH.sizes[0], TOUCH.sizes[1], 0.05, pct)}
+    ${slider('opacity', 'Button opacity', 0.2, 1, 0.05, pct)}
+    ${S.scheme === 'tilt' ? slider('tiltRange', 'Tilt for full lock', 10, 40, 1, (v) => `${v}°`) : ''}
+    <div class="opt"><span>Hands</span><div class="chips">${chip(!S.leftHanded, 'data-tflag="leftHanded" data-val="false"', 'Right-handed')}${chip(S.leftHanded, 'data-tflag="leftHanded" data-val="true"', 'Left-handed')}</div></div>
+    ${S.scheme === 'tilt' ? `<div class="opt"><span>Tilt</span><div class="chips">${chip(!S.tiltInvert, 'data-tflag="tiltInvert" data-val="false"', 'Normal')}${chip(S.tiltInvert, 'data-tflag="tiltInvert" data-val="true"', 'Inverted')}</div></div>` : ''}
+    <div class="opt"><span>Layout</span><div class="chips"><button class="chip" data-treset>↺ Default positions</button></div></div>
+    <p class="hint">Drag buttons where your thumbs like them while riding: ⚙ on the top bar → ✥ Edit layout. Tilt steering asks for motion access the first time.</p>`;
   }
 
   private gameplay() {
@@ -160,6 +182,14 @@ export class SettingsPanel {
 
   private slide(e: Event, commit: boolean) {
     const t = e.target as HTMLInputElement;
+    if (this.inPanel(t) && t.dataset.trange) {
+      const k = t.dataset.trange as 'size' | 'opacity' | 'tiltRange';
+      touchSettings[k] = +t.value;
+      const out = t.parentElement?.querySelector('output');
+      if (out) out.textContent = k === 'tiltRange' ? `${t.value}°` : `${Math.round(+t.value * 100)}%`;
+      if (commit) { saveTouchSettings(); touchSettingsChanged(); }
+      return;
+    }
     if (!this.inPanel(t) || !t.dataset.range) return;
     const k = t.dataset.range as keyof Settings, r = RANGES[k]!, v = +t.value;
     (settings as unknown as Record<string, number>)[k] = v / r.scale;
@@ -196,6 +226,14 @@ export class SettingsPanel {
     }
     if (d.breset) { resetBindings(d.breset as BindLayout); this.stopListen(); this.msg = 'Defaults restored'; return this.h.rerender(); }
     if (d.goRumble !== undefined) return testRumble();
+    if (d.tscheme || d.tflag || d.treset !== undefined) {
+      if (d.tscheme) touchSettings.scheme = d.tscheme as TouchScheme;
+      if (d.tflag === 'leftHanded' || d.tflag === 'tiltInvert') touchSettings[d.tflag] = d.val === 'true';
+      if (d.treset !== undefined) touchSettings.pos = {};
+      saveTouchSettings();
+      touchSettingsChanged();
+      return this.h.rerender();
+    }
     if (d.sreset) return this.resetTab(d.sreset as Tab);
   }
 

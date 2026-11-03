@@ -554,6 +554,19 @@ export class Menu {
             ${row('Gauges', 'Bottom right: speedometer with nitro ring, rev counter with redline and gear, NOS / AIR lights. F1 cars use the F1 dash instead')}
             ${row('On foot', 'Hood / first person switch to the chase camera until you ride again')}
           </table></section>
+          <section><h3>🎬 Replay & photo</h3><table class="keys">
+            ${row(K('I'), 'Instant replay of the last seconds (after a crash or big trick a prompt appears; local games). Touch: 🎬 on the top bar')}
+            ${row('Pause → 🎬 Replay', 'The last minute: Space play · ←/→ seek · ↑/↓ speed · C camera · Tab rider · [ ] events · R record a clip · Esc back')}
+            ${row('Pause → 📷 Photo', 'Free camera: WASD fly · Q/E down/up · Z/X roll · −/= zoom · Enter capture · H hide UI · Esc back')}
+            ${row('Results', '🎬 Replay the race; leaderboard score runs have a replay button too')}
+          </table></section>
+          <section><h3>💬 Online rooms</h3><table class="keys">
+            ${row(`${K('Enter')} / ${K('T')}`, 'Chat (the game ignores keys while you type). Touch: 💬 on the left')}
+            ${row(`${K('5')} … ${K('0')}`, 'Quick chat + emote bubble (gamepad: hold Back/View + d-pad)')}
+            ${row(`hold ${K('Tab')}`, 'Player list with pings · 🔈 mutes someone for you only')}
+            ${row(`${K('[')} ${K(']')}`, 'Spectate other riders once you finished or crashed out (gamepad: LB / RB)')}
+            ${row('Pause', 'Online games keep running behind the pause menu; instant replay is off')}
+          </table></section>
           <section><h3>🎮 Gamepad · ${padFamily(currentPadType())}</h3><table class="keys">
             ${row(`${gp('up')} · ${gp('down')}`, 'Throttle · brake (triggers are analog)')}
             ${row(`Left stick / ${gp('left')} ${gp('right')}`, 'Steer (and flips/spins in the air)')}

@@ -32,8 +32,9 @@ export class ReplayStudio {
     return this.view !== null;
   }
 
+  /** Instant replay only in local games: online rooms can't pause, so the bike would ride on uncontrolled. */
   private get canInstant() {
-    return !this.view && this.game.input.enabled && !this.game.paused && (this.game.replay?.count ?? 0) > REPLAY.hz;
+    return !this.view && !this.game.net && this.game.input.enabled && !this.game.paused && (this.game.replay?.count ?? 0) > REPLAY.hz;
   }
 
   private onKey = (e: KeyboardEvent) => {
@@ -59,6 +60,7 @@ export class ReplayStudio {
     this.begin(from);
     this.view = new ReplayPanel(this.game, () => this.close(), from === 'play' ? REPLAY.instantBack : REPLAY.seconds);
     this.game.view = this.view;
+    this.game.career?.feat('replay');
     return true;
   }
 

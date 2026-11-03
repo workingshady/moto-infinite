@@ -1,5 +1,6 @@
 // Touch control settings (saved per device) and the button table: which buttons a mode/vehicle needs and where they sit.
 import type { Action } from '../core/Input';
+import { mergeSaved, parseJson } from '../utils/store';
 
 export type TouchScheme = 'buttons' | 'stick' | 'tilt';
 
@@ -32,7 +33,7 @@ const KEY = 'moto:touch';
 export const touchSettings: TouchSettings = (() => {
   const base: TouchSettings = { scheme: 'buttons', size: 1, opacity: 0.75, leftHanded: false, tiltRange: 22, tiltInvert: false, pos: {} };
   try {
-    return { ...base, ...(JSON.parse(localStorage.getItem(KEY) ?? '{}') as Partial<TouchSettings>) };
+    return mergeSaved(base, parseJson(localStorage.getItem(KEY)));
   } catch {
     return base;
   }
@@ -82,7 +83,8 @@ export const TOUCH_BUTTONS: TouchButton[] = [
   { id: 'drift', actions: ['drift'], label: () => 'DRIFT', show: (c) => c.riding && !c.f1 && (c.car || c.mode === 'drift'), slot: (c) => (c.car ? (c.scheme === 'tilt' ? R(0, 1) : R(1, 1)) : R(2, 0)) },
   { id: 'jump', actions: ['jump'], label: () => 'JUMP', show: (c) => !c.riding, slot: (c) => (c.scheme === 'tilt' ? R(0, 1) : R(1, 1)) },
   { id: 'fire', actions: ['fire'], label: () => 'FIRE', show: (c) => c.weapons, slot: (c) => (c.mode === 'drift' && !c.car ? R(2, 1) : R(2, 0)) },
-  { id: 'weapon', actions: ['weapon'], label: () => 'GUN', show: (c) => c.weapons, slot: () => R(2, 1) },
+  // drift venues put a bike's FIRE one row up (DRIFT takes its slot), so GUN moves up one more
+  { id: 'weapon', actions: ['weapon'], label: () => 'GUN', show: (c) => c.weapons, slot: (c) => (c.mode === 'drift' && !c.car ? R(2, 2) : R(2, 1)) },
   { id: 'ride', actions: ['ride'], label: (c) => (c.riding ? 'OFF' : 'RIDE'), show: (c) => c.canWalk, slot: (c) => (c.scheme === 'tilt' ? L(0, 1) : R(0, 2)) },
   { id: 'upgrade', actions: ['upgrade'], label: () => '⬆', show: (c) => c.cards, slot: (c) => (c.scheme === 'tilt' ? L(1, 0) : R(1, 2)) },
 ];

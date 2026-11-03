@@ -7,6 +7,7 @@ import type { Standing } from '../systems/Race';
 import type { TrackLine } from '../world/layout';
 import { RACE } from '../config';
 import { clamp } from '../utils/math';
+import { mountTopCentre } from './index';
 import { paceProfile } from './pace';
 import type { ModeFeature } from './index';
 
@@ -35,7 +36,7 @@ export class Elimination implements ModeFeature {
     for (const p of game.players) {
       const el = document.createElement('div');
       el.className = 'panel md-panel md-elim';
-      p.hud.root.appendChild(el);
+      mountTopCentre(p, el);
       this.els.push(el);
       this.html.push('');
     }
@@ -117,6 +118,7 @@ export class Elimination implements ModeFeature {
         p.race.finishTime = t;
         p.hud.banner('LAST ONE STANDING', 'you win the elimination!', '#7cffb2');
         g.audio.play('challenge');
+        g.career?.feat('elimWin');
       } else {
         const r = g.ai?.list.find((x) => !x.finished);
         if (r) { r.finished = true; r.finishTime = t; }

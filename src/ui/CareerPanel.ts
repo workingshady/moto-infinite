@@ -6,6 +6,7 @@ import { career, careerXpNeed, isUnlocked, lockState, ownedCount, sessionEarning
 import { ACHIEVEMENTS, ACHIEVEMENT_CATS } from '../data/achievements';
 import { VEHICLES, vehicleById } from '../data/vehicles';
 import { escapeHtml } from '../utils/math';
+import { fmtSpeed } from '../core/settings';
 
 const n = (v: number) => Math.floor(v).toLocaleString();
 const cr = (v: number) => `${n(v)} cr`;
@@ -40,7 +41,7 @@ export function careerPanelHtml() {
   const s = career.stats, got = ACHIEVEMENTS.filter((a) => career.achievements[a.id]).length;
   const stat = (icon: string, label: string, val: string) => `<div class="cr-stat"><span>${icon} ${label}</span><b>${val}</b></div>`;
   const stats = [
-    stat('🛣', 'Distance', km(s.distance)), stat('💨', 'Top speed', `${Math.round(s.topSpeed)} km/h`), stat('⏱', 'Play time', dur(s.playTime)),
+    stat('🛣', 'Distance', km(s.distance)), stat('💨', 'Top speed', fmtSpeed(s.topSpeed)), stat('⏱', 'Play time', dur(s.playTime)),
     stat('🎮', 'Sessions', n(s.sessions)), stat('🚦', 'Races started', n(s.racesStarted)), stat('🏆', 'Races won', n(s.racesWon)),
     stat('🥉', 'Podiums', n(s.podiums)), stat('🏎', 'F1 wins', n(s.f1Won)), stat('🌀', 'Best drift', n(s.bestDrift)),
     stat('🏍', 'Longest wheelie', `${s.longestWheelie.toFixed(1)} s`), stat('🤸', 'Flips', n(s.flips)), stat('🔄', 'Spins', n(s.spins)),

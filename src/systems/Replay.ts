@@ -27,6 +27,8 @@ export interface ReplayActor {
   color: number;
   vehicle: VehicleModelId;
   local: Player | null;
+  /** Background vehicle (traffic): replayed, but never a camera target. */
+  extra: boolean;
   bike: VehicleModel;
   rider: RiderModel | null;
   tag: THREE.Object3D | null;
@@ -69,6 +71,7 @@ export class Replay {
   private slot = 0;
   private loc = { a: 0, b: 0, f: 0 };
   private remoteVisit = (r: Remote) => this.visit(r.bike, r, r.rider, r.tag, r.name, r.color, r.vehicle, null);
+  private extraVisit = (key: object, model: VehicleModel, name: string, color: number, vehicle: string) => this.visit(model, key, null, null, name, color, vehicle, null, true);
 
   constructor(private game: Game) {
     this.times = new Float32Array(this.cap);
@@ -100,17 +103,18 @@ export class Replay {
     for (const p of g.players) this.visit(p.bike, p, p.rider, null, p.name, p.color, p.def.id, p);
     if (g.ai) for (const r of g.ai.list) this.visit(r.model, r, null, null, r.name, r.color, r.def.id, null);
     g.remotes?.forEach(this.remoteVisit);
+    for (const m of g.modes) m.replayActors?.(this.extraVisit); // traffic (after the riders, so they always get a slot)
     for (const a of this.actors) if (a.seen !== this.frameNo) a.buf[slot * STRIDE + 9] = 0;
     this.head = (this.head + 1) % this.cap;
     this.count = Math.min(this.count + 1, this.cap);
   }
 
-  private visit(bike: VehicleModel, key: Player | AiRacer | Remote, rider: RiderModel | null, tag: THREE.Object3D | null, name: string, color: number, vehicle: string, local: Player | null) {
+  private visit(bike: VehicleModel, key: Player | AiRacer | Remote | object, rider: RiderModel | null, tag: THREE.Object3D | null, name: string, color: number, vehicle: string, local: Player | null, extra = false) {
     let a = this.keyed.get(key);
     if (!a || a.bike !== bike) {
       if (this.actors.length >= REPLAY.maxActors) return;
       a = {
-        index: this.actors.length, name, color, vehicle: vehicleById(vehicle).id, local, bike, rider, tag, buf: new Float32Array(this.cap * STRIDE), seen: 0,
+        index: this.actors.length, name, color, vehicle: vehicleById(vehicle).id, local, extra, bike, rider, tag, buf: new Float32Array(this.cap * STRIDE), seen: 0,
         lx: bike.root.position.x, ly: bike.root.position.y, lz: bike.root.position.z, wasN: false, lap: local?.race.lap ?? 0, finished: false, nitroT: -99, puppet: null, hidden: new Uint8Array(3),
       };
       this.keyed.set(key, a);
@@ -220,6 +224,10 @@ export class Replay {
     for (const a of this.actors) {
       if (!a.puppet) {
         const bike = buildVehicleModel(a.vehicle, a.color);
+        if (a.extra) { // traffic: body lights only, like the live cars (a dozen spotlights would blow the light budget)
+          bike.headlight.parent?.remove(bike.headlight);
+          bike.headlight.target.parent?.remove(bike.headlight.target);
+        }
         let rider: RiderModel | null = null;
         if (a.rider) { rider = buildRider(a.color); seatRider(rider, bike); }
         bike.root.visible = false;

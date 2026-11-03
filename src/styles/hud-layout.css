@@ -52,3 +52,10 @@ body.touch-on #hud-layer .hud .upbadge kbd { display: none; }
 /* portrait (play anyway): gauges and prompts go above the three button rows */
 body.touch-on.touch-portrait #hud-layer .hud .z-br { bottom: calc(240px + var(--sb)); }
 body.touch-on.touch-portrait #hud-layer .hud .z-bc { bottom: calc(248px + var(--sb) + 150px * var(--g)); }
+
+/* ---------------------------------------------------------------- achievement / career toasts
+   Under the minimap on the right: the top centre holds the race box and mode panels (Time Attack, Elimination),
+   the left side holds the online chat feed and dock. */
+#hud-layer .hud .ach-toasts { left: auto; right: calc(var(--hm) + var(--sr)); top: calc(var(--hm) + var(--st) + 214px * var(--hs) * var(--map));
+  transform: none; align-items: flex-end; width: min(340px, 46%); }
+#hud-layer .hud.split .ach-toasts { width: min(300px, 60%); }

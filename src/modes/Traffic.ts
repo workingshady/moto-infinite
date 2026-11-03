@@ -7,7 +7,7 @@ import type { Player } from '../entities/Player';
 import { buildVehicleModel, type VehicleModel } from '../entities/vehicleModels';
 import type { VehicleModelId } from '../data/vehicles';
 import { clamp, lerp, lerpAngle, wrapPi } from '../utils/math';
-import type { ModeFeature } from './index';
+import type { ModeFeature, ReplayVisit } from './index';
 
 export const TRAFFIC = {
   /** Cars per local player for density 1 (light) and 2 (heavy). */
@@ -26,6 +26,8 @@ const PAINT = [0xd8d8d8, 0x2b2f38, 0x9c1f1f, 0x1f4f9c, 0xe6e1d0, 0x3f6b3a, 0xc9a
 
 interface Car {
   model: VehicleModel;
+  id: VehicleModelId;
+  paint: number;
   active: boolean;
   x: number; y: number; z: number; h: number;
   v: number; cruise: number; stun: number; wheel: number;
@@ -52,7 +54,7 @@ export class Traffic implements ModeFeature {
       if (model.driver) model.driver.visible = true;
       model.root.visible = false;
       game.scene.add(model.root);
-      this.cars.push({ model, active: false, x: 0, y: 0, z: 0, h: 0, v: 0, cruise: 15, stun: 0, wheel: 0, along: game.players.map(() => NaN), hit: game.players.map(() => false) });
+      this.cars.push({ model, id: MODELS[i % MODELS.length], paint: PAINT[(i * 7) % PAINT.length], active: false, x: 0, y: 0, z: 0, h: 0, v: 0, cruise: 15, stun: 0, wheel: 0, along: game.players.map(() => NaN), hit: game.players.map(() => false) });
     }
     for (const p of game.players) {
       const el = document.createElement('div');
@@ -73,6 +75,11 @@ export class Traffic implements ModeFeature {
     }
     for (const c of this.cars) if (c.active) this.drive(c, dt);
     g.players.forEach((p, i) => this.interact(p, i, dt));
+  }
+
+  /** Replay: every pooled car is an actor (inactive ones are hidden roots, so they simply don't show). */
+  replayActors(visit: ReplayVisit) {
+    for (const c of this.cars) visit(c, c.model, 'Traffic', c.paint, c.id);
   }
 
   private spawn(c: Car) {
@@ -184,6 +191,7 @@ export class Traffic implements ModeFeature {
     ch.t = T.chainWindow;
     const mult = Math.min(ch.n, 8), pts = Math.round(T.xp * (oncoming ? 2 : 1) * (close ? 1.5 : 1) * mult);
     ch.pts += pts;
+    g.career?.feat('nearMiss', ch.n);
     p.s.nitro = Math.min(p.stats.nitroMax, p.s.nitro + T.nitro * (oncoming ? 2 : 1));
     p.addXP(pts, c.x, c.y + 2.2, c.z);
     g.audio.play('whoosh');
@@ -210,6 +218,7 @@ export class Traffic implements ModeFeature {
     ch.hitCd = 1.2;
     if (ch.n) { ch.text.innerHTML = '<b class="bad">CHAIN LOST</b><span>hit traffic</span>'; ch.n = 0; ch.pts = 0; ch.t = 0; ch.hideT = 1.2; }
     p.hud.banner('CRASH!', 'hit traffic', '#ff4d5e');
+    g.replay?.mark(p, 'crash', 'TRAFFIC'); // replay event + instant replay prompt
     g.audio.play('crash');
     g.audio.play('clank');
     p.cam.shake = 0.9;

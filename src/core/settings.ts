@@ -1,6 +1,7 @@
 // Extra settings (graphics, controller feel, accessibility, key bindings) saved next to prefs under their own key.
 // Gameplay reads small helpers from here (fovOffset, shakeScale, spd ...) so the hot paths stay one-liners.
 import type { Action } from './Input';
+import { mergeSaved, parseJson } from '../utils/store';
 
 export type Layout = 'solo' | 'p1' | 'p2';
 export type SpeedUnit = 'kmh' | 'mph';
@@ -48,9 +49,9 @@ export const SETTING_DEFAULTS: Settings = {
 
 export const settings: Settings = (() => {
   try {
-    return { ...SETTING_DEFAULTS, ...(JSON.parse(localStorage.getItem(KEY) ?? '{}') as Partial<Settings>) };
+    return mergeSaved(structuredClone(SETTING_DEFAULTS), parseJson(localStorage.getItem(KEY))); // wrong-typed fields fall back to defaults
   } catch {
-    return { ...SETTING_DEFAULTS };
+    return structuredClone(SETTING_DEFAULTS);
   }
 })();
 

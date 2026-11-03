@@ -1,5 +1,6 @@
 // Player preferences that persist in the browser (not part of a game session).
 import type { CamView } from './cameraViews';
+import { mergeSaved, parseJson } from '../utils/store';
 
 export interface Prefs {
   /** Tap nitro to switch it on/off instead of holding it: helps keyboards that drop 3+ keys at once. */
@@ -19,7 +20,7 @@ const KEY = 'moto:prefs';
 export const prefs: Prefs = (() => {
   const base: Prefs = { nitroToggle: false, onboarded: false, assist: 1, music: 0.6, sfx: 1, cams: ['chase', 'chase'] };
   try {
-    return { ...base, ...(JSON.parse(localStorage.getItem(KEY) ?? '{}') as Partial<Prefs>) };
+    return mergeSaved(base, parseJson(localStorage.getItem(KEY)));
   } catch {
     return base;
   }

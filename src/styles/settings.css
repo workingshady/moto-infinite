@@ -64,6 +64,12 @@ body.reduce-motion .hud .lines, body.reduce-motion .hud .vignette { display: non
 body.reduce-motion .hud .lvlburst .rays { display: none; }
 body.reduce-motion .hud .upbadge, body.reduce-motion .hud .reticle, body.reduce-motion .rpm i.shift { animation: none !important; }
 body.reduce-motion #menu *, body.reduce-motion #menu *::before, body.reduce-motion .toast { animation: none !important; transition: none !important; }
+/* newer HUD bits: achievement toasts, mode panels, near-miss pops, replay prompt, banners/bars of the social layer and PWA */
+body.reduce-motion .ach-toast, body.reduce-motion .md-elim.danger, body.reduce-motion .md-traffic.pop .md-nm, body.reduce-motion .rp-prompt,
+body.reduce-motion .rp-recording .rp-badge, body.reduce-motion .soc-banner, body.reduce-motion .pwa-toast, body.reduce-motion .lb-toast { animation: none !important; }
+body.reduce-motion .ach-toast, body.reduce-motion .lb-toast { transition: opacity 0.2s !important; }
+body.reduce-motion .ach-toast.out { transform: none; }
+body.reduce-motion .lb-toast { transform: translate(-50%, 0); }
 
 @media (max-width: 600px) {
   .set-tab { padding: 6px 8px; font-size: 12px; }

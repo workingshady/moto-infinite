@@ -3,8 +3,10 @@
 // Game calls createModes() once, then update(dt) every frame and dispose() at the end.
 import '../styles/modes.css';
 import type { Game } from '../core/Game';
+import type { Player } from '../entities/Player';
 import type { Standing } from '../systems/Race';
 import { Circuit } from '../world/layout';
+import type { VehicleModel } from '../entities/vehicleModels';
 import { TimeAttack } from './TimeAttack';
 import { Elimination } from './Elimination';
 import { Traffic } from './Traffic';
@@ -14,6 +16,19 @@ export interface ModeFeature {
   dispose(): void;
   /** Reorder / annotate the final race table. */
   results?(rows: Standing[]): Standing[];
+  /** Extra vehicles for the replay recorder (traffic): called once per recorded frame. */
+  replayActors?(visit: ReplayVisit): void;
+}
+
+/** Records one extra vehicle (key = a stable object per vehicle; a hidden root = not on screen in that frame). */
+export type ReplayVisit = (key: object, model: VehicleModel, name: string, color: number, vehicle: string) => void;
+
+/** Mode panels sit in the HUD's top-centre zone under the race box, so they follow HUD size/opacity, the
+ *  responsive zone scaling and never overlap the race panel. */
+export function mountTopCentre(p: Player, el: HTMLElement) {
+  const zone = p.hud.root.querySelector('.z-tc');
+  if (zone) zone.insertBefore(el, zone.querySelector('.racebox')?.nextSibling ?? null);
+  else p.hud.root.appendChild(el);
 }
 
 export function createModes(game: Game): ModeFeature[] {

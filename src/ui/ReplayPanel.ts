@@ -6,6 +6,7 @@ import type { Game, ViewOverride } from '../core/Game';
 import type { Viewport } from '../core/Renderer';
 import { EVENT_ICON, type ActorPose, type ReplayEventKind } from '../systems/Replay';
 import { REPLAY } from '../config';
+import { spd, speedUnit } from '../core/settings';
 import { clamp, damp, escapeHtml, hex } from '../utils/math';
 import { ClipRecorder, OrbitInput, PadReader, canShareFile, clipMime, download, shareFile, stamp } from './mediaShare';
 
@@ -174,9 +175,10 @@ export class ReplayPanel implements ViewOverride {
   }
 
   private nextFocus() {
-    const n = this.game.replay!.actors.length;
+    const list = this.game.replay!.actors, n = list.length;
     if (!n) return;
-    this.focus = (this.focus + 1) % n;
+    // traffic cars are scenery: skip them when cycling riders
+    for (let k = 0; k < n; k++) { this.focus = (this.focus + 1) % n; if (!list[this.focus].extra) break; }
     this.snap = true;
     this.tv.set = false;
     this.paintFocus();
@@ -393,8 +395,8 @@ export class ReplayPanel implements ViewOverride {
     this.el.head.style.left = `${f * 100}%`;
     const label = `${fmt(this.t - this.t0)} / ${fmt(span)}`;
     if (label !== this.lastLabel) { this.lastLabel = label; this.el.time.textContent = label; }
-    const kmh = Math.round(this.pose.speed);
-    if (kmh !== this.lastSpeedo) { this.lastSpeedo = kmh; this.el.speedo.textContent = `${kmh} km/h`; }
+    const v = Math.round(spd(this.pose.speed)); // Settings → Speed units
+    if (v !== this.lastSpeedo) { this.lastSpeedo = v; this.el.speedo.textContent = `${v} ${speedUnit()}`; }
     const icon = this.playing ? '⏸' : '▶';
     if (this.el.play.textContent !== icon) this.el.play.textContent = icon;
   }
