@@ -1,0 +1,65 @@
+/* Daily challenge card, leaderboard overlay, drift score-run timer and result lines (src/ui/LeaderboardPanel.ts). */
+.lb-card { margin-top: 16px; padding: 14px 16px; border-radius: 16px; background: linear-gradient(150deg, rgba(60, 200, 255, 0.14), rgba(255, 210, 63, 0.08));
+  border: 1px solid rgba(60, 200, 255, 0.35); }
+.lb-card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+.lb-card-head b { color: var(--accent2); letter-spacing: 0.12em; font-size: 12px; }
+.lb-card-head span { color: var(--dim); font-size: 12px; font-variant-numeric: tabular-nums; }
+.lb-ch-title { font-weight: 900; font-size: 18px; margin: 2px 0 6px; }
+.lb-tags { display: flex; flex-wrap: wrap; gap: 6px; font-size: 12px; }
+.lb-tags span { padding: 3px 8px; border-radius: 999px; background: rgba(255, 255, 255, 0.08); white-space: nowrap; }
+.lb-tags span.up { background: rgba(124, 255, 178, 0.18); color: var(--good); }
+.lb-you { margin: 10px 0 6px; font-size: 13px; color: var(--dim); }
+.lb-you b { color: var(--accent); }
+.lb-fold summary { cursor: pointer; font-weight: 800; font-size: 13px; color: var(--accent2); padding: 4px 0; }
+.lb-btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.lb-btns .btn { flex: 1 1 auto; padding: 10px 14px; }
+.lb-empty, .lb-count { color: var(--dim); font-size: 12px; padding: 6px 0; }
+.lb-count { text-align: right; padding: 4px 0 0; }
+
+.lb-rows { list-style: none; margin: 4px 0 0; padding: 0; max-height: 300px; overflow-y: auto; font-size: 13px; scrollbar-width: thin; }
+.lb-rows li { display: grid; grid-template-columns: 30px minmax(0, 1fr) minmax(0, auto) auto; gap: 8px; align-items: center; padding: 5px 6px; border-radius: 8px; }
+.lb-rows li:nth-child(odd) { background: rgba(255, 255, 255, 0.04); }
+.lb-rows li.me { background: rgba(255, 210, 63, 0.16); outline: 1px solid rgba(255, 210, 63, 0.5); }
+.lb-rows li.gap { display: block; text-align: center; color: var(--dim); background: none; padding: 0; }
+.lb-rows i { font-style: normal; font-weight: 900; color: var(--accent); text-align: center; }
+.lb-rows .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+.lb-rows .veh { color: var(--dim); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lb-rows b { font-variant-numeric: tabular-nums; }
+
+.lb-overlay { position: fixed; inset: 0; z-index: 30; display: flex; align-items: center; justify-content: center; padding: 16px;
+  background: rgba(6, 8, 18, 0.6); overflow-y: auto; }
+.lb-overlay.lb-run { z-index: 9; } /* under #menu so the pause menu still covers it */
+.lb-panel { width: min(620px, 100%); max-height: calc(100% - 8px); overflow-y: auto; background: var(--panel-solid); backdrop-filter: blur(12px); border-radius: 22px;
+  padding: 20px 22px; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45); border: 1px solid rgba(255, 255, 255, 0.08); animation: rise 0.25s ease-out; }
+.lb-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.lb-head h2 { margin: 0; }
+.lb-x { border: 0; background: rgba(255, 255, 255, 0.1); color: #fff; width: 36px; height: 36px; border-radius: 50%; font-size: 16px; }
+.lb-tabsrow { margin-bottom: 14px; }
+.lb-pick { display: flex; gap: 10px; align-items: flex-start; margin: 8px 0; }
+.lb-pick > span { width: 92px; flex: none; color: var(--dim); font-size: 12px; padding-top: 7px; }
+.lb-hint { color: var(--dim); font-size: 12px; line-height: 1.5; margin: 8px 0; }
+.lb-big { font-size: 46px; font-weight: 900; color: var(--accent); text-align: center; margin: 8px 0; font-variant-numeric: tabular-nums; }
+.lb-big small { display: block; font-size: 12px; letter-spacing: 0.2em; color: var(--dim); text-transform: uppercase; }
+.lb-ranks { justify-content: center; margin-bottom: 10px; }
+.lb-result { margin-top: 14px; padding: 10px 12px; border-radius: 12px; background: rgba(60, 200, 255, 0.1); font-size: 13px; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+
+/* in-game: drift score-run timer and result toast */
+.lb-timer { position: absolute; left: 50%; top: 12px; transform: translateX(-50%); display: flex; gap: 10px; align-items: baseline; padding: 6px 14px;
+  border-radius: 12px; background: var(--panel); backdrop-filter: blur(8px); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.lb-timer span { font-size: 11px; letter-spacing: 0.15em; color: var(--accent2); font-weight: 800; }
+.lb-timer b { font-size: 24px; font-weight: 900; }
+.lb-timer em { font-style: normal; font-weight: 800; color: var(--accent); }
+.lb-timer.low b { color: var(--bad); }
+.lb-toast { position: absolute; left: 50%; bottom: 22%; transform: translate(-50%, 10px); padding: 8px 16px; border-radius: 999px; background: var(--panel-solid);
+  font-weight: 800; font-size: 14px; opacity: 0; transition: opacity 0.3s, transform 0.3s; white-space: nowrap; max-width: calc(100% - 32px); overflow: hidden; text-overflow: ellipsis; }
+.lb-toast.on { opacity: 1; transform: translate(-50%, 0); }
+
+@media (max-width: 640px) {
+  .lb-panel { padding: 16px 14px; border-radius: 16px; }
+  .lb-pick { flex-direction: column; gap: 4px; }
+  .lb-pick > span { width: auto; padding-top: 0; }
+  .lb-rows li { grid-template-columns: 26px minmax(0, 1fr) auto; }
+  .lb-rows .veh { display: none; }
+  .lb-big { font-size: 36px; }
+  .lb-timer { top: 64px; } /* clear of the phone HUD stats */
+}

@@ -13,6 +13,8 @@ import { DRIFT_TRACKS } from './world/DriftTrack';
 import { F1_TRACKS } from './world/F1Track';
 import { vehicleById } from './data/vehicles';
 import { driftSeed } from './ui/Preview';
+import { attachLeaderboards, configureLeaderboards, type LbStart } from './ui/LeaderboardPanel';
+import type { LbSession } from './systems/LbSession';
 
 const store = {
   get<T>(k: string, fallback: T): T {
@@ -43,6 +45,9 @@ export class App {
   private lastLocal: Setup | null = null;
   private touch: HTMLDivElement | null = null;
   private quality: QualityName = store.get<QualityName>('quality', isMobile ? 'low' : 'medium');
+  /** Leaderboard run (daily/weekly challenge, forced vehicle, #1 ghost) and the current session's board hook-up. */
+  private lbStart: LbStart | null = null;
+  private lb: LbSession | null = null;
 
   constructor() {
     const profile = store.get<Profile>('profile', { name: 'Rider', color: PLAYER_COLORS[0], name2: 'Player 2', color2: PLAYER_COLORS[1] });
@@ -51,6 +56,7 @@ export class App {
     this.input.onPause = () => this.togglePause();
     this.input.onMute = () => this.audio.toggleMute();
     this.input.onToggleHelp = () => document.body.classList.toggle('nohelp');
+    configureLeaderboards({ play: (r) => this.startLocal(r.setup, r), again: () => this.raceAgain(), quit: () => this.quit(), profile: () => this.menu.profile });
     this.attract();
     const code = new URLSearchParams(location.search).get('room')?.toUpperCase();
     if (code && ROOM_CODE_RE.test(code)) this.menu.showJoin(code); // pick name/colour first
@@ -92,12 +98,15 @@ export class App {
 
   // ------------------------------------------------------------------ sessions
   private replaceGame(opts: SessionOptions | null) {
+    this.lb?.dispose();
+    this.lb = null;
     this.game?.dispose();
     this.game = null;
     this.touch?.remove();
     this.touch = null;
     if (!opts) return;
-    this.game = new Game(opts, this.input, this.audio, { onRaceResults: (rows) => this.results(rows) });
+    this.game = new Game(opts, this.input, this.audio, { onRaceResults: (rows) => this.results(rows), onLap: (t, s) => this.lb?.lap(t, s) });
+    this.lb = attachLeaderboards(this.game, this.lbStart?.challenge ?? null);
     this.game.start();
   }
 
@@ -130,16 +139,17 @@ export class App {
     }));
   }
 
-  private startLocal(s: Setup) {
+  private startLocal(s: Setup, lb: LbStart | null = null) {
     this.audio.init();
     this.lastLocal = s;
+    this.lbStart = lb;
     const P = this.menu.profile, C = this.input.controllers;
     this.input.setLayout(s.split);
     const locals = s.split
       ? [{ name: P.name, color: P.color, controller: C[0], vehicle: P.vehicle ?? 'street' }, { name: P.name2, color: P.color2 === P.color ? PLAYER_COLORS[(PLAYER_COLORS.indexOf(P.color) + 1) % PLAYER_COLORS.length] : P.color2, controller: C[1], vehicle: P.vehicle2 ?? 'street' }]
-      : [{ name: P.name, color: P.color, controller: C[0], vehicle: P.vehicle ?? 'street' }];
+      : [{ name: P.name, color: P.color, controller: C[0], vehicle: lb?.vehicle ?? P.vehicle ?? 'street' }];
     this.withLoading(() => {
-      this.replaceGame(this.session(s, locals, null));
+      this.replaceGame({ ...this.session(s, locals, null), ghost: lb?.ghost ?? undefined });
       this.enterPlay(!s.split);
     });
   }
@@ -242,7 +252,7 @@ export class App {
       else { this.attract(); this.showLobby(); }
       return;
     }
-    if (this.lastLocal) this.startLocal(this.lastLocal);
+    if (this.lastLocal) this.startLocal(this.lastLocal, this.lbStart);
   }
 
   private quit() {

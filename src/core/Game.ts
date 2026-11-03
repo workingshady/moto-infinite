@@ -55,10 +55,14 @@ export interface SessionOptions {
   net: NetClient | null;
   /** Menu background: world only, orbiting camera, no players. */
   attract?: boolean;
+  /** Ghost lap to race instead of your own best (leaderboard "race the #1 ghost"). */
+  ghost?: { time: number; s: number[] };
 }
 
 export interface GameHooks {
   onRaceResults(rows: Standing[]): void;
+  /** A recorded flying lap of the solo player (time + ghost samples), for the leaderboards. */
+  onLap?(time: number, samples: number[]): void;
 }
 
 export interface GameEvents {

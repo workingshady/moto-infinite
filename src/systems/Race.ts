@@ -38,7 +38,7 @@ export class Race {
     if (game.layout.kind === 'f1') this.f1Start = { lit: 0, t: 0, hold: F1.lightsHoldMin + Math.random() * (F1.lightsHoldMax - F1.lightsHoldMin) };
     else this.cps.forEach((idx, i) => this.gate(idx, i === 0));
     if (game.players.length === 1 && !game.net && trackId !== 'random') {
-      this.ghostData = load(trackId);
+      this.ghostData = game.opts.ghost ?? load(trackId);
       this.ghost = buildGhost();
       this.ghost.visible = false;
       game.scene.add(this.ghost);
@@ -198,6 +198,7 @@ export class Race {
 
   private lapDone(time: number) {
     if (!this.ghost || this.trackId === 'random') return;
+    this.game.hooks.onLap?.(time, this.rec);
     if (!this.ghostData || time < this.ghostData.time) {
       this.ghostData = { time, s: this.rec.slice() };
       save(this.trackId, this.ghostData);
