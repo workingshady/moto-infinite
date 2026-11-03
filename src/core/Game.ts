@@ -27,6 +27,8 @@ import { Tutorial } from '../systems/Tutorial';
 import { CareerTracker } from '../systems/CareerTracker';
 import { GEN, LEVELING, NET, PHYS, QUALITY, TRACKS, WORLD, type QualityName } from '../config';
 import { STORY } from '../data/story';
+import { createModes, type ModeFeature } from '../modes';
+import type { RaceVariant } from '../../shared/protocol';
 
 export interface LocalPlayerSpec { name: string; color: number; controller: Controller; vehicle: string }
 
@@ -56,6 +58,9 @@ export interface SessionOptions {
   net: NetClient | null;
   /** Menu background: world only, orbiting camera, no players. */
   attract?: boolean;
+  /** Race format and open-world traffic (src/modes). */
+  variant?: RaceVariant;
+  traffic?: number;
 }
 
 export interface GameHooks {
@@ -86,6 +91,8 @@ export class Game {
   ai: AiRacers | null = null;
   tutorial: Tutorial | null = null;
   career: CareerTracker | null = null;
+  /** Extra game modes / systems from src/modes (time attack, elimination, traffic). */
+  modes: ModeFeature[] = [];
   remotes: RemotePlayers | null = null;
   time = 0;
   frame = 0;
@@ -146,6 +153,7 @@ export class Game {
       if (this.net) this.wireNet(this.net);
       if (opts.tutorial) this.tutorial = new Tutorial(this);
       this.career = new CareerTracker(this);
+      this.modes = createModes(this);
     }
     addEventListener('resize', this.onResize);
     this.resize();
@@ -253,6 +261,7 @@ export class Game {
     this.tutorial?.update(dt);
     this.race?.update(dt);
     this.career?.update(dt);
+    for (const m of this.modes) m.update(dt);
     this.remotes?.update(dt);
     this.updateMusic();
     const focus = this.players.length ? this.players.map((p) => p.P) : [this.attractFocus()];
@@ -315,6 +324,7 @@ export class Game {
     this.players.forEach((p) => p.dispose());
     this.remotes?.dispose();
     this.ai?.dispose();
+    this.modes.forEach((m) => m.dispose());
     this.events.clear();
     this.renderer.dispose();
     this.hudLayer.remove();

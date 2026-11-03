@@ -117,6 +117,7 @@ export class App {
     return {
       mode: s.mode, seed: s.mode === 'drift' ? driftSeed(s.trackId, s.seed) : track?.seed ?? s.seed, trackId: s.trackId, laps: s.laps, pvp: s.pvp,
       time: s.time, weather: s.weather, weathers: s.weathers, theme: track?.theme ?? (dtrack && dtrack.id !== 'random' ? dtrack.theme : s.mode === 'f1' ? (F1_TRACKS.find((t) => t.id === s.trackId)?.theme ?? s.theme) : s.theme), gen: track ? { ...DEFAULT_GEN } : { ...DEFAULT_GEN, ...s.gen }, drones: s.drones ?? 2, ai: s.ai ?? 0, session: s.session ?? 'race', tyre: s.tyre ?? 'medium',
+      variant: s.mode === 'race' && !net ? s.variant : undefined, traffic: net ? 0 : s.traffic, // src/modes: local-only formats
       quality: this.quality, locals: s.mode === 'f1' ? locals.map((l) => ({ ...l, vehicle: vehicleById(l.vehicle).f1 ? l.vehicle : this.menu.profile.f1car ?? 'f1_2026' })) : locals, net,
     };
   }

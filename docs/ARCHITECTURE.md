@@ -43,6 +43,12 @@ src/
     AiRacers.ts          Computer opponents: curvature/grip speed profile with braking pass, racing line, overtakes
     Particles.ts         GPU particle pools
     Effects.ts           Shockwave rings, debris, beams, skid marks (pooled/instanced)
+  modes/                 Extra formats layered on a session (Game.modes: update/dispose/results hook), local games only
+    TimeAttack.ts        Circuit medal runs (bronze/silver/gold/ace lap times from pace.ts), live split, PB per track x vehicle
+    Elimination.ts       Knockout race: last place out every N s (N from the track's pace), last one standing wins
+    Traffic.ts           Open-world civilian cars in the right lane; near-miss chains (XP + nitro), slipstream nitro, crashes
+    pace.ts              Lap-time estimate from track curvature + vehicle speed/grip/accel
+    menu.ts              Setup rows (Format, Traffic) and their option handling
   net/
     NetClient.ts         WebSocket to a room
     RemotePlayers.ts     Other online riders, interpolated
