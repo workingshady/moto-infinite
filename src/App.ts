@@ -5,6 +5,7 @@ import { Audio } from './core/Audio';
 import { Menu, type Profile, type Setup } from './ui/Menu';
 import { createTouch } from './ui/Touch';
 import { NetClient, newRoomCode } from './net/NetClient';
+import { SocialUI } from './ui/Social';
 import { PLAYER_COLORS, TRACKS, type QualityName } from './config';
 import { DEFAULT_GEN, ROOM_CODE_RE, type LobbySettings } from '../shared/protocol';
 import type { Standing } from './systems/Race';
@@ -188,6 +189,9 @@ export class App {
     ev.on('start', () => this.startOnline());
     ev.on('back', () => { this.attract(); this.showLobby(); });
     ev.on('closed', (m) => { this.net = null; this.attract(); this.menu.show('online', m.reason); });
+    // back after a dropped link: carry on, or catch up if the session moved on meanwhile
+    ev.on('reconnected', (m) => { if (!m.changed) return; if (net.phase === 'playing') this.startOnline(); else { this.attract(); this.showLobby(); } });
+    new SocialUI(net, { game: () => this.game, view: () => (this.menu.visible ? (this.menu.current === 'lobby' ? 'lobby' : 'menu') : this.menu.inGame ? 'play' : 'menu'), resume: () => this.resume() });
     if (net.isHost) net.send({ t: 'settings', settings: { ...net.settings, seed: Math.floor(Math.random() * 1e9) } });
     if (net.phase === 'playing') this.startOnline();
     else this.showLobby();

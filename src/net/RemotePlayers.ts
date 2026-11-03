@@ -16,7 +16,13 @@ export interface Remote {
   seated: boolean;
   x: number; y: number; z: number; // displayed position (for minimap / hit tests)
   wheel: number;
+  /** Connection dropped (slot held by the room for a while). */
+  away: boolean;
+  /** Quick-chat emote bubble above the name tag, built on first use. */
+  bubble: { sprite: THREE.Sprite; canvas: HTMLCanvasElement; tex: THREE.CanvasTexture; t: number } | null;
 }
+
+const BUBBLE_TIME = 3.5;
 
 export class RemotePlayers {
   private map = new Map<string, Remote>();
@@ -29,13 +35,16 @@ export class RemotePlayers {
     for (const p of players) {
       const old = this.map.get(p.id);
       if (old && (old.name !== p.name || old.color !== p.color || old.vehicle !== p.vehicle)) { this.removeModels(old); this.map.delete(p.id); } // renamed / recoloured
-      if (p.id === selfId || this.map.has(p.id)) continue;
+      const kept = this.map.get(p.id);
+      if (kept) kept.away = !!p.away;
+      if (p.id === selfId || kept) continue;
       const def = vehicleById(p.vehicle), bike = buildVehicleModel(def.id, p.color), rider = buildRider(p.color), tag = nameTag(p.name, p.color);
       seatRider(rider, bike);
       rider.root.visible = def.kind === 'bike';
       bike.root.visible = false;
+      tag.visible = false; // until the first snapshot places it
       this.game.scene.add(bike.root, tag);
-      this.map.set(p.id, { id: p.id, name: p.name, color: p.color, vehicle: p.vehicle, bike, rider, tag, buf: [], state: null, seated: true, x: 0, y: -999, z: 0, wheel: 0 });
+      this.map.set(p.id, { id: p.id, name: p.name, color: p.color, vehicle: p.vehicle, bike, rider, tag, buf: [], state: null, seated: true, x: 0, y: -999, z: 0, wheel: 0, away: !!p.away, bubble: null });
     }
   }
 
@@ -45,6 +54,35 @@ export class RemotePlayers {
     r.buf.push({ t: performance.now() / 1000, s });
     if (r.buf.length > 20) r.buf.shift();
     r.state = s;
+  }
+
+  /** Show a short emote bubble above a rider's name tag. */
+  emote(id: string, text: string) {
+    const r = this.map.get(id);
+    if (!r) return;
+    if (!r.bubble) {
+      const canvas = document.createElement('canvas');
+      canvas.width = 256;
+      canvas.height = 64;
+      const tex = new THREE.CanvasTexture(canvas), sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthWrite: false, transparent: true }));
+      sprite.scale.set(4, 1, 1);
+      this.game.scene.add(sprite);
+      r.bubble = { sprite, canvas, tex, t: 0 };
+    }
+    const b = r.bubble, g = b.canvas.getContext('2d')!;
+    g.clearRect(0, 0, 256, 64);
+    g.font = 'bold 30px system-ui, sans-serif';
+    const w = Math.min(248, g.measureText(text).width + 30);
+    g.fillStyle = 'rgba(255,255,255,.92)';
+    g.beginPath();
+    g.roundRect((256 - w) / 2, 6, w, 46, 16);
+    g.fill();
+    g.fillStyle = '#10131f';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText(text, 128, 30, 230);
+    b.tex.needsUpdate = true;
+    b.t = BUBBLE_TIME;
   }
 
   forEach(fn: (r: Remote) => void) {
@@ -62,7 +100,7 @@ export class RemotePlayers {
       const f = Bs.t === A.t ? 1 : Math.max(0, Math.min(1, (now - A.t) / (Bs.t - A.t)));
       const a = A.s, s = Bs.s;
       const bx = lerp(a.bx, s.bx, f), by = lerp(a.by, s.by, f), bz = lerp(a.bz, s.bz, f);
-      r.bike.root.visible = !s.dead;
+      r.bike.root.visible = !s.dead && !r.away;
       r.bike.root.position.set(bx, by, bz);
       r.bike.root.rotation.set(lerp(a.bp, s.bp, f), lerpAngle(a.bh, s.bh, f), lerp(a.bl, s.bl, f));
       r.wheel += (s.v * dt) / r.bike.wheelRadius;
@@ -86,12 +124,24 @@ export class RemotePlayers {
         r.x = r.rider.root.position.x; r.y = r.rider.root.position.y; r.z = r.rider.root.position.z;
       } else { r.x = bx; r.y = by; r.z = bz; }
       r.tag.position.set(r.x, r.y + 3.4, r.z);
-      r.tag.visible = !s.dead;
+      r.tag.visible = !s.dead && !r.away;
+      if (r.bubble) {
+        const bb = r.bubble;
+        bb.t -= dt;
+        bb.sprite.visible = bb.t > 0 && r.tag.visible;
+        bb.sprite.position.set(r.x, r.y + 4.4 + Math.max(0, bb.t - BUBBLE_TIME + 0.25) * 2, r.z);
+        (bb.sprite.material as THREE.SpriteMaterial).opacity = Math.min(1, bb.t / 0.5);
+      }
     }
   }
 
   private removeModels(r: Remote) {
     this.game.scene.remove(r.bike.root, r.rider.root, r.tag);
+    if (r.bubble) {
+      this.game.scene.remove(r.bubble.sprite);
+      r.bubble.tex.dispose();
+      (r.bubble.sprite.material as THREE.SpriteMaterial).dispose();
+    }
   }
 
   dispose() {

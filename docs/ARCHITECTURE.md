@@ -6,6 +6,7 @@
 index.html               Shell only; everything is built by src/main.ts
 public/                  Static files served as-is (favicon)
 shared/protocol.ts       Online message types + lobby settings, used by client AND worker
+shared/social.ts         Quick-chat list, chat sanitising, rate/anti-cheat limits (client AND worker)
 src/
   main.ts                Entry: new App()
   App.ts                 Flow: menu ⇄ game sessions ⇄ online rooms
@@ -44,19 +45,24 @@ src/
     Particles.ts         GPU particle pools
     Effects.ts           Shockwave rings, debris, beams, skid marks (pooled/instanced)
   net/
-    NetClient.ts         WebSocket to a room
-    RemotePlayers.ts     Other online riders, interpolated
+    NetClient.ts         WebSocket to a room: heartbeat/ping, auto-reconnect with resume token
+    RemotePlayers.ts     Other online riders, interpolated, emote bubbles
+    Spectate.ts          Follow-cam on other riders (finished, wrecked, late joiner)
+    mutes.ts             Locally muted players
   ui/
     Menu.ts              Landing page, setup panel (solo/split/lobby share it), settings, pause, results
     Preview.ts           3D character preview + top-down map preview
     Hud.ts               Per-player HUD (stats, minimap, reticle, story, race panel)
     Touch.ts             Phone/tablet buttons
+    Social.ts            Online overlay: chat dock, quick chat, player list (Tab), reconnect banner, spectate bar
+    ChatPanel.ts         Chat log/input and fading feed (text only, never innerHTML)
     Gauges.ts            Canvas speedometer, tachometer, nitro ring
   styles/main.css
   utils/                 math helpers, seeded noise
 worker/
   index.ts               Cloudflare Worker: /api/health, /api/room/:code
-  Room.ts                Durable Object per room (WebSocket Hibernation): lobby + relay
+  Room.ts                Durable Object per room (WebSocket Hibernation): lobby + relay, held slots (30 s) for
+                         dropped players, host migration, chat, message validation/rate limits, finish-time checks
 ```
 
 ## Rules that keep it easy to change

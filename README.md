@@ -30,6 +30,8 @@ npm run dev        # http://localhost:5173
 `↑ ↓` throttle / brake · `← →` steer · `E` get on/off · `Shift`/`Space` nitro / jump ·
 `F` or click fire · `Q`/`1-3` weapon · in air: arrows flip/spin · `R` respawn · `M` mute · `H` help
 
+Online: `Enter`/`T` chat · `5-0` quick chat (pad: hold Back + d-pad) · hold `Tab` players & pings · `[` `]` spectate (pad: LB/RB)
+
 ## Project layout
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).

@@ -28,6 +28,7 @@ function garageCards(sel: string, attr: string, kind: VehicleKind) {
 
 import { prefs, savePrefs } from '../core/prefs';
 import { CAM_LABEL, CAM_VIEWS, isCamView } from '../core/cameraViews';
+import { lobbyRowExtras, resultsExtras } from './Social';
 
 const K = (k: string) => `<kbd class="key">${k}</kbd>`;
 /** Keys shown by the Settings keyboard tester. */
@@ -446,7 +447,7 @@ export class Menu {
             </div>
             <div id="lineupHost" class="lineup-host" title="Drag to spin"><span class="lineup-hint">⟲ drag to spin</span></div>
             <div class="riders-head"><span class="label">RIDERS ${v.players.length}/${v.settings.maxPlayers}${v.settings.locked ? ' · 🔒 LOCKED' : ''}</span><span class="ready-count">${v.players.filter((p) => p.ready).length}/${v.players.length} ready</span></div>
-            <ul class="players">${v.players.map((p) => `<li><i style="background:${hex(p.color)}"></i>${escapeHtml(p.name)}${p.host ? ' 👑' : ''}${p.id === v.you ? ' <em>(you)</em>' : ''}${p.ready ? ' <span class="ready">✓ ready</span>' : ' <span class="notready">…</span>'}${v.host && p.id !== v.you ? `<button class="kick" data-kick="${escapeHtml(p.id)}" title="Remove from room">✕</button>` : ''}</li>`).join('')}</ul>
+            <ul class="players">${v.players.map((p) => `<li><i style="background:${hex(p.color)}"></i>${escapeHtml(p.name)}${p.host ? ' 👑' : ''}${p.id === v.you ? ' <em>(you)</em>' : ''}${p.ready ? ' <span class="ready">✓ ready</span>' : ' <span class="notready">…</span>'}${lobbyRowExtras(p, v.you)}${v.host && p.id !== v.you ? `<button class="kick" data-kick="${escapeHtml(p.id)}" title="Remove from room">✕</button>` : ''}</li>`).join('')}</ul>
             <div class="me-row"><label>Your name <input id="lname" maxlength="16" value="${escapeHtml(v.players.find((p) => p.id === v.you)?.name ?? P.name)}"></label><div class="dots">${colorDots(v.players.find((p) => p.id === v.you)?.color ?? P.color, 'lcolor')}</div><div class="ride-line">Ride: <b>${escapeHtml(vehicleById(P.vehicle ?? 'street').name)}</b> <button class="chip" data-go="garage">Change</button></div></div>
           </div>
           <div class="lobby-main">
@@ -593,7 +594,7 @@ export class Menu {
         return `
         <h2>🏁 Race results</h2>
         <table class="results">${rows.map((r, i) => `<tr><td>${['🥇', '🥈', '🥉'][i] ?? i + 1}</td><td><i style="background:${hex(r.color)}"></i>${escapeHtml(r.name)}</td><td>${r.time !== null ? fmt(r.time) : 'racing…'}</td></tr>`).join('')}</table>
-        <div class="row-buttons"><button class="btn ghost" data-go="quit">Menu</button><button class="btn primary" data-go="again">Race again</button></div>`;
+        <div class="row-buttons"><button class="btn ghost" data-go="quit">Menu</button>${resultsExtras()}<button class="btn primary" data-go="again">Race again</button></div>`;
       }
       case 'loading':
         return `<div class="logo small">MOTO<span>INFINITE</span></div><p class="loading">${escapeHtml(String(data ?? 'Generating world…'))}</p><div class="spinner"></div>`;
