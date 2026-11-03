@@ -15,7 +15,7 @@ interface Step {
 const counter = (id: string, n: number) => (t: Tutorial) => (t.counts[id] ?? 0) >= n;
 
 export const STEPS: Step[] = [
-  { title: 'Get on your bike', keys: 'Walk ↑↓←→ · E to ride', hint: 'Your bike is right next to you (blue dot on the minimap).', done: (_t, p) => p.riding },
+  { title: 'Get on your ride', keys: 'Walk ↑↓←→ · E to ride', hint: 'Your vehicle is right next to you (blue dot on the minimap).', done: (_t, p) => p.riding },
   { title: 'Throttle to 60 km/h', keys: '↑ or W', hint: 'Watch the speed in the top-left panel.', done: (_t, p) => Math.abs(p.B.v) * 3.6 >= 60 },
   {
     title: 'Steer through the curves', keys: '← → or A D', hint: 'Steering eases in, so hold the key a moment.',

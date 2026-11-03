@@ -1,5 +1,6 @@
 // Builds every garage model in Node: three.js geometry needs no WebGL, only the canvas textures need a stub.
 import { beforeAll, describe, expect, it } from 'vitest';
+import * as THREE from 'three';
 import type * as VM from './vehicleModels';
 import { VEHICLES } from '../data/vehicles';
 
@@ -35,6 +36,15 @@ describe('vehicle models', () => {
       expect(meshes, v.id).toBeGreaterThan(8);
       // electric drivetrains never show the exhaust flame (player, AI, online, replay all build through here)
       expect(m.flame.visible, v.id).toBe(v.engine.type !== 'electric');
+    }
+  });
+  it('every vehicle stands level: all wheels touch the ground at the same height', () => {
+    for (const v of VEHICLES) {
+      const m = buildVehicleModel(v.id, 0x3388ff);
+      m.root.updateMatrixWorld(true);
+      const bottoms = m.wheels.map((w) => new THREE.Box3().setFromObject(w).min.y);
+      expect(Math.max(...bottoms) - Math.min(...bottoms), v.id).toBeLessThan(0.05);
+      expect(Math.abs(Math.min(...bottoms)), v.id).toBeLessThan(0.06);
     }
   });
 });

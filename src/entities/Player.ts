@@ -346,7 +346,7 @@ export class Player {
       }
     } else {
       B.v *= 1 - 3 * dt;
-      B.lean = lerp(B.lean, 0.22, damp(dt, 4));
+      B.lean = lerp(B.lean, this.isCar ? 0 : 0.22, damp(dt, 4)); // parked: bikes rest on the kickstand, cars sit level
       B.wasN = false;
     }
     if (this.ev) this.ev.step(dt, active, up, down, boosting, B.wasN);

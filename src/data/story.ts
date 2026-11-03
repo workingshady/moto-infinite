@@ -5,7 +5,7 @@ export const STORY = {
   intro:
     'The island of Infinita was a rider\'s paradise until Vex Corp switched on its drone swarm and fenced the roads off. ' +
     'You found an old bike in a beach shack. Ride, collect energy gems, smash the blockades and take the roads back.',
-  spawn: { title: 'CHAPTER 1 · THE SHACK', text: 'Walk to your bike (E) and hit the road.' },
+  spawn: { title: 'CHAPTER 1 · THE SHACK', text: 'Walk to your ride (E) and hit the road.' },
   chapters: [
     { level: 2, title: 'CHAPTER 2 · FIRST SPARKS', text: 'Rockets unlocked. Vex scouts noticed you. Knock them out of the sky.' },
     { level: 3, title: 'CHAPTER 3 · THE RAIL', text: 'Railgun online. Gunner drones patrol the crossroads: pierce them.' },
