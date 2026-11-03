@@ -70,6 +70,21 @@ export const LANDING = {
 };
 
 /**
+ * Wall / barrier / tree contact response for the player vehicle. The into-wall velocity is removed (plus a small
+ * rebound), the speed along the wall is kept minus friction, and the heading swings toward the wall at most `maxSpin`.
+ */
+export const WALL = {
+  restitution: 0.15, // share of the into-wall speed bounced back out
+  friction: 0.35, // tangential speed lost per unit of into-wall speed (Coulomb-style scrape)
+  maxSpin: 0.6, // rad: biggest heading change one impact can cause
+  align: 0.55, // share of the heading-to-travel gap closed per impact
+  fxCooldown: 0.35, // s between impact sounds/particles/damage while scraping a wall
+  stuckTime: 2, // s pinned against a wall (slow or reversing) before the auto-recovery re-aligns you
+  stuckSpeed: 5, // m/s: slower than this while touching a wall counts as stuck
+  realignRate: 2.2, // rad/s the recovery turns the car toward the road direction
+};
+
+/**
  * Leveling: XP needed for the next level = base * level^exp (power curve: quick early levels, slower later).
  * Cards never freeze a race; in solo they slow time instead of pausing, then fold into a badge.
  */
