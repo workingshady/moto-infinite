@@ -1,0 +1,108 @@
+/* ================================================================ touch controls (src/ui/Touch.ts) */
+#touch { position: fixed; inset: 0; z-index: 5; pointer-events: none; box-sizing: border-box;
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+  touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+#touch [hidden] { display: none !important; }
+#touch button { font: inherit; color: #fff; touch-action: none; -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; }
+#touch .tc-btn { --s: var(--tc-u); position: absolute; width: var(--s); height: var(--s); margin: calc(var(--s) / -2) 0 0 calc(var(--s) / -2); padding: 0;
+  border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.28); background: rgba(12, 16, 28, 0.55); backdrop-filter: blur(4px);
+  font-weight: 900; font-size: calc(var(--tc-u) * 0.27); letter-spacing: 0.02em; opacity: var(--tc-op); pointer-events: auto;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3); transition: transform 0.06s, background 0.06s; }
+#touch .tc-btn.big { --s: calc(var(--tc-u) * 1.12); font-size: calc(var(--tc-u) * 0.3); }
+#touch .tc-btn.small { font-size: calc(var(--tc-u) * 0.2); }
+#touch .tc-btn.tiny { font-size: calc(var(--tc-u) * 0.165); letter-spacing: 0; }
+#touch .tc-btn[data-id="gas"] { border-color: rgba(124, 255, 178, 0.55); }
+#touch .tc-btn[data-id="brake"] { border-color: rgba(255, 77, 94, 0.55); }
+#touch .tc-btn[data-id="nitro"] { border-color: rgba(60, 200, 255, 0.6); }
+#touch .tc-btn[data-id="fire"] { border-color: rgba(255, 90, 106, 0.7); }
+#touch .tc-btn[data-id="upgrade"] { background: linear-gradient(90deg, rgba(255, 210, 63, 0.9), rgba(255, 165, 63, 0.9)); color: #1b1300; }
+#touch .tc-btn.on { background: rgba(255, 210, 63, 0.85); color: #1b1300; transform: scale(0.93); opacity: 1; }
+
+#touch .tc-stick { position: absolute; width: var(--tc-stick); height: var(--tc-stick); margin: calc(var(--tc-stick) / -2) 0 0 calc(var(--tc-stick) / -2);
+  border-radius: 50%; background: radial-gradient(circle, rgba(12, 16, 28, 0.2), rgba(12, 16, 28, 0.5)); border: 2px solid rgba(255, 255, 255, 0.3);
+  opacity: var(--tc-op); pointer-events: auto; touch-action: none; }
+#touch .tc-stick i { position: absolute; left: 29%; top: 29%; width: 42%; height: 42%; border-radius: 50%; background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4); }
+
+#touch .tc-sys { position: absolute; left: calc(env(safe-area-inset-left, 0px) + 10px); top: calc(env(safe-area-inset-top, 0px) + 6px); display: flex; gap: 6px; pointer-events: auto; }
+#touch .tc-sys button { width: 44px; height: 44px; padding: 0; border-radius: 12px; border: 0; background: rgba(12, 16, 28, 0.6); backdrop-filter: blur(6px); font-size: 17px; font-weight: 900; }
+#touch .tc-chip { position: absolute; left: 50%; top: 38%; transform: translateX(-50%); padding: 12px 18px; border-radius: 999px; border: 0; pointer-events: auto;
+  background: linear-gradient(90deg, var(--accent), #ffa53f); color: #1b1300; font-weight: 800; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35); }
+
+/* edit layout mode */
+#touch .tc-edit { display: none; }
+#touch.editing { background: rgba(8, 10, 20, 0.35); pointer-events: auto; }
+#touch.editing .tc-sys, #touch.editing .tc-chip { display: none; }
+#touch.editing .tc-edit { position: absolute; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 10px); transform: translateX(-50%); display: flex; gap: 8px; align-items: center;
+  padding: 6px 6px 6px 14px; border-radius: 999px; background: var(--panel-solid); pointer-events: auto; font-size: 13px; white-space: nowrap; max-width: calc(100vw - 24px); }
+#touch.editing .tc-edit span { overflow: hidden; text-overflow: ellipsis; }
+#touch.editing .tc-edit button { min-height: 40px; padding: 0 14px; border: 0; border-radius: 999px; background: rgba(255, 255, 255, 0.12); font-weight: 800; }
+#touch.editing .tc-edit button.primary { background: linear-gradient(90deg, var(--accent), #ffa53f); color: #1b1300; }
+#touch.editing .tc-btn, #touch.editing .tc-stick { opacity: 1; outline: 2px dashed var(--accent); outline-offset: 3px; cursor: move; }
+
+/* settings bottom sheet */
+.touch-sheet { position: fixed; inset: 0; z-index: 20; display: flex; align-items: flex-end; justify-content: center; background: rgba(4, 6, 14, 0.5);
+  touch-action: pan-y; overscroll-behavior: contain; }
+.ts-card { width: min(540px, 100%); max-height: 94%; overflow-y: auto; box-sizing: border-box; background: var(--panel-solid); backdrop-filter: blur(12px);
+  border-radius: 20px 20px 0 0; padding: 14px 18px calc(16px + env(safe-area-inset-bottom, 0px)); box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.45); animation: rise 0.2s ease-out; }
+.ts-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-size: 17px; }
+.ts-card > label, .ts-tilt > label { display: flex; justify-content: space-between; margin: 12px 0 4px; font-size: 13px; color: var(--dim); }
+.ts-card input[type="range"] { display: block; box-sizing: border-box; width: 100%; max-width: 100%; margin: 0; min-width: 0; height: 32px; accent-color: var(--accent); }
+.ts-seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.ts-seg button { min-height: 44px; border: 2px solid transparent; border-radius: 12px; background: rgba(255, 255, 255, 0.08); font-weight: 800; }
+.ts-seg button.on { border-color: var(--accent); background: rgba(255, 210, 63, 0.18); }
+.ts-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+.ts-row label { display: flex; gap: 8px; align-items: center; min-height: 44px; }
+.ts-row input[type="checkbox"] { width: 22px; height: 22px; accent-color: var(--accent); }
+.ts-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+.ts-card .btn { min-height: 44px; }
+
+/* portrait hint while playing */
+.rotate-hint { position: fixed; inset: 0; z-index: 9; display: none; align-items: center; justify-content: center; padding: 24px; text-align: center;
+  background: rgba(8, 10, 20, 0.86); backdrop-filter: blur(6px); }
+.rotate-hint.show { display: flex; }
+.rotate-hint > div { max-width: 320px; display: flex; flex-direction: column; gap: 10px; align-items: stretch; }
+.rotate-hint h3 { margin: 6px 0 0; font-size: 20px; color: var(--accent); }
+.rotate-hint p { margin: 0 0 8px; color: var(--dim); line-height: 1.4; }
+.rotate-hint .btn { min-height: 48px; }
+.rh-phone { align-self: center; width: 46px; height: 80px; border: 4px solid #fff; border-radius: 10px; position: relative; animation: rhTurn 2.2s ease-in-out infinite; }
+.rh-phone::after { content: ''; position: absolute; left: 50%; bottom: 4px; width: 10px; height: 3px; margin-left: -5px; border-radius: 2px; background: #fff; }
+@keyframes rhTurn { 0%, 20% { transform: rotate(0); } 50%, 80% { transform: rotate(-90deg); } 100% { transform: rotate(0); } }
+
+/* no page scroll, zoom, rubber-banding or text selection while playing with touch */
+html:has(body.touch-on), body.touch-on { overscroll-behavior: none; touch-action: none; -webkit-touch-callout: none; -webkit-text-size-adjust: 100%; }
+body.touch-on #gl { touch-action: none; }
+
+/* ================================================================ menus on phones and tablets */
+#menu.overlay { overflow-x: hidden; }
+#menu.overlay:not(.lobby-screen) { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+#menu .card-wrap { max-width: 100%; box-sizing: border-box; }
+#menu img, #menu canvas, #menu table { max-width: 100%; }
+/* big enough to hit with a thumb */
+@media (pointer: coarse) {
+  #menu .btn, #menu select, #menu .join input, #menu .share input { min-height: 44px; }
+  #menu input[type="range"] { min-height: 32px; }
+  #menu input[type="checkbox"], #menu input[type="radio"] { min-width: 22px; min-height: 22px; }
+  #menu, #menu * { -webkit-tap-highlight-color: transparent; }
+  .btn:hover { transform: none; }
+}
+/* phones: panels become bottom sheets with the back/primary row always in reach */
+@media (max-width: 640px) {
+  #menu.overlay:not(.lobby-screen) { align-items: safe flex-end; padding: max(8px, env(safe-area-inset-top, 0px)) 0 0; }
+  #menu.overlay:not(.lobby-screen) > .card-wrap { width: 100%; border-radius: 20px 20px 0 0; padding: 18px 16px calc(14px + env(safe-area-inset-bottom, 0px)); animation-name: sheetUp; }
+  #menu.overlay:not(.lobby-screen) > .card-wrap > .row-buttons { position: sticky; bottom: 0; z-index: 3; margin: 14px -16px 0;
+    padding: 10px 16px; background: rgba(14, 18, 30, 0.97); backdrop-filter: blur(10px); border-top: 1px solid rgba(255, 255, 255, 0.08); }
+  #menu .card-wrap { font-size: 15px; }
+  #menu h2 { font-size: 22px; }
+  #menu .howto { grid-template-columns: 1fr; max-height: none; }
+}
+@keyframes sheetUp { from { transform: translateY(40px); opacity: 0; } }
+/* landscape phones: little height, so use it all */
+@media (max-height: 480px) and (orientation: landscape) {
+  #menu.overlay { padding-top: 8px; padding-bottom: 8px; }
+  #menu .howto { max-height: none; }
+}
+
+/* key names in HUD prompts mean nothing on a phone: point at the on-screen button instead */
+body.touch-on .hud .prompt b { font-size: 0; }
+body.touch-on .hud .prompt b::after { content: 'RIDE'; font-size: 15px; color: var(--accent); }

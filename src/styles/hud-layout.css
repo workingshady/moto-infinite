@@ -1,0 +1,54 @@
+/* ================================================================ HUD zones that scale with the screen
+   Six zones per player HUD (see main.css): tl status/objective/leaderboard · tc race/challenge/drift · tr map/checklist
+   bl key help · bc prompts/meters/F1 dash · br gauges. Each zone scales by --hs (viewport x split factor) from its own
+   corner, keeps clear of the notch (safe-area insets) and, with touch controls on, of the thumb clusters.
+   Prefixed with #hud-layer so these win over the older per-size rules in main.css. */
+#hud-layer { --vs: 1; --sl: env(safe-area-inset-left, 0px); --sr: env(safe-area-inset-right, 0px); --st: env(safe-area-inset-top, 0px); --sb: env(safe-area-inset-bottom, 0px); }
+@media (min-width: 2200px) and (min-height: 1200px) { #hud-layer { --vs: 1.2; } }
+@media (max-width: 1100px), (max-height: 760px) { #hud-layer { --vs: 0.9; } }
+@media (max-width: 760px), (max-height: 560px) { #hud-layer { --vs: 0.76; } }
+@media (max-height: 430px), (max-width: 420px) { #hud-layer { --vs: 0.64; } }
+
+#hud-layer .hud { --hs: var(--vs); --hm: 16px; --map: 1; }
+#hud-layer .hud.split { --hs: calc(var(--vs) * 0.82); --hm: 10px; --map: 0.9; }
+@media (max-width: 760px), (max-height: 560px) { #hud-layer .hud { --map: 0.85; } }
+
+#hud-layer .hud .z-tl { left: calc(var(--hm) + var(--sl)); top: calc(var(--hm) + var(--st)); transform: scale(var(--hs)); transform-origin: top left;
+  max-height: calc((100% - 2 * var(--hm)) / var(--hs) - 150px); }
+#hud-layer .hud .z-tc { top: calc(var(--hm) + var(--st)); transform: translateX(-50%) scale(var(--hs)); transform-origin: top center; }
+#hud-layer .hud .z-tr { right: calc(var(--hm) + var(--sr)); top: calc(var(--hm) + var(--st)); transform: scale(calc(var(--hs) * var(--map))); transform-origin: top right; }
+#hud-layer .hud .z-bl { left: calc(var(--hm) + var(--sl)); bottom: calc(var(--hm) + var(--sb)); transform: scale(var(--hs)); transform-origin: bottom left; }
+#hud-layer .hud .z-bc { bottom: calc(var(--hm) + var(--sb)); transform: translateX(-50%) scale(var(--hs)); transform-origin: bottom center; }
+#hud-layer .hud .z-br { right: calc(var(--hm) - 4px + var(--sr)); bottom: calc(var(--hm) - 6px + var(--sb)); transform: scale(var(--hs)); transform-origin: bottom right; }
+#hud-layer .hud.split .z-bl { display: none; }
+@media (max-width: 760px), (max-height: 560px) { #hud-layer .hud .z-bl { display: none; } }
+
+/* centre overlays shrink with the screen instead of running off the edges */
+#hud-layer .hud .banner { font-size: clamp(22px, 5.2vmin, 40px); max-width: 94%; white-space: normal; }
+#hud-layer .hud .banner small { font-size: clamp(12px, 2.4vmin, 16px); }
+#hud-layer .hud .countdown { font-size: clamp(64px, 18vmin, 120px); }
+#hud-layer .hud .lvl-num { font-size: clamp(32px, 9vmin, 54px); }
+#hud-layer .hud .story { max-width: min(520px, 86%); padding: 10px 28px; }
+#hud-layer .hud .levelup { transform: scale(var(--hs)); transform-origin: bottom center; }
+
+/* small landscape screens: drop the least useful status lines */
+@media (max-height: 430px) {
+  #hud-layer .hud .stats .row:has([data-k="clock"]), #hud-layer .hud .stats .row:has([data-k="dist"]) { display: none; }
+}
+
+/* ---------------------------------------------------------------- with touch controls
+   system buttons sit above the status panel, the gauges move to the bottom centre between the thumb clusters,
+   prompts/meters stack above the gauges and level-up cards rise to mid-screen. */
+body.touch-on #hud-layer .hud .z-tl { top: calc(var(--hm) + var(--st) + 50px); max-height: calc((100% - 2 * var(--hm) - 50px) / var(--hs) - 190px); }
+body.touch-on #hud-layer .hud .z-bl { display: none; }
+body.touch-on #hud-layer .hud { --g: calc(var(--hs) * 0.8); }
+body.touch-on #hud-layer .hud .z-br { right: auto; left: 50%; bottom: calc(6px + var(--sb)); transform: translateX(-50%) scale(var(--g)); transform-origin: bottom center; }
+body.touch-on #hud-layer .hud .z-bc { bottom: calc(14px + var(--sb) + 150px * var(--g)); }
+body.touch-on #hud-layer .hud.mode-f1 .z-bc { bottom: calc(10px + var(--sb)); }
+body.touch-on #hud-layer .hud.mode-f1 .z-br { display: none; }
+body.touch-on #hud-layer .hud .levelup { bottom: auto; top: 50%; transform: translateY(-50%) scale(var(--hs)); transform-origin: center; }
+body.touch-on #hud-layer .hud .story { top: 46%; }
+body.touch-on #hud-layer .hud .upbadge kbd { display: none; }
+/* portrait (play anyway): gauges and prompts go above the three button rows */
+body.touch-on.touch-portrait #hud-layer .hud .z-br { bottom: calc(240px + var(--sb)); }
+body.touch-on.touch-portrait #hud-layer .hud .z-bc { bottom: calc(248px + var(--sb) + 150px * var(--g)); }

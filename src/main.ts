@@ -1,4 +1,6 @@
 import './styles/main.css';
+import './styles/hud-layout.css';
+import './styles/mobile.css';
 import { App } from './App';
 import { installErrorReporting, sendReport } from './core/errorReport';
 import { installPwa } from './core/pwa';

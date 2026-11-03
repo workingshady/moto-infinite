@@ -120,9 +120,6 @@ button { font: inherit; color: inherit; cursor: pointer; }
 @keyframes shine { 0% { filter: brightness(2.5); box-shadow: 0 0 14px #ffd23f; } 100% { filter: none; box-shadow: none; } }
 kbd { background: rgba(255, 255, 255, 0.16); border-radius: 4px; padding: 0 5px; font: 11px ui-monospace, monospace; }
 
-#touch { position: fixed; left: 0; right: 0; bottom: 14px; display: flex; justify-content: space-between; padding: 0 14px; pointer-events: none; }
-#touch .grp { display: flex; gap: 10px; pointer-events: auto; flex-wrap: wrap; max-width: 60vw; justify-content: flex-end; }
-#touch button { width: 62px; height: 62px; border-radius: 50%; border: 0; background: rgba(12, 16, 28, 0.55); font-weight: 800; touch-action: none; }
 
 /* ---------------------------------------------------------------- menus / landing */
 #menu.overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; padding: 16px;
@@ -392,7 +389,6 @@ kbd.key { display: inline-flex; align-items: center; justify-content: center; mi
 .camtag.show { animation: camtag 1.8s ease-out forwards; }
 @keyframes camtag { 0% { opacity: 0; transform: translate(-50%, -8px); } 12% { opacity: 1; transform: translate(-50%, 0); } 75% { opacity: 1; } 100% { opacity: 0; } }
 @media (max-width: 640px) { .gauges { transform: scale(0.72); transform-origin: bottom right; } }
-body:has(#touch) .gauges { bottom: 150px; }
 
 /* ================================================================ HUD layout zones (no overlaps)
    tl: status + objective + leaderboard | tc: race/challenge/drift | tr: map + checklist

@@ -3,7 +3,8 @@ import { Game, type SessionOptions } from './core/Game';
 import { Input } from './core/Input';
 import { Audio } from './core/Audio';
 import { Menu, type Profile, type Setup } from './ui/Menu';
-import { createTouch } from './ui/Touch';
+import { createTouch, type TouchControls } from './ui/Touch';
+import { autoQuality } from './core/device';
 import { NetClient, newRoomCode } from './net/NetClient';
 import { SocialUI } from './ui/Social';
 import { PLAYER_COLORS, TRACKS, type QualityName } from './config';
@@ -39,8 +40,6 @@ const store = {
   },
 };
 
-const isMobile = matchMedia('(pointer: coarse)').matches;
-
 export class App {
   private input = new Input();
   private audio = new Audio();
@@ -48,10 +47,10 @@ export class App {
   game: Game | null = null;
   private net: NetClient | null = null;
   private lastLocal: Setup | null = null;
-  private touch: HTMLDivElement | null = null;
+  private touch: TouchControls | null = null;
+  private quality: QualityName = store.get<QualityName>('quality', autoQuality());
   private studio: ReplayStudio | null = null;
   private lastRows: Standing[] = [];
-  private quality: QualityName = store.get<QualityName>('quality', isMobile ? 'low' : 'medium');
   /** Leaderboard run (daily/weekly challenge, forced vehicle, #1 ghost) and the current session's board hook-up. */
   private lbStart: LbStart | null = null;
   private lb: LbSession | null = null;
@@ -73,6 +72,8 @@ export class App {
     else this.menu.show(prefs.onboarded ? 'home' : 'onboard');
     // ?debug exposes the app for automated browser tests (e.g. granting XP)
     if (new URLSearchParams(location.search).has('debug')) (window as unknown as { __moto: App }).__moto = this;
+    // leaving the tab / locking the phone pauses the game (rendering stops in Game's loop)
+    document.addEventListener('visibilitychange', () => { if (document.hidden && this.game && this.menu.inGame && !this.menu.visible) this.togglePause(); });
     window.addEventListener('webglcontextlost', () => this.menu.show('loading', 'Graphics context lost: reload the page.'));
   }
 
@@ -190,7 +191,7 @@ export class App {
     this.menu.inGame = true;
     this.input.reset();
     this.game!.setMenuPaused(false);
-    if (touch) this.touch = createTouch(this.input);
+    if (touch) this.touch = createTouch(this.input, this.game!);
   }
 
   // ------------------------------------------------------------------ online
