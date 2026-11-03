@@ -2,6 +2,7 @@
 // Gameplay reads small helpers from here (fovOffset, shakeScale, spd ...) so the hot paths stay one-liners.
 import type { Action } from './Input';
 import { mergeSaved, parseJson } from '../utils/store';
+import { markChanged } from './syncBus';
 
 export type Layout = 'solo' | 'p1' | 'p2';
 export type SpeedUnit = 'kmh' | 'mph';
@@ -61,6 +62,7 @@ export function saveSettings() {
   } catch {
     /* not persisted */
   }
+  markChanged('settings');
   applySettings();
 }
 

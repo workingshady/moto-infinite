@@ -1,6 +1,7 @@
 // Touch control settings (saved per device) and the button table: which buttons a mode/vehicle needs and where they sit.
 import type { Action } from '../core/Input';
 import { mergeSaved, parseJson } from '../utils/store';
+import { markChanged } from '../core/syncBus';
 
 export type TouchScheme = 'buttons' | 'stick' | 'tilt';
 
@@ -46,6 +47,7 @@ export function saveTouchSettings() {
   } catch {
     /* not persisted */
   }
+  markChanged('touch');
 }
 
 /** What the current player is doing: decides which buttons are worth showing. */

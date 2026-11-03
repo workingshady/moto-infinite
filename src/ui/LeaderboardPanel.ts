@@ -111,7 +111,7 @@ function rowsHtml(top: LbTop | null | 'loading', board: string, max = 10) {
   const time = boardIsTime(board), mine = localBest(board);
   if (!top) return `<div class="lb-empty">📴 Leaderboard offline.${mine !== null ? ` Your best here: <b>${fmtValue(mine, time)}</b>` : ''}</div>`;
   if (!top.rows.length) return `<div class="lb-empty">No results yet. Be the first!</div>`;
-  const row = (r: LbTop['rows'][number]) => `<li class="${r.me ? 'me' : ''}"><i>${['🥇', '🥈', '🥉'][r.rank - 1] ?? r.rank}</i><span class="nm">${escapeHtml(r.name)}${r.ghost ? ' <small title="ghost lap available">👻</small>' : ''}</span><span class="veh">${escapeHtml(vehicleById(r.vehicle).name)}</span><b>${fmtValue(r.value, time)}</b></li>`;
+  const row = (r: LbTop['rows'][number]) => `<li class="${r.me ? 'me' : ''}"><i>${['🥇', '🥈', '🥉'][r.rank - 1] ?? r.rank}</i><span class="nm">${escapeHtml(r.name)}${r.verified ? ' <small class="lb-ok" title="Signed-in player (verified account)">✓</small>' : ''}${r.ghost ? ' <small title="ghost lap available">👻</small>' : ''}</span><span class="veh">${escapeHtml(vehicleById(r.vehicle).name)}</span><b>${fmtValue(r.value, time)}</b></li>`;
   const you = top.you && top.you.rank > max ? `<li class="gap">⋯</li>${row(top.you)}` : '';
   return `<ol class="lb-rows">${top.rows.slice(0, max).map(row).join('')}${you}</ol><div class="lb-count">${top.total} rider${top.total === 1 ? '' : 's'}</div>`;
 }

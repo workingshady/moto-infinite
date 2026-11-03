@@ -20,6 +20,7 @@ import { Hud } from '../ui/Hud';
 import { PlayerChallenges } from '../systems/Challenges';
 import { STORY } from '../data/story';
 import { prefs, savePrefs } from '../core/prefs';
+import { crashFx, godPlay } from '../admin/state';
 import { CAM_LABEL, CAM_VIEWS, isCamView, type CamView } from '../core/cameraViews';
 import { fmtSpeed, fovOffset, motionScale, shakeScale } from '../core/settings';
 
@@ -193,6 +194,7 @@ export class Player {
     if (g.time - s.lastHurt > PLAYER.regenDelay && !s.dead) s.hp = Math.min(this.stats.hpMax, s.hp + PLAYER.regenRate * dt);
     if (s.comboT > 0) { s.comboT -= dt; if (s.comboT <= 0) s.combo = 0; }
     for (const k of Object.keys(this.buffs) as PowerupKind[]) if (this.buffs[k] > 0) this.buffs[k] = Math.max(0, this.buffs[k] - dt);
+    if (godPlay(g) && !g.opts.attract) { s.nitro = this.stats.nitroMax; s.hp = this.stats.hpMax; } // admin Full Power: endless nitro / N2, full health
   }
 
   get isCar() {
@@ -981,6 +983,7 @@ export class Player {
 
   private crash(reason: string) {
     const B = this.B, g = this.game;
+    if (godPlay(g) && !crashFx()) return; // admin Full Power with crash effects off: ride on
     this.failDrift();
     B.wheelie = 0;
     B.wheelieV = 0;
@@ -1092,7 +1095,7 @@ export class Player {
   // ---------------------------------------------------------------- health, XP, pickups
   hurt(n: number, by?: string, physical = false) {
     const s = this.s, g = this.game;
-    if (s.dead || n <= 0) return;
+    if (s.dead || n <= 0 || godPlay(g)) return; // admin Full Power: no damage, no wrecks
     if (this.buffs.shield > 0) {
       g.fx.burst(this.P.x, this.P.y + 1.2, this.P.z, { n: 12, speed: 6, life: 0.4, size: [0.6, 0.1], colors: [0x7ad7ff, 0xffffff], drag: 2 });
       return;
@@ -1146,7 +1149,7 @@ export class Player {
 
   addXP(n: number, x?: number, y?: number, z?: number) {
     const s = this.s;
-    n = Math.round(n * this.stats.xpMul * (this.buffs.xp2 > 0 ? 2 : 1));
+    n = Math.round(n * this.stats.xpMul * (this.buffs.xp2 > 0 ? 2 : 1) * (godPlay(this.game) ? 5 : 1)); // Full Power: fast in-run levels
     s.xp += n;
     s.score += n;
     if (x !== undefined) this.hud.float('+' + n, x, y!, z!, '#ffd23f', 16);

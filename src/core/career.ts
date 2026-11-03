@@ -4,6 +4,8 @@
 import { CAREER } from '../config';
 import { VEHICLES, vehicleById } from '../data/vehicles';
 import { ACHIEVEMENTS, type AchievementDef } from '../data/achievements';
+import { markChanged } from './syncBus';
+import { fullPower, progressPaused } from '../admin/state';
 
 export interface CareerStats {
   distance: number; // metres ridden
@@ -128,6 +130,12 @@ export function saveCareer() {
   } catch {
     /* not persisted */
   }
+  markChanged('career');
+}
+
+/** Swap the whole career in place (cloud save / account switch); `null` = a fresh career. Callers save afterwards. */
+export function replaceCareer(raw: unknown) {
+  Object.assign(career, migrate(raw));
 }
 
 /** Career XP needed to go from `level` to the next. */
@@ -144,6 +152,7 @@ export function beginSession() {
 
 /** Add career XP and credits; returns the number of career levels gained. */
 export function earn(xp: number, credits: number): number {
+  if (progressPaused()) return 0; // admin Full Power: nothing is earned
   const c = career;
   c.credits += credits;
   c.earned += credits;
@@ -164,6 +173,7 @@ export function earn(xp: number, credits: number): number {
 
 // ---------------------------------------------------------------- garage
 export function isUnlocked(id: string) {
+  if (fullPower()) return true; // admin Full Power: every ride usable, nothing written to the career
   const v = vehicleById(id);
   return !v.unlock || career.unlocked.includes(v.id);
 }
@@ -194,6 +204,7 @@ export const ownedCount = () => VEHICLES.filter((v) => isUnlocked(v.id)).length;
 /** Unlock every achievement whose condition is now met; returns the new ones (rewards are paid). */
 export function checkAchievements(out: AchievementDef[]): AchievementDef[] {
   out.length = 0;
+  if (progressPaused()) return out;
   for (const a of ACHIEVEMENTS) {
     if (career.achievements[a.id] || !a.test(career.stats, career)) continue;
     career.achievements[a.id] = Date.now();
@@ -212,6 +223,7 @@ export type Feat = 'medal' | 'elimWin' | 'nearMiss' | 'challenge' | 'lbRank' | '
  *  `key`: the challenge board id (each challenge pays once). Returns false when nothing was counted.
  *  Achievements are checked by the caller (CareerTracker flush, or checkAchievements() outside a session). */
 export function recordFeat(f: Feat, v = 1, key = ''): boolean {
+  if (progressPaused()) return false;
   const st = career.stats;
   switch (f) {
     case 'medal': {

@@ -5,6 +5,7 @@ import { App } from './App';
 import { installErrorReporting, sendReport } from './core/errorReport';
 import { installPwa } from './core/pwa';
 import { installMenuExtras } from './ui/menuExtras';
+import { installAccountUi } from './ui/AccountPanel';
 
 installErrorReporting();
 installPwa();
@@ -27,8 +28,9 @@ function showFatal(err: unknown) {
 }
 
 try {
-  new App();
+  const app = new App();
   installMenuExtras();
+  installAccountUi(() => app.refreshMenu());
 } catch (err) {
   showFatal(err);
 }

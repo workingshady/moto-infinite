@@ -4,14 +4,18 @@
   "main": "worker/index.ts",
   "compatibility_date": "2026-10-01",
   "observability": { "enabled": true },
+  // Not secrets. ADMIN_EMAILS: @gmail.com accounts that become admin on their first verified sign-in (worker/admin.ts).
+  // APP_VERSION is set at deploy time / in .dev.vars and is not listed here on purpose.
+  "vars": { "ADMIN_EMAILS": "workingshady@gmail.com" },
   "assets": {
     "not_found_handling": "single-page-application",
     // Only these paths reach the Worker; everything else is served straight from the static build.
     "run_worker_first": ["/api/*"]
   },
-  // One Durable Object instance per online room (see worker/Room.ts), one per leaderboard (worker/Leaderboard.ts).
+  // One Durable Object instance per online room (see worker/Room.ts), one per leaderboard (worker/Leaderboard.ts),
+  // one per signed-in player (worker/Account.ts: profile, sessions, cloud save).
   "durable_objects": {
-    "bindings": [{ "name": "ROOMS", "class_name": "Room" }, { "name": "LEADERBOARDS", "class_name": "Leaderboard" }]
+    "bindings": [{ "name": "ROOMS", "class_name": "Room" }, { "name": "LEADERBOARDS", "class_name": "Leaderboard" }, { "name": "ACCOUNTS", "class_name": "Account" }]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Room"] }, { "tag": "v2", "new_sqlite_classes": ["Leaderboard"] }]
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Room"] }, { "tag": "v2", "new_sqlite_classes": ["Leaderboard"] }, { "tag": "v3", "new_sqlite_classes": ["Account"] }]
 }

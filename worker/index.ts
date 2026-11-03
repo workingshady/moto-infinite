@@ -2,9 +2,11 @@
 import { ROOM_CODE_RE } from '../shared/protocol';
 import { handleLeaderboard } from './Leaderboard';
 import { handleLog } from './log';
+import { handleAuth } from './auth';
 
 export { Room } from './Room';
 export { Leaderboard } from './Leaderboard';
+export { Account } from './Account';
 
 export default {
   async fetch(request, env) {
@@ -17,6 +19,9 @@ export default {
     }
 
     if (url.pathname.startsWith('/api/lb/')) return handleLeaderboard(request, env, url);
+
+    const auth = await handleAuth(request, env, url);
+    if (auth) return auth;
 
     // /api/room/ABCDE -> WebSocket into that room's Durable Object
     const m = url.pathname.match(/^\/api\/room\/([A-Za-z0-9]+)$/);

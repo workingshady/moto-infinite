@@ -1,4 +1,4 @@
-// Settings screen: tabs (Graphics, Audio, Controls, Gameplay, Accessibility), each with its own Reset button,
+// Settings screen: tabs (Graphics, Audio, Controls, Gameplay, Accessibility, Account), each with its own Reset button,
 // plus key / gamepad rebinding. Rendered into the Menu card; owns its clicks, sliders and "press a key" capture.
 import { ASSIST, QUALITY, type QualityName } from '../config';
 import type { Action } from '../core/Input';
@@ -15,9 +15,9 @@ import { TOUCH, saveTouchSettings, touchSettings, type TouchScheme } from './Tou
 import { touchSettingsChanged } from './Touch';
 import '../styles/settings.css';
 
-type Tab = 'graphics' | 'audio' | 'controls' | 'gameplay' | 'access';
+type Tab = 'graphics' | 'audio' | 'controls' | 'gameplay' | 'access' | 'account';
 type BindLayout = Layout | 'pad';
-const TABS: [Tab, string][] = [['graphics', '🖥 Graphics'], ['audio', '🔊 Audio'], ['controls', '🎮 Controls'], ['gameplay', '🏍 Gameplay'], ['access', '♿ Accessibility']];
+const TABS: [Tab, string][] = [['graphics', '🖥 Graphics'], ['audio', '🔊 Audio'], ['controls', '🎮 Controls'], ['gameplay', '🏍 Gameplay'], ['access', '♿ Accessibility'], ['account', '👤 Account']];
 
 export interface SettingsHooks {
   rerender(): void;
@@ -61,12 +61,13 @@ export class SettingsPanel {
   }
 
   render(c: SettingsCtx): string {
-    const body = this.tab === 'graphics' ? this.graphics(c) : this.tab === 'audio' ? this.audio(c) : this.tab === 'controls' ? this.controls(c) : this.tab === 'gameplay' ? this.gameplay() : this.access();
+    const body = this.tab === 'graphics' ? this.graphics(c) : this.tab === 'audio' ? this.audio(c) : this.tab === 'controls' ? this.controls(c) : this.tab === 'gameplay' ? this.gameplay() : this.tab === 'access' ? this.access()
+      : '<div class="acct-host" data-acct="settings"></div>'; // filled by ui/AccountPanel.ts
     return `
     <h2>Settings</h2>
     <div class="set-tabs" role="tablist">${TABS.map(([t, l]) => `<button class="set-tab ${t === this.tab ? 'on' : ''}" role="tab" aria-selected="${t === this.tab}" data-stab="${t}">${l}</button>`).join('')}</div>
     <div class="set-body">${body}</div>
-    <div class="row-buttons"><button class="btn ghost" data-go="back">← Back</button><button class="btn ghost" data-sreset="${this.tab}">↺ Reset ${escapeHtml(TABS.find(([t]) => t === this.tab)![1].replace(/^\S+ /, ''))}</button></div>`;
+    <div class="row-buttons"><button class="btn ghost" data-go="back">← Back</button>${this.tab === 'account' ? '' : `<button class="btn ghost" data-sreset="${this.tab}">↺ Reset ${escapeHtml(TABS.find(([t]) => t === this.tab)![1].replace(/^\S+ /, ''))}</button>`}</div>`;
   }
 
   // ---------------------------------------------------------------- tabs

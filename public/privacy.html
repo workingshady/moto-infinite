@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Moto Infinite · Privacy</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; background: #0d1020; color: #e8ecff; font: 16px/1.6 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+  main { max-width: 720px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 28px; margin: 0 0 4px; } h2 { font-size: 19px; margin-top: 28px; }
+  a { color: #3cc8ff; } code { background: rgba(255,255,255,.08); padding: 1px 5px; border-radius: 4px; }
+  .dim { color: rgba(232,236,255,.65); font-size: 14px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Privacy</h1>
+  <p class="dim">Moto Infinite · last updated 2026-11-03</p>
+
+  <h2>Playing without an account</h2>
+  <p>You can play everything without signing in. Your progress and settings are then saved only in your browser (local storage) on this device. Leaderboard entries use a random id created in your browser plus the rider name you type.</p>
+
+  <h2>Signing in with Google (optional)</h2>
+  <p>If you choose "Sign in with Google", Google tells our server who you are with a signed token. We keep:</p>
+  <ul>
+    <li>your Google account id (stored only as a one-way hashed key),</li>
+    <li>your Google display name and profile picture address,</li>
+    <li>your game progress: career (level, credits, statistics, vehicles, achievements), settings and key bindings, touch layout, rider profile (name, colour, chosen vehicles) and Time Attack best times,</li>
+    <li>sign-in sessions (a random token in a cookie named <code>moto_sid</code>; we store only a hash of it) that expire after 60 days without use.</li>
+  </ul>
+  <p>We do <b>not</b> store your e-mail address, password, contacts or anything else from your Google account. Leaderboard results posted while signed in are linked to your account and marked as verified (✓); other players only see the rider name you chose.</p>
+  <p>The data is stored with Cloudflare (Workers and Durable Objects), which runs this game. It is used only to sync your game between your devices and to run the leaderboards. It is never sold or shared for advertising.</p>
+
+  <h2>Deleting your data</h2>
+  <p>In the game open <b>Settings → Account → Delete my cloud data</b>. This removes your account, sessions and cloud save from our server immediately. The copy saved in your browser stays; clear it with your browser's site-data settings. You can also remove Moto Infinite's access in your Google account under <a href="https://myaccount.google.com/connections" rel="noopener">Third-party connections</a>.</p>
+
+  <h2>Contact</h2>
+  <p>Questions or deletion requests: <b>OWNER_EMAIL</b> <!-- TODO(owner): replace OWNER_EMAIL with a real contact address before publishing the Google consent screen --></p>
+
+  <p><a href="/">← Back to the game</a></p>
+</main>
+</body>
+</html>

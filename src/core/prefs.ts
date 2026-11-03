@@ -1,6 +1,7 @@
 // Player preferences that persist in the browser (not part of a game session).
 import type { CamView } from './cameraViews';
 import { mergeSaved, parseJson } from '../utils/store';
+import { markChanged } from './syncBus';
 
 export interface Prefs {
   /** Tap nitro to switch it on/off instead of holding it: helps keyboards that drop 3+ keys at once. */
@@ -32,4 +33,5 @@ export function savePrefs() {
   } catch {
     /* not persisted */
   }
+  markChanged('prefs');
 }
