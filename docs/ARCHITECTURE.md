@@ -7,6 +7,7 @@ index.html               Shell only; everything is built by src/main.ts
 public/                  Static files served as-is (favicon)
 shared/protocol.ts       Online message types + lobby settings, used by client AND worker
 shared/leaderboard.ts    Daily/weekly seed challenges, board ids + plausibility rules, leaderboard API shapes
+shared/social.ts         Quick-chat list, chat sanitising, rate/anti-cheat limits (client AND worker)
 src/
   main.ts                Entry: new App()
   App.ts                 Flow: menu ⇄ game sessions ⇄ online rooms
@@ -57,8 +58,10 @@ src/
     menu.ts              Setup rows (Format, Traffic) and their option handling
     Replay.ts            60 s ring buffer (typed arrays) of every vehicle + key moments; poses puppet copies for playback
   net/
-    NetClient.ts         WebSocket to a room
-    RemotePlayers.ts     Other online riders, interpolated
+    NetClient.ts         WebSocket to a room: heartbeat/ping, auto-reconnect with resume token
+    RemotePlayers.ts     Other online riders, interpolated, emote bubbles
+    Spectate.ts          Follow-cam on other riders (finished, wrecked, late joiner)
+    mutes.ts             Locally muted players
     leaderboard.ts       /api/lb fetch wrapper (offline-safe, local bests, retry queue, anonymous player id)
   ui/
     Menu.ts              Landing page, setup panel (solo/split/lobby share it), settings, pause, results
@@ -69,6 +72,8 @@ src/
     SettingsPanel.ts     Tabbed Settings screen (Graphics, Audio, Controls, Gameplay, Accessibility) and rebinding UI
     menuNav.ts           Keyboard / gamepad menu navigation (focus ring, arrows/D-pad, Enter/A, Esc/B)
     toast.ts             Small notifications
+    Social.ts            Online overlay: chat dock, quick chat, player list (Tab), reconnect banner, spectate bar
+    ChatPanel.ts         Chat log/input and fading feed (text only, never innerHTML)
     Gauges.ts            Canvas speedometer, tachometer, nitro ring
     ReplayStudio.ts      Opens replay / photo mode (pause, results, I key, instant-replay prompt) via Game.view
     ReplayPanel.ts       Replay playback: TV/chase/orbit/onboard/heli cameras, timeline, events, WebM clips
@@ -78,7 +83,8 @@ src/
   utils/                 math helpers, seeded noise
 worker/
   index.ts               Cloudflare Worker: /api/health, /api/room/:code
-  Room.ts                Durable Object per room (WebSocket Hibernation): lobby + relay
+  Room.ts                Durable Object per room (WebSocket Hibernation): lobby + relay, held slots (30 s) for
+                         dropped players, host migration, chat, message validation/rate limits, finish-time checks
   Leaderboard.ts         SQLite Durable Object per board: best per player, ranks, top ghosts, rate limits, sanity checks
 ```
 

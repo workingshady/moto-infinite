@@ -23,6 +23,7 @@ import { Effects } from '../systems/Effects';
 import { Combat } from '../systems/Combat';
 import { Race, type Standing } from '../systems/Race';
 import { RemotePlayers } from '../net/RemotePlayers';
+import { Spectator } from '../net/Spectate';
 import { Tutorial } from '../systems/Tutorial';
 import { CareerTracker } from '../systems/CareerTracker';
 import { Replay } from '../systems/Replay';
@@ -106,6 +107,7 @@ export class Game {
   remotes: RemotePlayers | null = null;
   replay: Replay | null = null;
   view: ViewOverride | null = null;
+  spectator: Spectator | null = null;
   time = 0;
   frame = 0;
   paused = false;
@@ -180,6 +182,7 @@ export class Game {
 
   private wireNet(n: NetClient) {
     this.remotes = new RemotePlayers(this);
+    this.spectator = new Spectator(this);
     this.remotes.sync(n.players, n.id);
     const ev = n.events;
     this.offs.push(
@@ -279,9 +282,12 @@ export class Game {
     this.career?.update(dt);
     for (const m of this.modes) m.update(dt);
     this.remotes?.update(dt);
+    this.spectator?.update();
     this.updateMusic();
     this.replay?.record(dt);
     const focus = this.players.length ? this.players.map((p) => p.P) : [this.attractFocus()];
+    const watched = this.spectator?.focus();
+    if (watched) focus.push(watched);
     this.chunks.stream(focus, this.opts.mode === 'f1' ? 2 : WORLD.buildsPerFrame); // F1 speeds need chunks ready sooner
     this.env.update(dt, this.time, focus[0].x, focus[0].z);
     if (this.net && this.players[0]) {
@@ -326,6 +332,7 @@ export class Game {
     this.players.forEach((p, i) => {
       const vp = r.viewports[i];
       p.updateCamera(dt, vp.w / vp.h);
+      if (i === 0) this.spectator?.apply(p.camera, dt);
       this.env.beforeRender(p.P.x, p.P.y, p.P.z, p.camera, r.pixelHeight(vp));
       this.fx.setScale(r.pixelHeight(vp));
       r.render(this.scene, p.camera, vp, split);

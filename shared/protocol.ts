@@ -51,7 +51,16 @@ export interface PlayerInfo {
   host: boolean;
   /** Ready in the lobby (the host always counts as ready). */
   ready: boolean;
+  /** Round-trip time to the room in ms (latest heartbeat). */
+  ping?: number;
+  /** Connection dropped: the slot is kept for a short while so they can come back. */
+  away?: boolean;
+  /** Joined while a race was running: watches until the next start. */
+  spec?: boolean;
 }
+
+/** One chat line; `id` is empty for room notices. Quick-chat lines carry their QUICK_CHAT index in `q`. */
+export interface ChatLine { id: string; name: string; color: number; text: string; at: number; q?: number }
 
 /** Snapshot of one rider, sent ~15x per second. */
 export interface NetState {
@@ -67,7 +76,7 @@ export interface NetState {
 }
 
 export type ClientMsg =
-  | { t: 'hello'; name: string; color: number; vehicle: string }
+  | { t: 'hello'; name: string; color: number; vehicle: string; resume?: string }
   | { t: 'profile'; name: string; color: number; vehicle: string }
   | { t: 'kick'; id: string }
   | { t: 'ready'; ready: boolean }
@@ -77,19 +86,25 @@ export type ClientMsg =
   | { t: 'state'; s: NetState }
   | { t: 'fire'; w: number; o: Vec3; d: Vec3[] }
   | { t: 'boom'; p: Vec3; r: number; dmg: number }
-  | { t: 'finish'; time: number };
+  | { t: 'finish'; time: number }
+  | { t: 'ping'; c: number; rtt?: number }
+  | { t: 'chat'; text: string }
+  | { t: 'emote'; e: number }
+  | { t: 'bye' };
 
 export type ServerMsg =
-  | { t: 'welcome'; you: string; players: PlayerInfo[]; settings: LobbySettings; phase: Phase }
+  | { t: 'welcome'; you: string; players: PlayerInfo[]; settings: LobbySettings; phase: Phase; token?: string; resumed?: boolean; round?: number; chat?: ChatLine[] }
   | { t: 'players'; players: PlayerInfo[] }
   | { t: 'settings'; settings: LobbySettings }
-  | { t: 'start'; settings: LobbySettings }
+  | { t: 'start'; settings: LobbySettings; round?: number }
   | { t: 'back' }
   | { t: 'state'; id: string; s: NetState }
   | { t: 'fire'; id: string; w: number; o: Vec3; d: Vec3[] }
   | { t: 'boom'; id: string; p: Vec3; r: number; dmg: number }
   | { t: 'finish'; id: string; time: number }
   | { t: 'kicked' }
+  | { t: 'pong'; c: number; pings: Record<string, number> }
+  | { t: 'chat'; line: ChatLine }
   | { t: 'error'; msg: string };
 
 export const MAX_PLAYERS = 8;
