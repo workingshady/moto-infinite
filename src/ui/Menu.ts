@@ -390,7 +390,7 @@ export class Menu {
         return `
         <div class="hero">
           <div class="hero-left">
-            <div class="logo">MOTO<span>INFINITE</span></div>
+            <img class="logo-img" src="/brand/logotype.webp" alt="Moto Infinite" width="1600" height="404" decoding="async">
             <p class="story-intro"><b>${STORY.title}.</b> ${escapeHtml(STORY.intro)}</p>
             <div class="profile">
               <label>Rider name <input id="pname" maxlength="16" value="${escapeHtml(P.name)}"></label>
@@ -618,7 +618,7 @@ export class Menu {
         <div class="row-buttons"><button class="btn ghost" data-go="quit">Menu</button>${resultsExtras()}<button class="btn" data-go="replay">🎬 Replay</button><button class="btn primary" data-go="again">Race again</button></div>`;
       }
       case 'loading':
-        return `<div class="logo small">MOTO<span>INFINITE</span></div><p class="loading">${escapeHtml(String(data ?? 'Generating world…'))}</p><div class="spinner"></div>`;
+        return `<img class="logo-img small" src="/brand/logotype.webp" alt="Moto Infinite" width="1600" height="404" decoding="async"><p class="loading">${escapeHtml(String(data ?? 'Generating world…'))}</p><div class="spinner"></div>`;
     }
   }
 

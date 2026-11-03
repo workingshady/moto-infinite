@@ -1,4 +1,4 @@
-// Rasterises the favicon (public/favicon.svg) into the PNG app icons used by the PWA manifest and iOS.
+// Old generator: rasterised the original SVG favicon into the PWA icons. The icons now come from the brand artwork (public/brand, public/icons); do not re-run it unless you want the old icon back.
 // No dependencies: the logo is a few circles and strokes, drawn here with signed distances and
 // 4x4 supersampling, then written as PNG with node:zlib. Run: node scripts/make-icons.mjs
 import { writeFileSync, mkdirSync } from 'node:fs';

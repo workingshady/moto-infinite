@@ -132,6 +132,9 @@ kbd { background: rgba(255, 255, 255, 0.16); border-radius: 4px; padding: 0 5px;
   background: linear-gradient(90deg, var(--accent), #ff8a3d); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .logo span { display: block; font-size: 0.55em; letter-spacing: 0.35em; background: linear-gradient(90deg, var(--accent2), #8a7dff); -webkit-background-clip: text; background-clip: text; }
 .logo.small { font-size: 34px; }
+.logo-img { display: block; width: min(100%, 460px); height: auto; margin: 0 auto 6px; filter: drop-shadow(0 6px 22px rgba(255, 210, 63, 0.18)); user-select: none; -webkit-user-drag: none; }
+.logo-img.small { width: min(70vw, 300px); }
+.hero .logo-img { margin-left: 0; }
 .tag { text-align: center; color: var(--dim); margin: 10px 0 18px; font-size: 14px; }
 h2 { margin: 0 0 14px; }
 .profile { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
