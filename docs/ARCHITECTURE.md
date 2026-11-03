@@ -40,9 +40,17 @@ src/
   world/
     layout.ts            RoadLayout interface: GridRoads (open world) and Circuit (race loop)
     Terrain.ts           Height/colour of the ground, world themes, ramps and pads
+<<<<<<< HEAD
     Chunks.ts            Streams 64 m chunks: terrain, instanced scenery, road markings, features; obstacle queries (solidAt, sweep, contact)
     collide.ts           Pure collision math: circle/capsule obstacles, swept probe, segment-segment, vehicle capsule contact + impulse
     F1Track.ts           Real F1 circuits (Monza, Silverstone, Spa, Monaco, Suzuka, Bahrain) from bacinger/f1-circuits (MIT), DRS zones, pit lane, start lights, venue dressing
+=======
+    Chunks.ts            Streams 64 m chunks: terrain, instanced scenery, road markings, features
+    F1Track.ts           F1 circuit layout for a session: kerbs (inside apex, outside exit), pit lane, start lights, grid, venue dressing
+    f1Circuits.ts        F1 catalogue (19 real circuits + the fictional Rookie Ring; difficulty, length, turns, flag) and pure geometry:
+                         lon/lat -> metres (WGS84), Catmull-Rom, min-radius relax, scale to the official length, widths, elevation, DRS, pit (unit tested)
+    f1Data.ts            Raw circuit traces from bacinger/f1-circuits (MIT), compact lon/lat offsets
+>>>>>>> f1-tracks
     DriftTrack.ts        Drift venues (docks, touge, skidpad, gymkhana, random): layout, zones, dressing
     Landmarks.ts         Villages, gas stations, windmills, stunt zones, drone outposts; race grandstands + tyre walls; thruster demo wall near the open-world spawn
     Environment.ts       Sky, day/night, weather (rain/snow/fog/storm), water, clouds, stars
@@ -90,6 +98,7 @@ src/
     Menu.ts              Landing page, setup panel (solo/split/lobby share it), settings, pause, results
     Preview.ts           3D character preview + top-down map preview
     garagePicker.ts      Garage tabs (bikes + each car class), sort chips, card grid (styles/garage.css)
+    f1Picker.ts          F1 circuit cards (mini map, flag, difficulty, length, turns), difficulty filter + sort (styles/f1picker.css)
     Hud.ts               Per-player HUD (stats, minimap, reticle, story, race panel)
     Touch.ts             Phone/tablet controls: mode-aware buttons, joystick or tilt steering, drag-to-edit layout, settings sheet, rotate hint
     TouchLayout.ts       Touch settings (saved per device) and the button table: which buttons each mode/vehicle shows, default slots

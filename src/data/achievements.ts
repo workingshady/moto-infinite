@@ -2,7 +2,7 @@
 // Each pays career XP + credits once, with a HUD toast.
 import type { Career, CareerStats } from '../core/career';
 import { THEMES } from '../../shared/protocol';
-import { F1_TRACKS } from '../world/F1Track';
+import { F1_TRACKS } from '../world/f1Circuits';
 
 export type AchievementCat = 'Riding' | 'Tricks' | 'Drift' | 'Racing' | 'Formula 1' | 'Modes' | 'Combat' | 'Exploration' | 'Weather' | 'Online' | 'Career';
 
@@ -51,7 +51,8 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   // formula 1
   { id: 'f1_debut', cat: 'Formula 1', icon: '🏎', name: 'Grand Prix debut', desc: 'Start a Formula 1 race', xp: 200, credits: 60, test: (s) => s.f1Started >= 1 },
   { id: 'f1_win', cat: 'Formula 1', icon: '🍾', name: 'Champagne', desc: 'Win a Formula 1 race', xp: 900, credits: 300, test: (s) => s.f1Won >= 1 },
-  { id: 'f1_tour', cat: 'Formula 1', icon: '🌐', name: 'World tour', desc: `Race on all ${F1_TRACKS.length} F1 circuits`, xp: 1200, credits: 400, test: (s) => s.f1Tracks.length >= F1_TRACKS.length, prog: (s) => ratio(s.f1Tracks.length, F1_TRACKS.length) },
+  { id: 'f1_tour', cat: 'Formula 1', icon: '🌐', name: 'World tour', desc: 'Race on 6 different F1 circuits', xp: 1200, credits: 400, test: (s) => s.f1Tracks.length >= 6, prog: (s) => ratio(s.f1Tracks.length, 6) },
+  { id: 'f1_calendar', cat: 'Formula 1', icon: '🗺', name: 'Full calendar', desc: `Race on all ${F1_TRACKS.length} F1 circuits`, xp: 2500, credits: 900, test: (s) => F1_TRACKS.every((t) => s.f1Tracks.includes(t.id)), prog: (s) => ratio(F1_TRACKS.filter((t) => s.f1Tracks.includes(t.id)).length, F1_TRACKS.length) },
   // modes, leaderboards, replay (stats fed by recordFeat in core/career.ts)
   { id: 'medal_gold', cat: 'Modes', icon: '🥇', name: 'Gold standard', desc: 'Win a gold medal in Time Attack', xp: 500, credits: 150, test: (s) => s.bestMedal >= 3, prog: (s) => ratio(s.bestMedal, 3) },
   { id: 'medal_ace', cat: 'Modes', icon: '💎', name: 'Ace', desc: 'Beat an Ace time in Time Attack', xp: 1000, credits: 350, test: (s) => s.bestMedal >= 4 },

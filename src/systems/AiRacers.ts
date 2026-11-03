@@ -52,13 +52,13 @@ export class AiRacers implements ContactOwner {
   cpuMs = 0;
   cpuMax = 0;
 
-  constructor(private game: Game, private track: TrackLine, count: number, private f1: boolean, halfWidth: number, private laps: number, firstSlot: number) {
+  constructor(private game: Game, private track: TrackLine, count: number, private f1: boolean, halfWidth: number, private laps: number, firstSlot: number, widthAt?: (i: number) => number) {
     const me = game.players[0]?.def, kindPool = VEHICLES.filter((v) => !v.f1 && v.kind === (me?.kind ?? 'car') && !v.ev?.thrusters);
     // same class as the player first (a muscle car races muscle cars), then the rest of its kind
     const pool = f1 ? VEHICLES.filter((v) => v.f1 && v.id === me?.id) : [...kindPool.filter((v) => v.cls === me?.cls), ...kindPool.filter((v) => v.cls !== me?.cls)];
     const fallback = VEHICLES.filter((v) => (f1 ? !!v.f1 : !v.f1));
     this.level = game.opts.aiLevel ?? 'adaptive';
-    this.hw = halfWidthOf(track, halfWidth);
+    this.hw = widthAt ?? halfWidthOf(track, halfWidth); // per-point half width (F1 circuits narrow / widen)
     this.L = track.n * track.spacing;
     const ref: VehicleDef = me && (f1 ? !!me.f1 : !me.f1) ? me : (pool[0] ?? fallback[0]);
     this.learned = buildLearned(game.opts.trackId, track, this.hw, ref);

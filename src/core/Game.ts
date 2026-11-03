@@ -173,7 +173,7 @@ export class Game {
       if (opts.mode === 'f1') this.players.forEach((p) => p.setTyres(opts.tyre ?? 'medium'));
       if (this.aiCount && (this.layout instanceof Circuit || this.layout instanceof F1Track)) {
         // AI take every grid slot the local players don't use
-        this.ai = new AiRacers(this, this.layout, this.aiCount, opts.mode === 'f1', this.layout instanceof F1Track ? this.layout.halfWidth : 7, opts.laps, 0);
+        this.ai = new AiRacers(this, this.layout, this.aiCount, opts.mode === 'f1', this.layout instanceof F1Track ? this.layout.halfWidth : 7, opts.laps, 0, this.layout instanceof F1Track ? this.layout.halfWidthAt.bind(this.layout) : undefined);
         const used = new Set(this.players.map((_, i) => first + i));
         let slot = 0;
         for (const r of this.ai.list) { while (used.has(slot)) slot++; this.ai.place(r, slot++); }
