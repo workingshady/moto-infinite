@@ -17,3 +17,21 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run build
+  deploy:
+    # Ships to Cloudflare only after CI passes on a push to main (never for PRs).
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    concurrency: { group: deploy-production, cancel-in-progress: false }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npx wrangler deploy --var APP_VERSION:${GITHUB_SHA::7}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
