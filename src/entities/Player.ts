@@ -8,11 +8,11 @@ import type { EngineSound } from '../core/EngineSound';
 import type { Entity } from './EntityManager';
 import type { Pose } from '../world/layout';
 import type { NetState } from '../../shared/protocol';
-import { ASSIST, BIKE, DRIFT, F1, type TyreCompound, LEVELING, CONTROL, LANDING, PHYS, PLAYER, POWERUPS, ROAD, WALL, WHEELIE, type PowerupKind } from '../config';
+import { ASSIST, BIKE, DRIFT, EV, F1, type TyreCompound, LEVELING, CONTROL, LANDING, PHYS, PLAYER, POWERUPS, ROAD, WALL, WHEELIE, type PowerupKind } from '../config';
 import { clamp, damp, lerp, rnd, TAU, wrapPi } from '../utils/math';
 import { buildRider, seatRider, type RiderModel } from './models';
 import { buildVehicleModel, type VehicleModel } from './vehicleModels';
-import { EvDrive } from './EvDrive';
+import { EvDrive, fullBurn } from './EvDrive';
 import { vehicleById, type VehicleDef } from '../data/vehicles';
 import { WEAPONS } from '../data/weapons';
 import { MILESTONES, TIERS, UPGRADES, type Card } from '../data/upgrades';
@@ -98,6 +98,8 @@ export class Player {
   private camQ = new THREE.Quaternion();
   private headParts: THREE.Object3D[] | null = null;
   private headHidden = false;
+  /** Chase-camera pull-back while flying on thrusters (0..1, smoothed). */
+  private camFly = 0;
   /** Vehicle bounds in model space (hood camera placement). */
   private dims = new THREE.Box3();
 
@@ -208,10 +210,10 @@ export class Player {
     if (this.riding && !s.dead) {
       if (prefs.nitroToggle && active && c.hit('nitro')) this.nitroOn = !this.nitroOn;
       if (s.nitro <= 1) this.nitroOn = false;
-      const wantN = active && (prefs.nitroToggle ? this.nitroOn : c.is('nitro')) && s.nitro > 1;
+      const wantN = active && (prefs.nitroToggle ? this.nitroOn : c.is('nitro')) && s.nitro > 1 && !this.ev?.liftKey();
       if (wantN) {
         if (!B.wasN) { if (!this.ev?.thrusters) g.audio.play('nitro'); g.audio.play('whoosh'); this.cam.shake = Math.max(this.cam.shake, 0.25); this.cam.fovKick = 8; }
-        s.nitro -= BIKE.nitroBurn * dt;
+        s.nitro -= (this.ev?.thrusters ? fullBurn() * (EV.tank.rear + EV.tank.side) : BIKE.nitroBurn) * dt; // Roadster: nitrogen tank
         boosting = true;
       }
       B.wasN = wantN;
@@ -343,7 +345,7 @@ export class Player {
     }
     if (this.ev) this.ev.step(dt, active, up, down, boosting, B.wasN);
     // F1: ERS harvests energy under braking; everything else regenerates nitro over time
-    const regen = this.def.f1 ? (down && Math.abs(B.v) > 10 ? F1.ersRegen : F1.ersIdle) : st.nitroRegen;
+    const regen = this.def.f1 ? (down && Math.abs(B.v) > 10 ? F1.ersRegen : F1.ersIdle) : this.ev?.thrusters && (B.air || this.ev.thrust > 0) ? 0 : st.nitroRegen;
     s.nitro = clamp(s.nitro + regen * dt, 0, st.nitroMax);
     if (Math.abs(B.v) < 0.03) B.v = 0;
     B.pad = Math.max(0, B.pad - dt);
@@ -360,7 +362,7 @@ export class Player {
     const nx = B.x + Math.sin(B.moveH) * B.v * dt, nz = B.z + Math.cos(B.moveH) * B.v * dt;
     if (B.v !== 0) {
       const rad = this.isCar ? 1.5 : 1;
-      const blk = g.chunks.blocked(nx, nz, rad, B.y, B.air ? 99 : 1.3);
+      const blk = g.chunks.blocked(nx, nz, rad, B.y, B.air ? 99 : this.ev?.glued ? EV.stick.maxStep : 1.3);
       if (blk) this.hitWall(blk, nx, nz, rad, dt);
       else {
         const e = g.entities.hitTest(nx, B.y, nz, this.isCar ? 1.4 : 0.9);
@@ -385,6 +387,7 @@ export class Player {
       }
     }
     if (this.riding) this.wallRecover(dt);
+    if (T.walls.length && !B.air) this.onDemoWall(dt);
     // vertical
     const gy = T.groundAt(B.x, B.z);
     B.vy -= PHYS.gravity * dt;
@@ -392,7 +395,7 @@ export class Player {
     if (B.y <= gy) {
       const wasAir = B.air, impactVy = B.vy;
       B.y = gy;
-      B.vy = clamp((gy - B.lastG) / dt, -40, B.fromRamp || T.onRamp(B.x, B.z) ? 22 : (ASSIST[prefs.assist] ?? ASSIST[1]).crest);
+      B.vy = clamp((gy - B.lastG) / dt, -40, this.ev?.glued ? EV.stick.crest : B.fromRamp || T.onRamp(B.x, B.z) ? 22 : (ASSIST[prefs.assist] ?? ASSIST[1]).crest);
       B.air = false;
       if (wasAir) { B.impact = -impactVy; this.land(); }
     } else if (!B.air && B.y - gy > (T.onRamp(B.x, B.z) ? 0.3 : CONTROL.airborneGap)) {
@@ -709,6 +712,25 @@ export class Player {
     d.pts = d.t = d.cool = 0;
   }
 
+  /**
+   * Thruster demo wall: the body banks with the cross-slope, and past EV.stick.free radians of bank the car slides back
+   * down unless the Roadster's thrusters glue it to the face.
+   */
+  private onDemoWall(dt: number) {
+    const B = this.B, g = this.game, T = g.terrain;
+    if (T.wallHeight(B.x, B.z) <= 0.02) return;
+    const d = 0.8, gx = (T.groundAt(B.x + d, B.z) - T.groundAt(B.x - d, B.z)) / (2 * d), gz = (T.groundAt(B.x, B.z + d) - T.groundAt(B.x, B.z - d)) / (2 * d);
+    const grad = Math.hypot(gx, gz), ang = Math.atan(grad);
+    if (grad < 1e-3) return;
+    // bank: cross-slope relative to the heading (ground rising to the right = right side up = positive lean)
+    const rx = Math.cos(B.h), rz = -Math.sin(B.h), cross = Math.atan(gx * rx + gz * rz);
+    if (!this.ev?.kicking) B.lean = lerp(B.lean, cross, damp(dt, 10));
+    if (this.ev?.glued || ang <= EV.stick.free) return;
+    const k = EV.stick.slide * (ang - EV.stick.free) * dt, px = B.x - (gx / grad) * k, pz = B.z - (gz / grad) * k;
+    if (!g.chunks.blocked(px, pz, this.isCar ? 1.5 : 1, B.y, 99)) { B.x = px; B.z = pz; }
+    B.v *= 1 - 0.5 * dt;
+  }
+
   private slopePitch() {
     const B = this.B, T = this.game.terrain, fx = Math.sin(B.moveH), fz = Math.cos(B.moveH);
     return -Math.atan2(T.groundAt(B.x + fx * 1.05, B.z + fz * 1.05) - T.groundAt(B.x - fx * 1.05, B.z - fz * 1.05), 2.1);
@@ -720,7 +742,10 @@ export class Player {
     const posing = this.style !== null;
     this.style = null;
     this.poseStyle();
-    if (this.riding && posing && air > LANDING.minAir) {
+    const ev = this.ev?.onLand(air); // Roadster: kickflips, hard touchdowns after a flight
+    if (this.riding && ev?.crash) {
+      this.crash(ev.crash);
+    } else if (this.riding && posing && air > LANDING.minAir) {
       this.crash('Bail! Let go of the trick key before landing');
     } else if (this.riding && air > LANDING.minAir && (Math.abs(pErr) > LANDING.maxPitchErr * this.assist.landing || Math.abs(yawErr) > LANDING.maxYawErr * this.assist.landing)) {
       this.crash(Math.abs(pErr) > LANDING.maxPitchErr * this.assist.landing ? 'Land your flips straight!' : 'Land facing forward!');
@@ -743,6 +768,7 @@ export class Player {
       }
       if (this.styleDone.length) g.events.emit('progress', { player: this, id: 'style', value: this.styleDone.length });
       if (flips > 0 && spins > 0) { tricks.push('CORKSCREW'); pts += 200; }
+      for (const [name, p] of ev?.tricks ?? []) { tricks.unshift(name); pts += p; }
       if (air > 0.9) { tricks.push('BIG AIR ' + air.toFixed(1) + 's'); pts += Math.round(air * 80); }
       if (Math.abs(pErr) < 0.15 && tricks.length) { tricks.push('PERFECT'); pts += 100; }
       g.events.emit('progress', { player: this, id: 'air', value: air });
@@ -754,10 +780,10 @@ export class Player {
         g.events.emit('progress', { player: this, id: 'combo', value: s.combo });
         pts = Math.round(pts * s.combo * this.stats.trickMul);
         g.audio.play('trick');
-        this.hud.banner(tricks.join(' + '), `+${Math.round(pts * this.stats.xpMul * (this.buffs.xp2 > 0 ? 2 : 1))} XP${s.combo > 1 ? ` · COMBO x${s.combo}` : ''}`, flips ? '#ff7ad9' : '#ffd23f');
+        this.hud.banner(tricks.join(' + '), `+${Math.round(pts * this.stats.xpMul * (this.buffs.xp2 > 0 ? 2 : 1))} XP${s.combo > 1 ? ` · COMBO x${s.combo}` : ''}`, flips || ev?.tricks.length ? '#ff7ad9' : '#ffd23f');
         this.addXP(pts);
         g.replay?.mark(this, 'trick', tricks[0], pts);
-        s.nitro = Math.min(this.stats.nitroMax, s.nitro + 20 * tricks.length * this.stats.trickMul);
+        if (!this.ev?.thrusters) s.nitro = Math.min(this.stats.nitroMax, s.nitro + 20 * tricks.length * this.stats.trickMul); // tricks don't refill a gas tank
         g.fx.burst(B.x, B.y + 1, B.z, { n: 50, speed: 14, life: 1, size: [0.6, 0.1], colors: [0xffd23f, 0xff7ad9, 0xffffff], gravity: 6 });
       }
       B.moveH = B.h;
@@ -1034,6 +1060,7 @@ export class Player {
     Object.assign(B, { x: r.x, z: r.z, h: r.h, moveH: r.h, v: 0, vy: 0, pitch: 0, pitchV: 0, flipAcc: 0, spinAcc: 0, airT: 0, air: false, steer: 0, yawV: 0, lean: 0, wheelie: 0, wheelieV: 0, wheelieT: 0, flick: 0 });
     B.y = B.lastG = this.game.terrain.groundAt(B.x, B.z);
     this.stuckT = this.wallTouch = 0;
+    this.ev?.reset();
     if (!this.riding) this.mount();
     this.syncP();
   }
@@ -1294,6 +1321,10 @@ export class Player {
     } else {
       const far = view === 'far' ? 1.75 : 1, a = P.h + cam.yaw;
       let dist = (this.riding ? 9 + Math.abs(B.v) * 0.06 - cam.boost * 1.2 : 7) * zoom * far, ht = (this.riding ? 3.8 : 3.2) * zoom * (view === 'far' ? 1.6 : 1);
+      const fly = this.riding && this.ev?.flying ? clamp(this.ev.alt / 12, 0.35, 1) : 0; // thruster flight: pull back a little
+      this.camFly = lerp(this.camFly, fly, damp(dt, 2));
+      dist += EV.flight.camBack * this.camFly * zoom;
+      ht += EV.flight.camUp * this.camFly * zoom;
       if (view === 'top') { dist = 5 * zoom; ht = (34 + Math.abs(B.v) * 0.25) * zoom; }
       cam.pos.set(P.x - Math.sin(a) * dist, P.y + ht, P.z - Math.cos(a) * dist);
       cam.pos.y = Math.max(cam.pos.y, g.terrain.groundAt(cam.pos.x, cam.pos.z) + 1.2);
@@ -1335,6 +1366,7 @@ export class Player {
       wx: r(W.x), wy: r(W.y), wz: r(W.z), wh: r(W.h),
       v: r(B.v), riding: this.riding, boost: r(this.cam.boost), dead: this.s.dead, score: this.s.score,
       lap: this.race.lap, prog: r(this.race.prog * 1000) / 1000,
+      ...(this.ev && this.ev.thrust > 0.05 ? { th: Math.round(this.ev.thrust * 10) / 10 } : {}), // Roadster plumes (omitted when off)
     };
   }
 

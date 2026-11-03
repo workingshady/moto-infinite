@@ -73,6 +73,7 @@ export interface NetState {
   score: number;
   lap: number;
   prog: number; // race progress (laps + fraction)
+  th?: number; // Tesla Roadster thruster output 0..1 (omitted when off): remote plumes
 }
 
 export type ClientMsg =

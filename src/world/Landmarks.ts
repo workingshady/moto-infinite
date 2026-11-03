@@ -4,9 +4,10 @@ import * as THREE from 'three';
 import type { Game } from '../core/Game';
 import type { Chunk } from './Chunks';
 import type { Circuit, Poi } from './layout';
-import { RAMP, type Ramp } from './Terrain';
+import { RAMP, wallDepth, type Ramp } from './Terrain';
 import { G, M, MAT, canvasTex, mesh } from '../entities/assets';
-import { ROAD } from '../config';
+import { EV, ROAD } from '../config';
+import type { Pose } from './layout';
 import { mulberry32, PI, TAU } from '../utils/math';
 
 const WALLS = [0xf2e3c6, 0xe9c9a0, 0xd8e2ea, 0xf0d0c0, 0xcfe0c3].map((c) => M(c));
@@ -208,4 +209,52 @@ export function dressCircuit(game: Game, ch: Chunk, track: Circuit, x0: number, 
     game.scene.add(im);
     ch.meshes.push(im);
   }
+}
+
+/**
+ * Thruster demo wall (open world): a curved bank beside the road ahead of the spawn, rising to a near-vertical lip.
+ * Physics height comes from Terrain.wallHeight; this only builds the matching mesh. With the Roadster's thrusters
+ * firing (lift key on the steep face, or boost) the down-force glues the car to it; anything else slides back down.
+ */
+export function buildThrusterWall(game: Game, spawn: Pose) {
+  const T = game.terrain, W = EV.wall, fx = Math.sin(spawn.h), fz = Math.cos(spawn.h), rx = Math.cos(spawn.h), rz = -Math.sin(spawn.h);
+  const wall = { x: spawn.x + fx * W.ahead + rx * W.offset, z: spawn.z + fz * W.ahead + rz * W.offset, tx: fx, tz: fz, nx: rx, nz: rz, len: W.length };
+  T.walls.push(wall);
+  const depth = wallDepth(), nu = Math.ceil(W.length / 2), ns = Math.ceil(depth / 0.4) + 2;
+  const pos = new Float32Array((nu + 1) * (ns + 1) * 3), uv = new Float32Array((nu + 1) * (ns + 1) * 2), idx: number[] = [];
+  for (let i = 0; i <= nu; i++) {
+    for (let j = 0; j <= ns; j++) {
+      const u = (i / nu) * W.length, sd = -0.4 + (j / ns) * (depth + 0.8), x = wall.x + fx * u + rx * sd, z = wall.z + fz * u + rz * sd, k = i * (ns + 1) + j;
+      pos[k * 3] = x;
+      pos[k * 3 + 1] = T.heightAt(x, z) + T.wallHeight(x, z) + 0.04;
+      pos[k * 3 + 2] = z;
+      uv[k * 2] = u / 6;
+      uv[k * 2 + 1] = sd / depth;
+      if (i < nu && j < ns) idx.push(k, k + 1, k + ns + 1, k + 1, k + ns + 2, k + ns + 1);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+  const tex = canvasTex(64, 128, (g, w, h) => {
+    g.fillStyle = '#c9ced6';
+    g.fillRect(0, 0, w, h);
+    g.fillStyle = '#2f6fe0'; // blue band at the foot, red/white kerb below the lip
+    g.fillRect(0, 0, w, h * 0.08);
+    for (let y = 0.5; y < 0.62; y += 0.06) {
+      g.fillStyle = '#e2483d';
+      g.fillRect(0, h * y, w / 2, h * 0.03);
+      g.fillStyle = '#ffffff';
+      g.fillRect(w / 2, h * y, w / 2, h * 0.03);
+    }
+    g.fillStyle = 'rgba(0,0,0,0.12)';
+    g.fillRect(0, 0, 2, h);
+  });
+  tex.wrapS = THREE.RepeatWrapping;
+  const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: tex, roughness: 0.8, side: THREE.DoubleSide }));
+  m.receiveShadow = true;
+  game.scene.add(m);
+  return m;
 }

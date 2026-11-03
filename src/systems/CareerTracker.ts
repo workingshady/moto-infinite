@@ -57,6 +57,8 @@ export class CareerTracker {
       case 'flip': st.flips += v; break;
       case 'spin': st.spins += v; break;
       case 'style': st.styleTricks += v; break;
+      case 'kickflip': st.kickflips += v; break;
+      case 'flight': st.bestFlight = Math.max(st.bestFlight, v); break;
       case 'air': st.bestAir = Math.max(st.bestAir, v); break;
       case 'combo': st.bestCombo = Math.max(st.bestCombo, v); break;
       case 'drift':

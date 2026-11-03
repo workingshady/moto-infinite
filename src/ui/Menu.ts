@@ -497,6 +497,13 @@ export class Menu {
             ${row('Settings → ⌨ Test keys', 'Steer works one way only while boosting? Your keyboard is ghosting (often ↑ ← Space). Let go of ↑, use WASD, or N / B for nitro')}
             ${row(`${kb('jump')} (on foot)`, 'Jump')}
           </table></section>
+          <section><h3>🚀 Tesla Roadster thrusters</h3><table class="keys">
+            ${row(`Hold ${kb('hover', 2)}`, 'Lift-off and fly on the cold-gas thrusters: holding climbs, letting go descends slowly. ↑/↓ push forward/back, ←/→ yaw. The N₂ tank holds ~5 s of full thrust (hovering uses about 40 %); empty = you fall')}
+            ${row(`Double-tap ${kb('hover', 1)}`, 'Quick hover hop')}
+            ${row(kb('trick', 1), 'KICKFLIP: 360° barrel roll on the side thrusters (in the air, or it hops first). Land it upright')}
+            ${row(kb('nitro', 2), 'Rear thrusters on the ground (↓ = retro brake). Thrusters firing on a steep bank glue the car to it: try the blue wall beside the road at the open-world start')}
+            ${row('Refill', 'Slowly while driving (fastest when lifting off / braking), fully at gas stations or on respawn')}
+          </table></section>
           <section><h3>🤸 Wheelies (motorcycles)</h3><table class="keys">
             ${row('1. Lift', `Hold ${kb('trick', 1)} on the ground at any speed above ~15 km/h, even flat out with nitro. The front comes up by itself and holds there`)}
             ${row('2. Angle', '↑ lifts it higher, ↓ lowers it. During a wheelie ↓ does NOT brake, and the throttle stays on, so you keep your speed')}

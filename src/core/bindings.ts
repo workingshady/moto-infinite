@@ -7,7 +7,7 @@ import { buttonName, currentPadType, padConnected } from './gamepad';
 /** Every action in the order the Controls tab lists them. */
 export const ACTIONS: { a: Action; label: string }[] = [
   { a: 'up', label: 'Throttle' }, { a: 'down', label: 'Brake / reverse' }, { a: 'left', label: 'Steer left' }, { a: 'right', label: 'Steer right' },
-  { a: 'nitro', label: 'Nitro / ERS' }, { a: 'jump', label: 'Jump (on foot)' }, { a: 'drift', label: 'Handbrake drift' }, { a: 'trick', label: 'Wheelie · trick · DRS' },
+  { a: 'nitro', label: 'Nitro / ERS' }, { a: 'jump', label: 'Jump (on foot)' }, { a: 'hover', label: 'Thruster lift / fly (Roadster)' }, { a: 'drift', label: 'Handbrake drift' }, { a: 'trick', label: 'Wheelie · trick · DRS' },
   { a: 'fire', label: 'Fire' }, { a: 'weapon', label: 'Next weapon' }, { a: 'ride', label: 'Get on / off' }, { a: 'camera', label: 'Camera view' },
   { a: 'respawn', label: 'Respawn' }, { a: 'upgrade', label: 'Open / close cards' }, { a: 'pick1', label: 'Pick card 1' }, { a: 'pick2', label: 'Pick card 2' },
   { a: 'pick3', label: 'Pick card 3' }, { a: 'reroll', label: 'Reroll cards' },
@@ -48,8 +48,9 @@ const DEF_PAD = clone(PAD);
 
 /** Card picks only work while the level-up cards are open, and jump only on foot, so they may share keys with riding actions. */
 const CARD: Action[] = ['pick1', 'pick2', 'pick3', 'reroll'];
+const SHARED: Action[] = ['nitro', 'jump', 'hover']; // jump = on foot, hover = Roadster only (it overrides nitro while held)
 const canShare = (a: Action, b: Action) =>
-  (a === 'nitro' && b === 'jump') || (a === 'jump' && b === 'nitro') || (CARD.includes(a) !== CARD.includes(b) && a !== 'upgrade' && b !== 'upgrade');
+  (SHARED.includes(a) && SHARED.includes(b)) || (CARD.includes(a) !== CARD.includes(b) && a !== 'upgrade' && b !== 'upgrade');
 
 /** Write overrides (or defaults) into the live tables. Call after loading or changing settings. */
 export function applyBindings() {

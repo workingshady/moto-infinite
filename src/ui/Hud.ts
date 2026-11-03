@@ -6,7 +6,7 @@ import { TIERS, type Card } from '../data/upgrades';
 import type { Viewport } from '../core/Renderer';
 import type { TrackLine } from '../world/layout';
 import { WEAPONS } from '../data/weapons';
-import { F1, POI_KINDS, POWERUPS, ROAD, WHEELIE, type PoiKind, type PowerupKind } from '../config';
+import { BIKE, EV, F1, POI_KINDS, POWERUPS, ROAD, WHEELIE, type PoiKind, type PowerupKind } from '../config';
 import { prefs } from '../core/prefs';
 import { showToast } from './AchievementToast';
 
@@ -27,7 +27,7 @@ const TEMPLATE = `
   <div class="panel stats">
     <div class="row"><b data-k="mode">On foot</b><span class="dim" data-k="camName"></span></div>
     <div class="row mt"><span>Health</span><span data-k="hpTxt"></span></div><div class="bar"><i class="hp" data-k="hpBar"></i></div>
-    <div class="nitro-row"><div class="row"><span>Nitro</span><span data-k="nTxt"></span></div><div class="bar"><i class="nitro" data-k="nBar"></i></div></div>
+    <div class="nitro-row"><div class="row"><span data-k="nLbl">Nitro</span><span data-k="nTxt"></span></div><div class="bar"><i class="nitro" data-k="nBar"></i></div></div>
     <div class="xp-row"><div class="row"><span>Level <b data-k="lvl">1</b></span><span data-k="xpTxt"></span></div><div class="bar"><i class="xp" data-k="xpBar"></i></div></div>
     <div class="row open-row"><span>Score <b data-k="score">0</b></span><span>Gems <b data-k="gems">0</b></span></div>
     <div class="row"><span data-k="weaponLbl">Weapon</span><span class="weapon" data-k="weapon"></span></div>
@@ -60,6 +60,7 @@ const TEMPLATE = `
   <div class="panel prompt" data-k="prompt">Press <b data-k="rideKey">E</b> to ride</div>
   <div class="wmeter" data-k="wmeter"><div class="wtrack"><i class="wzone" data-k="wzone"></i><i class="wneedle" data-k="wneedle"></i></div><span data-k="wtxt"></span></div>
   <div class="upbadge" data-k="upbadge"></div>
+  <div class="flightm" data-k="flightm"><div class="ftrack"><i data-k="fbar"></i></div><span data-k="ftxt"></span></div>
   <div class="panel f1dash" data-k="f1dash"><div class="f1top"><b data-k="f1speed">0</b><span data-k="f1unit">km/h</span><i data-k="f1gear">N</i></div><div class="rpm"><i data-k="f1rpm"></i></div><div class="f1row"><span class="tyre" data-k="f1tyre">M</span><span data-k="f1wear">0%</span><span class="lbl">ERS</span><div class="bar ers"><i data-k="f1ers"></i></div></div><div class="f1flags"><span data-k="f1drs">DRS</span><span data-k="f1slip">SLIP</span><span data-k="f1pit">PIT 80</span></div></div>
 </div>
 <!-- bottom-right: speedometer + tachometer -->
@@ -113,7 +114,7 @@ export class Hud {
 
   /** Compact key list for this player's vehicle and bindings. */
   private buildKeycard() {
-    const b = displayBindings(this.p.ctrl), k = (l: string[]) => `<kbd>${this.key(l)}</kbd>`, car = this.p.def.kind === 'car';
+    const b = displayBindings(this.p.ctrl), k = (l: string[]) => `<kbd>${this.key(l)}</kbd>`, car = this.p.def.kind === 'car', thr = !!this.p.ev?.thrusters;
     const f1 = !!this.p.def.f1 && this.game.opts.mode === 'f1';
     // features with fixed keys: replay / photo locally, chat / players / quick chat / spectate online
     const extra = this.game.net ? ['<kbd>Enter</kbd> <kbd>Tab</kbd> <kbd>5</kbd>–<kbd>0</kbd> <kbd>[</kbd><kbd>]</kbd>', 'chat · players · quick chat · spectate']
@@ -128,7 +129,10 @@ export class Hud {
       ['<kbd>Esc</kbd> <kbd>H</kbd>', 'pause · hide this card'],
     ] : [
       [`${k(b.up)} ${k(b.down)} ${k(b.left)} ${k(b.right)}`, 'drive · brake · steer'],
-      [b.nitro.filter((c) => c !== 'ShiftRight').slice(0, 3).map((c) => k([c])).join(' '), 'nitro (drives itself, no ↑ needed: if ← drops out, let go of ↑)'],
+      thr ? [b.hover.slice(0, 2).map((c) => k([c])).join(' '), 'hold: thruster LIFT-OFF and fly (↑↓ push/retro · ←→ yaw · release = slow descent) · double-tap: hop · on a steep bank: glue to it'] : null,
+      thr ? [k(b.trick), 'KICKFLIP: side-thruster barrel roll (in the air, or hops first)'] : null,
+      thr ? [b.nitro.filter((c) => !b.hover.includes(c) && c !== 'ShiftRight').slice(0, 2).map((c) => k([c])).join(' ') || k(b.nitro), 'rear thrusters: push · ↓ retro brake · side grip · N₂ tank ~5 s at full thrust'] : null,
+      thr ? null : [b.nitro.filter((c) => c !== 'ShiftRight').slice(0, 3).map((c) => k([c])).join(' '), 'nitro (drives itself, no ↑ needed: if ← drops out, let go of ↑)'],
       [k(b.drift), 'handbrake → drift, counter-steer to hold'],
       car ? null : [k(b.trick), 'hold on the ground: wheelie at any speed (↑/↓ angle, no braking) · air: style trick'],
       car ? null : ['air', 'let go, then ↑↓ flip · ←→ spin'],
@@ -310,6 +314,16 @@ export class Hud {
       const pro = prefs.assist === 0, hint = Math.abs(wl - W.balance) < W.perfect ? ' · BALANCED' : wl > W.balance ? (pro ? ' · ↓ lower it!' : ' · ↓ lower') : ' · ↑ higher';
       e.wtxt.textContent = `WHEELIE ${B.wheelieT.toFixed(1)}s · ${Math.round(B.wheelieD)} m${hint}`;
     }
+    // Roadster thrusters: nitrogen + altitude meter while flying or gluing
+    // (grip shows only on banks/walls, not for a plain ground boost)
+    const evm = p.ev?.thrusters && p.riding && !s.dead && (p.ev.flying || p.ev.kicking || (p.ev.glued && Math.abs(B.pitch) + Math.abs(B.lean) > 0.3)) ? p.ev : null;
+    e.flightm.style.display = evm ? 'block' : 'none';
+    if (evm) {
+      const f = s.nitro / p.stats.nitroMax;
+      e.fbar.style.width = f * 100 + '%';
+      e.fbar.className = f < 0.15 ? 'low' : '';
+      e.ftxt.textContent = (evm.flying ? `ALT ${Math.round(evm.alt)} m · ${evm.flightT.toFixed(1)} s` : evm.kicking ? 'KICKFLIP' : 'THRUSTER GRIP') + ` · N₂ ${(f * EV.tank.fullSecs).toFixed(1)} s` + (f < 0.02 ? ' · EMPTY!' : '');
+    }
     // live drift meter (every frame so it feels responsive)
     const dr = p.drift;
     e.driftm.style.display = dr.on && dr.pts > 20 ? 'block' : 'none';
@@ -354,7 +368,7 @@ export class Hud {
       this.gauges.draw({
         kmh: p.s.dead ? 0 : spd(speedKmh), maxKmh: Math.ceil(raw / step) * step, rpm: d.rpm, redline: d.redline,
         gear: Math.abs(B.v) < 0.5 ? 'N' : String(d.gear), reverse: B.v < -0.5,
-        nitro: s.nitro / p.stats.nitroMax, boost: p.cam.boost, air: B.air ? B.airT : 0,
+        nitro: s.nitro / p.stats.nitroMax, boost: p.cam.boost, air: B.air ? B.airT : 0, nitroLabel: p.ev?.thrusters ? 'N₂' : undefined,
       }, this.root.classList.contains('split') ? dt * 2 : dt);
     }
     if (frame % 3) return;
@@ -369,10 +383,12 @@ export class Hud {
     }
     // text (every 3rd frame)
     e.camName.textContent = '🎥 ' + CAM_LABEL[p.activeView];
-    e.mode.textContent = s.dead ? 'Wrecked' : p.riding ? (B.air ? `Airborne ${B.airT.toFixed(1)}s` : p.cam.boost > 0.3 ? 'NITRO!' : 'Riding') : 'On foot';
+    const ev = p.ev?.thrusters ? p.ev : null;
+    e.mode.textContent = s.dead ? 'Wrecked' : p.riding ? (ev?.flying ? `Flying ${Math.round(ev.alt)} m` : B.air ? `Airborne ${B.airT.toFixed(1)}s` : ev?.glued && Math.abs(B.pitch) + Math.abs(B.lean) > 0.3 ? 'THRUSTER GRIP' : p.cam.boost > 0.3 ? (ev ? 'THRUSTERS!' : 'NITRO!') : 'Riding') : 'On foot';
     e.hpTxt.textContent = Math.ceil(s.hp) + ' / ' + Math.round(p.stats.hpMax);
     e.hpBar.style.width = (s.hp / p.stats.hpMax) * 100 + '%';
-    e.nTxt.textContent = String(Math.floor(s.nitro));
+    e.nLbl.textContent = ev ? 'N₂ tank' : 'Nitro';
+    e.nTxt.textContent = ev ? `${((s.nitro / BIKE.nitroMax) * EV.tank.fullSecs).toFixed(1)} s` : String(Math.floor(s.nitro));
     e.nBar.style.width = (s.nitro / p.stats.nitroMax) * 100 + '%';
     e.lvl.textContent = String(s.level);
     e.xpTxt.textContent = s.xp + ' / ' + p.xpNeed();

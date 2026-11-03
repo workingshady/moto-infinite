@@ -142,7 +142,7 @@ export const VEHICLES: VehicleDef[] = [
     spec: { power: '~480 hp (3.0 V8)', weight: '575 kg', layout: 'MR · 3.0 V8' } },
   // Real electric cars (Tesla). No badges are drawn on the models. Figures are Tesla's claims, see desc.
   { id: 'tesla_roadster', name: 'Tesla Roadster (2nd gen)', kind: 'car', cls: 'Hypercar', era: '2020s',
-    desc: 'Revealed Oct 2026 (production planned 2028; untested claims). Thrust config: claimed 0-60 mph under 0.9 s with cold-gas thrusters (0.81 s shown, not independently timed), under 1.6 s without; 1,000+ kW, 230+ mph, 300+ mi range, >2 g cornering, 2,825 mm wheelbase, removable roof. Boost = SpaceX thrusters: extra push, brake and grip; C = hover hop.',
+    desc: 'Revealed Oct 2026 (production planned 2028; untested claims). Thrust config: claimed 0-60 mph under 0.9 s with cold-gas thrusters (0.81 s shown, not independently timed), under 1.6 s without; 1,000+ kW, 230+ mph, 300+ mi range, >2 g cornering, 2,825 mm wheelbase, removable roof. Shown: an uncrewed demo car launched over a line of Teslas with a mid-air kickflip and drove an inverted ramp (suction fans). Game: SpaceX cold-gas thrusters fed by a nitrogen tank (~5 s of full thrust per fill). Hold Space/G (pad B) = lift-off and fly (↑↓ push, ←→ yaw), double-tap = hop, C = KICKFLIP, Shift = rear thrusters + glue to steep banks.',
     top: 48, accel: 27, grip: 2.3, traction: 12, slideTraction: 2.6, hp: 35, offroad: 0, wheelie: false,
     engine: { type: 'electric', cyl: 2, idle: 600, redline: 17000, gears: 1, crackle: 0 },
     ev: { launch: 1.9, taper: 0.7, regen: 3, regenCharge: 9, thrusters: true },

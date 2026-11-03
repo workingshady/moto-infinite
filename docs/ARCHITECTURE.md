@@ -40,7 +40,7 @@ src/
     Chunks.ts            Streams 64 m chunks: terrain, instanced scenery, road markings, features
     F1Track.ts           Real F1 circuits (Monza, Silverstone, Spa, Monaco, Suzuka, Bahrain) from bacinger/f1-circuits (MIT), DRS zones, pit lane, start lights, venue dressing
     DriftTrack.ts        Drift venues (docks, touge, skidpad, gymkhana, random): layout, zones, dressing
-    Landmarks.ts         Villages, gas stations, windmills, stunt zones, drone outposts; race grandstands + tyre walls
+    Landmarks.ts         Villages, gas stations, windmills, stunt zones, drone outposts; race grandstands + tyre walls; thruster demo wall near the open-world spawn
     Environment.ts       Sky, day/night, weather (rain/snow/fog/storm), water, clouds, stars
   entities/
     Player.ts            One local rider: bike physics, tricks, walking, camera, XP, power-ups
@@ -49,7 +49,8 @@ src/
     vehicleModels.ts     18 hand-built vehicle models behind one buildVehicleModel(id, colour); exports the builder kit
     vehicleBuilders.ts   Parametric car / formula / bike builders for the 45 spec-driven vehicles (data/vehicleLooks.ts)
     teslaModels.ts       Tesla Roadster (2nd gen) and Model 3 Performance models (no badges), registered in vehicleModels
-    EvDrive.ts           Electric cars: instant-torque launch, regen braking -> boost meter, Track Mode rotation, Roadster cold-gas thrusters + hover hop
+    EvDrive.ts           Electric cars: instant-torque launch, regen braking -> boost meter, Track Mode rotation; Roadster cold-gas thrusters:
+                         nitrogen tank (= boost meter, ~5 s full thrust), lift-off flight, kickflip, down-force glue on steep banks
     assets.ts            Shared geometries and materials
   systems/
     Combat.ts            Projectiles, railgun beams, mines, bombs, explosions, PvP

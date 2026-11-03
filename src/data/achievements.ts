@@ -36,6 +36,8 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   { id: 'spin_doctor', cat: 'Tricks', icon: '🔄', name: 'Spin doctor', desc: 'Land 25 spins', xp: 600, credits: 180, test: (s) => s.spins >= 25, prog: (s) => ratio(s.spins, 25) },
   { id: 'hang_time', cat: 'Tricks', icon: '🦅', name: 'Hang time', desc: 'Stay airborne 3 s in one jump', xp: 400, credits: 120, test: (s) => s.bestAir >= 3, prog: (s) => ratio(s.bestAir, 3) },
   { id: 'combo_king', cat: 'Tricks', icon: '👑', name: 'Combo king', desc: 'Reach a x5 trick combo', xp: 700, credits: 220, test: (s) => s.bestCombo >= 5, prog: (s) => ratio(s.bestCombo, 5) },
+  { id: 'kickflip', cat: 'Tricks', icon: '🛹', name: 'Kickflip', desc: 'Land a thruster kickflip in the Tesla Roadster', xp: 300, credits: 90, test: (s) => s.kickflips >= 1 },
+  { id: 'rocket_man', cat: 'Tricks', icon: '🚀', name: 'Rocket man', desc: 'Fly the Tesla Roadster on its thrusters for 8 s', xp: 500, credits: 150, test: (s) => s.bestFlight >= 8, prog: (s) => ratio(s.bestFlight, 8) },
   { id: 'wheelie_5', cat: 'Tricks', icon: '🏍', name: 'Wheelie', desc: 'Hold a 5 s wheelie', xp: 200, credits: 60, test: (s) => s.longestWheelie >= 5, prog: (s) => ratio(s.longestWheelie, 5) },
   { id: 'wheelie_20', cat: 'Tricks', icon: '🦄', name: 'One-wheel wonder', desc: 'Hold a 20 s wheelie', xp: 800, credits: 260, test: (s) => s.longestWheelie >= 20, prog: (s) => ratio(s.longestWheelie, 20) },
   // drift

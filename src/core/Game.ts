@@ -15,6 +15,7 @@ import { F1Track, F1_TRACKS, type F1TrackId } from '../world/F1Track';
 import { AiRacers } from '../systems/AiRacers';
 import { Terrain } from '../world/Terrain';
 import { ChunkManager } from '../world/Chunks';
+import { buildThrusterWall } from '../world/Landmarks';
 import { Environment } from '../world/Environment';
 import { EntityManager } from '../entities/EntityManager';
 import { Player } from '../entities/Player';
@@ -148,6 +149,8 @@ export class Game {
     this.spawnPoints = Array.from({ length: Math.max(1, count) }, (_, i) => this.layout.spawn(i));
     this.events.on('progress', (e) => e.player.challenges?.notify(e.id, e.value));
 
+    // thruster demo wall beside the road ahead of the open-world spawn (same for every client: seed-derived pose)
+    if (opts.mode === 'open' && !opts.attract && !opts.tutorial) buildThrusterWall(this, this.spawnPoints[0]);
     // build the area around the start before the first frame (hidden behind the loading screen)
     this.chunks.stream(opts.attract ? [this.spawnPoints[0]] : this.spawnPoints.slice(0, Math.max(1, opts.locals.length)), 999);
 

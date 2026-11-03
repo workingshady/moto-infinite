@@ -104,7 +104,7 @@ export class TouchControls {
     const f1 = !!p?.def.f1 && o.mode === 'f1';
     return {
       mode: o.mode, scheme: S.scheme, f1, car: !!p?.isCar, riding: !!p?.riding,
-      weapons: !f1 && (o.mode === 'open' || o.pvp), canWalk: o.mode === 'open', cards: !!p?.cards.length,
+      weapons: !f1 && (o.mode === 'open' || o.pvp), canWalk: o.mode === 'open', cards: !!p?.cards.length, thrusters: !!p?.ev?.thrusters,
     };
   }
 

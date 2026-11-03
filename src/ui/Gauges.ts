@@ -10,6 +10,8 @@ const SP = { x: 76, y: 78, r: 66 }, TA = { x: 186, y: 94, r: 44 };
 export interface GaugeState {
   kmh: number; maxKmh: number; rpm: number; redline: number; gear: string;
   nitro: number; boost: number; air: number; reverse: boolean;
+  /** Ring label (default NITRO; the Roadster shows its nitrogen tank as N2). */
+  nitroLabel?: string;
 }
 
 export class Gauges {
@@ -58,7 +60,7 @@ export class Gauges {
     c.fillText(speedUnit(), SP.x, SP.y + 20);
     c.fillStyle = boosting ? '#7fe6ff' : 'rgba(127,230,255,.85)';
     c.font = '800 9px system-ui, sans-serif';
-    c.fillText(`NITRO ${Math.round(s.nitro * 100)}%`, SP.x, SP.y + 50);
+    c.fillText(`${s.nitroLabel ?? 'NITRO'} ${Math.round(s.nitro * 100)}%`, SP.x, SP.y + 50);
 
     // ---- tachometer: rpm arc coloured by load, needle, gear
     const rf = clamp(n.rpm / maxRpm, 0, 1), red = s.redline / maxRpm, hot = n.rpm > s.redline * 0.94;
