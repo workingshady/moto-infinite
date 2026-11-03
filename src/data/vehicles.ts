@@ -7,7 +7,8 @@ export type VehicleModelId =
   | 'street' | 'superbike' | 'dirt' | 'cafe' | 'cruiser'
   | 'drift_coupe' | 'hatch' | 'gt' | 'muscle' | 'rally'
   | 'rotary' | 'hyper' | 'touring' | 'trophy' | 'roadster'
-  | 'f1_2026' | 'f1_v10' | 'f1_classic';
+  | 'f1_2026' | 'f1_v10' | 'f1_classic'
+  | 'tesla_roadster' | 'tesla_model3';
 
 export interface VehicleDef {
   id: VehicleModelId;
@@ -32,6 +33,8 @@ export interface VehicleDef {
    * rises at speed; F1 brakes hard (m/s²), ERS adds acceleration, straight-mode wings cut drag.
    */
   f1?: F1Spec;
+  /** Electric drivetrain (instant torque, regen, single speed; optional cold-gas thrusters). See EvSpec. */
+  ev?: EvSpec;
   /** Fluff for the garage card. */
   spec: { power: string; weight: string; layout: string };
 }
@@ -51,6 +54,21 @@ export interface F1Spec {
   muLong: number; // traction coefficient (drive)
   muBrake: number; // braking friction (carbon brakes + tyre)
   aero: 'active' | 'none'; // 2026 straight mode; older eras have fixed wings
+}
+
+/**
+ * Electric cars: torque is available from 0 rpm, so launch acceleration is multiplied by `launch` and fades
+ * out by `taper` x top speed; lifting off regenerates (`regen` m/s² of drag) and refills the boost meter.
+ * `thrusters` swaps nitro for the cold-gas "SpaceX package" (numbers in config EV.thrust).
+ */
+export interface EvSpec {
+  launch: number;
+  taper: number;
+  regen: number;
+  regenCharge: number; // boost meter units / s while regenerating
+  /** Track Mode style rear-biased torque: extra yaw (rad/s at full steer) on throttle mid-corner. */
+  rearBias?: number;
+  thrusters?: boolean;
 }
 
 export const VEHICLES: VehicleDef[] = [
@@ -115,6 +133,19 @@ export const VEHICLES: VehicleDef[] = [
     engine: { type: 'v8', cyl: 8, idle: 3000, redline: 11000, gears: 5, crackle: 0.8, lope: 0.1 },
     f1: { mass: 650, power: 370, ers: 0, cda: 1.1, cla: 1.6, mu: 1.45, muLong: 0.85, muBrake: 1.5, aero: 'none' },
     spec: { power: '~480 hp (3.0 V8)', weight: '575 kg', layout: 'MR · 3.0 V8' } },
+  // Real electric cars (Tesla). No badges are drawn on the models. Figures are Tesla's claims, see desc.
+  { id: 'tesla_roadster', name: 'Tesla Roadster (2nd gen)', kind: 'car', cls: 'Hypercar', era: '2020s',
+    desc: 'Revealed Oct 2026 (production planned 2028; untested claims). Thrust config: claimed 0-60 mph under 0.9 s with cold-gas thrusters (0.81 s shown, not independently timed), under 1.6 s without; 1,000+ kW, 230+ mph, 300+ mi range, >2 g cornering, 2,825 mm wheelbase, removable roof. Boost = SpaceX thrusters: extra push, brake and grip; C = hover hop.',
+    top: 48, accel: 27, grip: 2.3, traction: 12, slideTraction: 2.6, hp: 35, offroad: 0, wheelie: false,
+    engine: { type: 'electric', cyl: 2, idle: 600, redline: 17000, gears: 1, crackle: 0 },
+    ev: { launch: 1.9, taper: 0.7, regen: 3, regenCharge: 9, thrusters: true },
+    spec: { power: '1,000+ kW (1,341+ hp)', weight: '<1,700 kg (target)', layout: 'RWD · twin rear motors + cold-gas thrusters' } },
+  { id: 'tesla_model3', name: 'Tesla Model 3 Performance', kind: 'car', cls: 'Race', era: '2020s',
+    desc: 'Electric sports sedan. 0-60 mph 2.9 s (Tesla, 1-ft rollout), 163 mph top speed, 510 hp, ~1,850 kg. Dual-motor AWD with Track Mode: instant torque, rear-biased balance, lift-off regen refills your boost.',
+    top: 38, accel: 20, grip: 2.0, traction: 9, slideTraction: 1.9, hp: 55, offroad: 0.15, wheelie: false,
+    engine: { type: 'electric', cyl: 2, idle: 600, redline: 15000, gears: 1, crackle: 0, pitch: 0.9 },
+    ev: { launch: 1.7, taper: 0.6, regen: 2.6, regenCharge: 7, rearBias: 0.14 },
+    spec: { power: '510 hp · 741 Nm', weight: '1,851 kg', layout: 'AWD · dual motor' } },
 ];
 
 export const vehicleById = (id: string) => VEHICLES.find((v) => v.id === id) ?? VEHICLES[0];
