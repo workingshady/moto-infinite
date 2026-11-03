@@ -1,29 +1,29 @@
 // Pure vehicle physics shared by the human Player and the computer racers (src/ai). Every function here is a
 // verbatim extraction of what Player.updateBike used to do inline (vehiclePhysics.test.ts compares them with the
 // original formulas), so the player drives exactly as before and the bots obey the very same rules.
-import { BIKE, CONTROL, DRIFT, F1, ROAD, WALL, type TyreCompound } from '../config';
+import { BIKE, CONTROL, DRIFT, F1, RUNOFF, WALL, type TyreCompound } from '../config';
 import type { F1Spec, VehicleDef } from '../data/vehicles';
 import { clamp, damp, lerp, wrapPi } from '../utils/math';
 
 /** The part of a vehicle body the shared physics reads and writes (Player.B and AiRacer both have these fields). */
 export interface DriveBody { h: number; moveH: number; v: number; yawV: number; steer: number; flick: number; wasUp: boolean }
 
-/** F1 aero state the longitudinal model reads. */
-export interface AeroState { aeroOpen: boolean; slip: boolean; overtake: boolean; gripMul: number }
+/** F1 state the physics reads: straight mode, slipstream, overtake ERS, tyre grip, front wing damage 0..1, surface (0 track, 1 grass, 2 gravel). */
+export interface AeroState { aeroOpen: boolean; slip: boolean; overtake: boolean; gripMul: number; wing: number; surface: number }
 
-/** Downforce as a multiple of the car's weight at speed v: ½ρ·ClA·v² / (m·g). Straight mode sheds some. */
-export function downforceRatio(F: F1Spec, v: number, aeroOpen: boolean) {
-  return (0.5 * F1.rho * F.cla * v * v * (aeroOpen ? F1.straightDown : 1)) / (F.mass * 9.81);
+/** Downforce as a multiple of the car's weight at speed v: ½ρ·ClA·v² / (m·g). Straight mode sheds some, a broken front wing too. */
+export function downforceRatio(F: F1Spec, v: number, aeroOpen: boolean, wing = 0) {
+  return (0.5 * F1.rho * F.cla * v * v * (aeroOpen ? F1.straightDown : 1) * (1 - wing * WALL.wingDownforce)) / (F.mass * 9.81);
 }
 
 /**
  * F1 longitudinal dynamics, returns the new speed: drive = min(power/v, traction), minus aero drag and rolling
  * resistance; braking = μ·g·(1 + downforce) capped at 6.5 g; ERS adds electric power that fades at very high speed.
  * `gasAmt` / `brakeAmt` scale drive and brake force (the player always passes 1; bots use analog pedals).
- * `offDist` = distance from the road centre, only read when `onRoad` is false.
+ * Off the road the run-off surface (f.surface) drags: gravel traps bite hard, grass rolls on.
  */
-export function f1Longitudinal(v0: number, F: F1Spec, f: AeroState, envGrip: number, dt: number, gas: boolean, brake: boolean, ers: boolean, onRoad: boolean, offDist: number, gasAmt = 1, brakeAmt = 1): number {
-  const v = Math.max(0, v0), g = 9.81, dr = downforceRatio(F, v, f.aeroOpen);
+export function f1Longitudinal(v0: number, F: F1Spec, f: AeroState, envGrip: number, dt: number, gas: boolean, brake: boolean, ers: boolean, onRoad: boolean, gasAmt = 1, brakeAmt = 1): number {
+  const v = Math.max(0, v0), g = 9.81, dr = downforceRatio(F, v, f.aeroOpen, f.wing);
   const grip = f.gripMul * envGrip;
   if (v0 < -0.05 && !brake) {
     // rolling backwards (e.g. after a wall rebound) without asking to reverse: rolling resistance and engine braking
@@ -44,7 +44,11 @@ export function f1Longitudinal(v0: number, F: F1Spec, f: AeroState, envGrip: num
     if (v0 > 0.5) a -= Math.min(F.muBrake * g * (1 + dr) * grip, 6.5 * g) * brakeAmt;
     else a = -BIKE.reverse; // creep backwards (forward-motion drag doesn't apply going backwards)
   }
-  if (!onRoad) a -= (offDist > ROAD.shoulder + 3 ? F1.gravelDrag : F1.grassDrag) * v * 0.2;
+  if (!onRoad && v > 0) {
+    // run-off: gravel traps bite hard and keep biting at low speed, grass is slippery and rolls on
+    const R = f.surface === 2 ? RUNOFF.gravel : RUNOFF.grass;
+    a -= R.base + R.perV * v;
+  }
   let nv = Math.max(v0 + a * dt, v0 > 0 && !brake ? 0 : -BIKE.maxReverse);
   if (nv > 0 && nv < 0.05 && !gas) nv = 0;
   return nv;
@@ -71,20 +75,20 @@ export function arcadeTop(top: number, boosting: boolean, onRoad: boolean, offro
 }
 
 /** Lateral grip limit of an F1 car at speed v (m/s²): μ·g·(1 + downforce/weight), less off the road. */
-export function f1LateralLimit(F: F1Spec, v: number, aeroOpen: boolean, gripMul: number, envGrip: number, onRoad: boolean) {
-  return F.mu * 9.81 * (1 + downforceRatio(F, v, aeroOpen)) * gripMul * envGrip * (onRoad ? 1 : 0.55);
+export function f1LateralLimit(F: F1Spec, v: number, f: AeroState, envGrip: number, onRoad: boolean) {
+  return F.mu * 9.81 * (1 + downforceRatio(F, v, f.aeroOpen, f.wing)) * f.gripMul * envGrip * (onRoad ? 1 : f.surface === 2 ? RUNOFF.gravel.grip : RUNOFF.grass.grip);
 }
 
 /**
  * Yaw rate the steering asks for (rad/s). F1 cars are capped at aLat / v (turning faster just washes wide).
  * `grip` = the vehicle's steering rate (Player.stats.grip, bots use def.grip).
  */
-export function yawGoal(def: VehicleDef, steer: number, grip: number, envGrip: number, v: number, boosting: boolean, handbrake: boolean, wheelie: boolean, aeroOpen: boolean, gripMul: number, onRoad: boolean) {
+export function yawGoal(def: VehicleDef, steer: number, grip: number, envGrip: number, v: number, boosting: boolean, handbrake: boolean, wheelie: boolean, f: AeroState, onRoad: boolean) {
   const yawTarget = steer * grip * envGrip * clamp(Math.abs(v) / 6, 0, 1) * Math.sign(v)
     * (boosting ? CONTROL.boostSteer : 1) * (handbrake ? 1.55 : 1) * (wheelie ? 0.8 : 1);
   const F = def.f1;
   if (!F) return yawTarget;
-  const vv = Math.max(Math.abs(v), 6), aLat = f1LateralLimit(F, vv, aeroOpen, gripMul, envGrip, onRoad);
+  const vv = Math.max(Math.abs(v), 6), aLat = f1LateralLimit(F, vv, f, envGrip, onRoad);
   return clamp(yawTarget, -aLat / vv, aLat / vv);
 }
 
@@ -129,8 +133,8 @@ export function scrubStep(B: DriveBody, slip: number, handbrake: boolean, power:
 /** Wall response result (reused object, no allocation per contact). */
 export interface WallOut { vx: number; vz: number; vn: number; hard: boolean }
 /**
- * Contact with a wall of normal n: the into-wall velocity is removed (plus a small rebound), the speed along the wall
- * is kept minus Coulomb-style friction; a hard hit keeps only `glance` of it.
+ * Contact with a wall of normal n: the into-wall velocity is removed (plus a small rebound capped at WALL.maxRebound),
+ * the speed along the wall is kept minus Coulomb-style friction; a hard hit keeps only `glance` of it.
  */
 export function wallBounce(mx: number, mz: number, nx: number, nz: number, glance: number, hardSpeed: number, out: WallOut): WallOut {
   const vn = mx * nx + mz * nz; // < 0: moving into the wall
@@ -143,8 +147,9 @@ export function wallBounce(mx: number, mz: number, nx: number, nz: number, glanc
     let keep = vt > 1e-4 ? Math.max(0, vt - WALL.friction * -vn) / vt : 0;
     out.hard = -vn > hardSpeed;
     if (out.hard) keep *= glance;
-    out.vx = tx * keep - WALL.restitution * vn * nx;
-    out.vz = tz * keep - WALL.restitution * vn * nz;
+    const rebound = Math.min(WALL.restitution * -vn, WALL.maxRebound);
+    out.vx = tx * keep + rebound * nx;
+    out.vz = tz * keep + rebound * nz;
   }
   return out;
 }

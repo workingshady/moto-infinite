@@ -10,7 +10,7 @@ import type { Game } from '../core/Game';
 import type { Chunk, Obstacle } from './Chunks';
 import { hash01, type Poi, type Pose, type RoadLayout, type RoadPointFn } from './layout';
 import { G, M, MAT, canvasTex } from '../entities/assets';
-import { ROAD } from '../config';
+import { F1_BARRIERS, ROAD } from '../config';
 import { clamp, PI, TAU } from '../utils/math';
 
 export type F1TrackId = 'monza' | 'silverstone' | 'spa' | 'monaco' | 'suzuka' | 'bahrain';
@@ -413,7 +413,7 @@ export class F1Track implements RoadLayout {
     for (const s of this.solids) {
       if (!inside(s.x, s.z)) continue;
       const y = T.heightAt(s.x, s.z);
-      if (y >= 0.5) ch.obs.push({ x: s.x, z: s.z, r: s.r, top: y + s.top });
+      if (y >= 0.5) ch.obs.push({ x: s.x, z: s.z, r: s.r, top: y + s.top, x2: s.x2, z2: s.z2 });
     }
     for (const [key, b] of buckets) {
       const P = part(key), im = new THREE.InstancedMesh(P.g, P.m, b.c.length);
@@ -428,7 +428,7 @@ export class F1Track implements RoadLayout {
       const g = this.buildGantry(T.heightAt(this.px[0], this.pz[0]));
       game.scene.add(g);
       ch.meshes.push(g);
-      ch.obs.push(...[-1, 1].map((s) => { const [x, z] = this.at(0, s * (this.halfWidth + 2.2)); return { x, z, r: 0.8, top: g.position.y + 8 }; }));
+      ch.obs.push(...[-1, 1].map((s) => { const [x, z] = this.at(0, s * (this.halfWidth + 2.2)); return { x, z, r: 0.45, top: g.position.y + 8 }; }));
     }
   }
 
@@ -510,6 +510,60 @@ export class F1Track implements RoadLayout {
     this.put(p, ax + s * u + co * v, az + co * u - s * v, y, h + dh, sx, sy, sz, c, ax, az, extra);
   }
   private solid(x: number, z: number, r: number, top: number) { this.solids.push({ x, z, r, top }); }
+  /** Capsule collider from (x, z) to (x2, z2): a straight piece of wall with no dents or gaps along it. */
+  private seg(x: number, z: number, x2: number, z2: number, r: number, top: number) { this.solids.push({ x, z, x2, z2, r, top }); }
+  /**
+   * One post of a continuous barrier line (armco, tyre wall, pit wall, fence). Links to the previous post of the same
+   * line when that was the sample just before: the visual panel and its capsule collider then run post to post, so
+   * the wall follows the curve with no gaps on the outside of bends and no zipper of circles to snag on. A post
+   * without a neighbour gets a panel of its own length. `line` keys the chain (e.g. side and kind).
+   */
+  private post(line: string, i: number, x: number, z: number, r: number, top: number, panel?: (cx: number, cz: number, h: number, len: number) => void) {
+    const prev = this.lines.get(line), h0 = this.h(i);
+    const linked = !!prev && (prev.i + 2) % this.n === i && Math.hypot(x - prev.x, z - prev.z) < this.spacing * 2 * F1_BARRIERS.maxStretch;
+    if (linked) {
+      const h = Math.atan2(x - prev.x, z - prev.z), len = Math.hypot(x - prev.x, z - prev.z);
+      this.seg(prev.x, prev.z, x, z, r, top);
+      panel?.((x + prev.x) / 2, (z + prev.z) / 2, h, len + 0.1);
+    } else {
+      const u = this.spacing, s = Math.sin(h0) * u, c = Math.cos(h0) * u;
+      this.seg(x - s, z - c, x + s, z + c, r, top);
+      panel?.(x, z, h0, this.spacing * 2 + 0.1);
+    }
+    if (prev) { prev.i = i; prev.x = x; prev.z = z; }
+    else this.lines.set(line, { i, x, z });
+  }
+  private readonly lines = new Map<string, { i: number; x: number; z: number }>();
+  /**
+   * Barrier offset from the centre line on one side of sample i: the wanted run-off (metres beyond the track edge),
+   * shrunk where another part of the circuit (or the pit lane) is close, so the wall sits between the two with run-off
+   * for both and never on a racing surface. null = no room for a wall (a crossover or touching sections).
+   */
+  private fitBarrier(i: number, side: number, runoff: number, min: number) {
+    const hw = this.halfWidth;
+    for (const f of F1_BARRIERS.shrink) {
+      const ro = Math.max(min, runoff * f), [x, z] = this.at(i, side * (hw + ro));
+      if (this.free(x, z, i, Math.max(0.4, ro - 1.5))) return hw + ro;
+      if (ro <= min) break;
+    }
+    return null;
+  }
+  /** Gravel traps per sample: +1 / -1 = which side has one, 0 = none (run-off surface, see runoff()). */
+  private gravel: Int8Array = new Int8Array(0);
+
+  /**
+   * Off-track surface at (x, z): 0 = on the track or pit lane, 1 = grass / paved run-off, 2 = gravel trap. Feeds the
+   * F1 run-off drag (config RUNOFF): gravel bites hard, grass is slippery.
+   */
+  runoff(x: number, z: number) {
+    if (this.dist0(x, z) <= ROAD.onRoad) return 0;
+    const r = this.nearest(x, z);
+    if (r.i < 0) return 1;
+    const g = this.gravel[r.i];
+    if (!g) return 1;
+    const lat = ((x - this.px[r.i]) * this.tz[r.i] - (z - this.pz[r.i]) * this.tx[r.i]) * g;
+    return lat > this.halfWidth + F1_BARRIERS.gravel[0] && lat < this.halfWidth + F1_BARRIERS.gravel[1] ? 2 : 1;
+  }
   private solidL(ax: number, az: number, h: number, u: number, v: number, r: number, top: number) {
     const s = Math.sin(h), co = Math.cos(h);
     this.solid(ax + s * u + co * v, az + co * u - s * v, r, top);
@@ -566,8 +620,11 @@ export class F1Track implements RoadLayout {
   // ------------------------------------------------------------------ dressing
 
   private dressCommon() {
-    const n = this.n, hw = this.halfWidth, mon = this.id === 'monaco', ps = this.pit.side;
+    const n = this.n, hw = this.halfWidth, mon = this.id === 'monaco', ps = this.pit.side, B = F1_BARRIERS;
     const inPit = (i: number) => this.inRange(i, (this.pit.i0 - 10 + n) % n, (this.pit.i1 + 10) % n);
+    this.gravel = new Int8Array(n);
+    const armco = (x: number, z: number, h: number, len: number) => this.put('box', x, z, 0.6, h, 0.15, 0.7, len, 0xc9ced4);
+    const fence = (x: number, z: number, h: number, len: number) => this.put('fence', x, z, 3, h, 0.05, 4, len, WHITE);
     // kerbs (both sides of a corner), gravel + tyre walls on the outside, armco + catch fence beyond
     for (let i = 0; i < n; i += 2) {
       const k = this.curvature(i), h = this.h(i), out = k > 0 ? 1 : -1;
@@ -579,23 +636,28 @@ export class F1Track implements RoadLayout {
       const big = Math.abs(k) > 0.2 && !mon;
       if (big && i % 4 === 0) {
         const [gx, gz] = this.at(i, out * (hw + 7));
-        if (this.free(gx, gz, i, 6)) this.put('paint', gx, gz, 0.03, h, 10, 0.05, this.spacing * 4 + 0.6, SAND);
+        if (this.free(gx, gz, i, 6)) {
+          this.put('paint', gx, gz, 0.03, h, 10, 0.05, this.spacing * 4 + 0.6, SAND);
+          for (let k = -1; k <= 2; k++) this.gravel[(i + k + n) % n] = out;
+        }
       }
       if (big) {
         const [tx, tz] = this.at(i, out * (hw + 13));
         if (this.free(tx, tz, i, 6)) {
           for (let l = 0; l < 2; l++) this.put('tyre', tx, tz, 0.25 + l * 0.5, 0, 1.1, 1, 1.1, l ? WHITE : (i >> 1) % 3 ? 0x1d1d1f : RED);
-          this.solid(tx, tz, 1.2, 1);
+          this.post('tyre' + out, i, tx, tz, B.tyreR, 1);
         }
       }
+      // armco: one continuous line per side (behind the pit lane along the pits), pulled in where sections run close
       for (const side of [-1, 1]) {
-        if (side === ps && inPit(i)) continue;
-        const off = mon ? hw + 0.9 : big && side === out ? hw + 14.6 : hw + 9;
+        const pitSide = side === ps && inPit(i);
+        const want = pitSide ? F1Track.PIT_W + B.pitBack : mon ? B.street : big && side === out ? B.runoffOut : B.runoff;
+        const off = pitSide ? hw + want : this.fitBarrier(i, side, want, mon ? B.street : B.minRunoff);
+        if (off === null) continue;
         const [x, z] = this.at(i, side * off);
-        if (!this.free(x, z, i, mon ? 0.4 : off - hw - 1.5)) continue;
-        this.put('box', x, z, 0.6, h, 0.15, 0.7, this.spacing * 2 + 0.1, 0xc9ced4);
-        this.solid(x, z, mon ? 0.9 : 1.2, 1);
-        if (mon || (big && side === out) || (i % 4 === 0 && Math.abs(k) > 0.1)) this.put('fence', x, z, 3, h, 0.05, 4, this.spacing * 2 + 0.1, WHITE);
+        if (pitSide && !this.free(x, z, i, 0.4)) continue;
+        const tall = mon || (big && side === out) || Math.abs(k) > 0.1;
+        this.post('armco' + side, i, x, z, B.armcoR, tall ? 5 : 1, (cx, cz, hh, len) => { armco(cx, cz, hh, len); if (tall) fence(cx, cz, hh, len); });
       }
     }
     // start/finish: chequered line, grid slots
@@ -654,9 +716,8 @@ export class F1Track implements RoadLayout {
         this.put('paint', x, z, 0.05, h, 0.3, 0.03, this.spacing * 2 + 0.1, WHITE);
       } else if (s < cnt - exit) {
         const [x, z] = this.at(i, ps * (hw + 1.4));
-        this.put('box', x, z, 0.6, h, 0.8, 1.2, this.spacing * 2 + 0.1, CONCRETE);
         if (s % 6 === 0) this.put('fence', x, z, 2.8, h, 0.05, 3.2, this.spacing * 6, WHITE);
-        this.solid(x, z, 1.1, 1.2);
+        this.post('pitwall', i, x, z, F1_BARRIERS.pitWallR, 1.2, (cx, cz, hh, len) => this.put('box', cx, cz, 0.6, hh, 0.8, 1.2, len, CONCRETE));
       }
       // pit lane speed line + garages
       if (s % 8 === 0) {

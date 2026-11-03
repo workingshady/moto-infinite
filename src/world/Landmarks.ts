@@ -199,7 +199,12 @@ export function dressCircuit(game: Game, ch: Chunk, track: Circuit, x0: number, 
         cols.push(h ? (i / step) % 2 ? red : white : black);
       }
     }
-    ch.obs.push({ x: x + tz * side * d, z: z - tx * side * d, r: 1.6, top: T.heightAt(x, z) + 1.4 });
+    // colliders: the 3-tyre group itself, plus a link to the previous group on the same side so the wall is continuous
+    const cx = x + tz * side * d, cz = z - tx * side * d, top = T.heightAt(x, z) + 1.4;
+    ch.obs.push({ x: cx - tx * 1.3, z: cz - tz * 1.3, x2: cx + tx * 1.3, z2: cz + tz * 1.3, r: 0.65, top });
+    const j = (i - step + track.n) % track.n, kp = track.curvature(j);
+    if (Math.abs(kp) >= 0.22 && (kp > 0 ? 1 : -1) === side)
+      ch.obs.push({ x: track.px[j] + track.tz[j] * side * d, z: track.pz[j] - track.tx[j] * side * d, x2: cx, z2: cz, r: 0.65, top });
   }
   if (tyres.length) {
     const im = new THREE.InstancedMesh(tyreGeo, MAT.white, tyres.length / 16);

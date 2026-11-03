@@ -13,6 +13,8 @@ export function openWorld(track: TrackLine, hw: HalfWidthFn, grip = 1): BotWorld
     onRoad: (x, z) => track.nearest(x, z, true).d < hw(0) + 1.5,
     roadDist: (x, z) => track.nearest(x, z, true).d - hw(0) + ROAD.asphalt,
     blocked: () => false,
+    sweep: () => -1,
+    surface: (x, z) => (track.nearest(x, z, true).d < hw(0) + 1.5 ? 0 : 1),
     contact: () => ({ x: 0, z: 1, depth: 0 }),
   };
 }

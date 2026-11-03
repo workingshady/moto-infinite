@@ -14,6 +14,7 @@ import { AI, BIKE, CONTROL, DRIFT, F1, LANDING, WALL, type TyreCompound } from '
 import type { VehicleDef } from '../data/vehicles';
 import type { TrackLine } from '../world/layout';
 import { clamp, damp, lerp, wrapPi } from '../utils/math';
+import { sweepSteps, toSpeedHeading } from '../world/collide';
 import { arcadeLongitudinal, arcadeTop, driftStep, f1Longitudinal, holdSlide, scrubStep, stepYaw, tyreGrip, tyreWear, wallBounce, yawGoal, type DriveBody, type WallOut } from '../entities/vehiclePhysics';
 import type { BotProfile } from './personality';
 import { topEstimate, type HalfWidthFn, type RacingLine } from './racingLine';
@@ -30,8 +31,14 @@ export interface BotWorld {
   wet: number;
   onRoad(x: number, z: number): boolean;
   roadDist(x: number, z: number): number;
+  /** Is a body of radius r blocked at (x, z) (water, cliff, barrier / tree)? */
   blocked(x: number, z: number, r: number): false | WallKind;
+  /** Swept test from (x0, z0) to (x1, z1): fraction of the path at the first blocked sub-step, < 0 = free. */
+  sweep(x0: number, z0: number, x1: number, z1: number, r: number): number;
+  /** Outward contact normal + depth at a blocked spot (may return a reused object: read it at once). */
   contact(x: number, z: number, r: number, kind: WallKind, fx: number, fz: number): { x: number; z: number; depth: number };
+  /** Surface under the car: 0 track, 1 grass / run-off, 2 gravel trap. */
+  surface(x: number, z: number): number;
   inDrs?(i: number): boolean;
   pit?: { i0: number; i1: number; side: 1 | -1 } | null;
 }
@@ -39,7 +46,7 @@ export interface BotWorld {
 export type PitPhase = 0 | 1 | 2 | 3; // none, heading to the box, stopped, leaving the lane
 export interface BotF1 {
   compound: TyreCompound; startCompound: TyreCompound; wear: number; gripMul: number; ers: number;
-  aeroOpen: boolean; slip: boolean; overtake: boolean; stops: number; drsOk: boolean;
+  aeroOpen: boolean; slip: boolean; overtake: boolean; stops: number; drsOk: boolean; wing: number; surface: number;
   pit: PitPhase; pitT: number; box: number; next: TyreCompound; wantPit: boolean; pitWear: number; lastPitLap: number;
 }
 
@@ -75,7 +82,8 @@ export interface Bot extends DriveBody {
 }
 
 const wallOut: WallOut = { vx: 0, vz: 0, vn: 0, hard: false };
-const RAD_CAR = 1.5, RAD_BIKE = 1;
+/** Body radius against walls and barriers, the same as the player's (WALL.radius). */
+const wallRadius = (b: Bot) => (b.def.f1 ? WALL.radius.f1 : b.isCar ? WALL.radius.car : WALL.radius.bike);
 
 export function makeBot(id: string, def: VehicleDef, prof: BotProfile, vmax: Float32Array, x: number, z: number, h: number, compound: TyreCompound | null): Bot {
   return {
@@ -87,7 +95,7 @@ export function makeBot(id: string, def: VehicleDef, prof: BotProfile, vmax: Flo
     hp: AI.hp, wallCd: 0, damage: 0, started: false, finished: false, finishTime: 0, mistakes: 0, spins: 0,
     f1: compound ? {
       compound, startCompound: compound, wear: 0, gripMul: tyreGrip(compound, 0), ers: 100, aeroOpen: false, slip: false, overtake: false,
-      stops: 0, drsOk: false, pit: 0, pitT: 0, box: 0, next: compound, wantPit: false, pitWear: AI.f1.pitWear, lastPitLap: -1,
+      stops: 0, drsOk: false, wing: 0, surface: 0, pit: 0, pitT: 0, box: 0, next: compound, wantPit: false, pitWear: AI.f1.pitWear, lastPitLap: -1,
     } : null,
     lodAcc: 0,
   };
@@ -216,7 +224,8 @@ export function stepBot(b: Bot, w: BotWorld, dt: number, t: number, started: boo
     want = clamp(((1.5 * hErr) / rate) * Math.sign(b.v || -1), -1, 1);
   }
   // ---- physics: the same model the player drives
-  const up = b.thr > 0.05, down = b.brk > 0.05, onRoad = w.onRoad(b.x, b.z);
+  const up = b.thr > 0.05, down = b.brk > 0.05, onRoad = w.onRoad(b.x, b.z), aero = f1 ?? NOAERO;
+  if (f1) f1.surface = onRoad ? 0 : w.surface(b.x, b.z);
   // F1 per-step: tyres, DRS, ERS, slipstream flag (set by AiRacers), pit limiter
   let ers = false;
   if (f1 && F) {
@@ -228,13 +237,13 @@ export function stepBot(b: Bot, w: BotWorld, dt: number, t: number, started: boo
     if (ers) f1.ers = Math.max(0, f1.ers - BIKE.nitroBurn * dt);
     f1.ers = clamp(f1.ers + (down && av > 10 ? F1.ersRegen : F1.ersIdle) * dt, 0, 100);
   }
-  if (F) b.v = f1Longitudinal(b.v, F, f1 ?? NOAERO, env, dt, up, down, ers, onRoad, onRoad ? 0 : w.roadDist(b.x, b.z), b.thr, b.brk);
+  if (F) b.v = f1Longitudinal(b.v, F, aero, env, dt, up, down, ers, onRoad, b.thr, b.brk);
   else b.v = arcadeLongitudinal(b.v, b.def.accel, arcadeTop(b.def.top, false, onRoad, b.def.offroad), b.def.offroad, up, b.thr, false, down, down, b.brk, onRoad, dt);
   if (f1?.pit && b.v > F1.pitLimit && w.pit && inRange(b.idx, w.pit.i0, w.pit.i1)) b.v = lerp(b.v, F1.pitLimit, Math.min(1, dt * 4)); // pit limiter
   if (env < 1 && Math.abs(b.steer) > 0.6 && Math.abs(b.v) > 20) b.v *= 1 - (1 - env) * dt; // wet roads scrub speed in corners
   b.v = Math.max(b.v, -BIKE.maxReverse);
   b.steer = lerp(b.steer, want, damp(dt, Math.abs(want) > 0.02 ? CONTROL.steerIn : CONTROL.steerOut));
-  stepYaw(b, yawGoal(b.def, b.steer, b.def.grip, env, b.v, false, false, false, f1?.aeroOpen ?? false, f1?.gripMul ?? 1, onRoad), b.isCar, dt);
+  stepYaw(b, yawGoal(b.def, b.steer, b.def.grip, env, b.v, false, false, false, aero, onRoad), b.isCar, dt);
   // weight transfer flick, like a gamepad with a small dead zone
   const sgn = Math.abs(want) > 0.5 ? Math.sign(want) : 0;
   if (sgn && sgn !== b.lastSteerSign) {
@@ -255,14 +264,19 @@ export function stepBot(b: Bot, w: BotWorld, dt: number, t: number, started: boo
   if (!Number.isFinite(b.v) || !Number.isFinite(b.h) || !Number.isFinite(b.moveH)) { b.v = 0; b.h = b.moveH = Number.isFinite(b.h) ? b.h : 0; }
   // ---- move + walls
   b.wallCd = Math.max(0, b.wallCd - dt);
-  const nx = b.x + Math.sin(b.moveH) * b.v * dt, nz = b.z + Math.cos(b.moveH) * b.v * dt;
   if (b.v !== 0) {
-    const rad = b.isCar ? RAD_CAR : RAD_BIKE, blk = w.blocked(nx, nz, rad);
-    if (blk) hitWall(b, w, blk, nx, nz, rad, dt);
-    else {
+    // swept move (the wall test runs in sub-steps no longer than half the radius: an F1 car can't skip a thin barrier)
+    const rad = wallRadius(b), dx = Math.sin(b.moveH) * b.v * dt, dz = Math.cos(b.moveH) * b.v * dt;
+    const f = w.sweep(b.x, b.z, b.x + dx, b.z + dz, rad);
+    if (f < 0) {
       if (f1) f1.wear = tyreWear(f1.wear, f1.compound, Math.abs(b.v) * dt, Math.abs(wrapPi(b.h - b.moveH)), down);
-      b.x = nx;
-      b.z = nz;
+      b.x += dx;
+      b.z += dz;
+    } else {
+      const k = Math.max(0, f - 1 / sweepSteps(Math.hypot(dx, dz), rad)), hx = b.x + dx * f, hz = b.z + dz * f;
+      b.x += dx * k;
+      b.z += dz * k;
+      hitWall(b, w, w.blocked(hx, hz, rad) || 'tree', hx, hz, rad, dt * (1 - k));
     }
   }
   // ---- timers: mistakes, recovery
@@ -270,7 +284,7 @@ export function stepBot(b: Bot, w: BotWorld, dt: number, t: number, started: boo
   if (go) { maybeMistake(b, w, dt, av); recovery(b, w, dt); }
 }
 
-const NOAERO = { aeroOpen: false, slip: false, overtake: false, gripMul: 1 };
+const NOAERO = { aeroOpen: false, slip: false, overtake: false, gripMul: 1, wing: 0, surface: 0 };
 
 const inRange = (i: number, a: number, b: number) => (a <= b ? i >= a && i <= b : i >= a || i <= b);
 const fwd = (from: number, to: number, n: number) => (to - from + n) % n;
@@ -311,29 +325,41 @@ function pitSpeed(b: Bot, w: BotWorld) {
   return cap;
 }
 
-/** Wall / barrier contact: the same response as the player's (shared wallBounce), damage on hard hits. */
-function hitWall(b: Bot, w: BotWorld, kind: WallKind, nx: number, nz: number, rad: number, dt: number) {
+/**
+ * Wall / barrier contact: the player's response (shared wallBounce with the capped rebound, travel kept on the
+ * heading's side, nose swung toward the wall's line), then a swept slide along the wall for the rest of the step.
+ * Hard hits cost health; an F1 nose-first hit breaks the front wing (less downforce until the next stop).
+ */
+function hitWall(b: Bot, w: BotWorld, kind: WallKind, nx: number, nz: number, rad: number, dtLeft: number) {
   const mx = Math.sin(b.moveH) * b.v, mz = Math.cos(b.moveH) * b.v, spd = Math.hypot(mx, mz);
-  const n = w.contact(nx, nz, rad, kind, -mx, -mz);
-  const r = wallBounce(mx, mz, n.x, n.z, 0.85, LANDING.wallDamageSpeed, wallOut);
+  const c = w.contact(nx, nz, rad, kind, -mx, -mz), cnx = c.x, cnz = c.z;
+  const r = wallBounce(mx, mz, cnx, cnz, 0.85, LANDING.wallDamageSpeed, wallOut);
   if (r.vn < 0 && b.wallCd <= 0 && -r.vn > 4) {
     b.wallCd = WALL.fxCooldown;
-    if (r.hard) damage(b, -r.vn * 0.3);
+    if (r.hard) damage(b, Math.max(0, -r.vn - WALL.damageMin) * WALL.damage * 2);
+    if (b.f1 && -r.vn > WALL.wingSpeed && -r.vn > spd * WALL.wingAngle) b.f1.wing = 1;
   }
-  const sp = Math.min(Math.hypot(r.vx, r.vz), spd);
+  const res = toSpeedHeading(r.vx, r.vz, b.h, b.moveH, sh), sp = Math.min(Math.abs(res.v), spd);
   if (sp > 0.05) {
-    const d = Math.atan2(r.vx, r.vz);
-    if (Math.cos(d - b.h) >= 0) { b.moveH = d; b.v = sp; } else { b.moveH = d + Math.PI; b.v = -sp; }
+    b.moveH = res.moveH;
+    b.v = Math.sign(res.v) * sp;
     const gap = wrapPi(b.moveH - b.h);
     if (Math.abs(gap) < Math.PI / 2 && r.vn < 0) { b.h += clamp(gap * WALL.align, -WALL.maxSpin, WALL.maxSpin); b.yawV *= 0.3; }
   } else b.v = 0;
-  const sx = b.x + r.vx * dt, sz = b.z + r.vz * dt;
-  if (!w.blocked(sx, sz, rad)) { b.x = sx; b.z = sz; }
-  else if (w.blocked(b.x, b.z, rad)) {
-    const push = Math.min(Math.max(n.depth, 0.05), 0.5), px = b.x + n.x * push, pz = b.z + n.z * push;
-    if (!w.blocked(px, pz, rad) || kind === 'tree') { b.x = px; b.z = pz; }
+  if (b.v !== 0) {
+    const sx = Math.sin(b.moveH) * b.v * dtLeft, sz = Math.cos(b.moveH) * b.v * dtLeft, f = w.sweep(b.x, b.z, b.x + sx, b.z + sz, rad);
+    const k = f < 0 ? 1 : Math.max(0, f - 1 / sweepSteps(Math.hypot(sx, sz), rad));
+    b.x += sx * k;
+    b.z += sz * k;
+  }
+  // still overlapping (shoved in by another car): ease out along the contact normal
+  for (let it = 0; it < 3 && w.blocked(b.x, b.z, rad) === 'tree'; it++) {
+    const n = w.contact(b.x, b.z, rad, 'tree', cnx, cnz), push = Math.min(Math.max(n.depth, 0.02) + 0.01, WALL.maxPush);
+    b.x += n.x * push;
+    b.z += n.z * push;
   }
 }
+const sh = { v: 0, moveH: 0 };
 
 /** Damage: hp down; past 50 % the car is slower (aero / suspension), up to −6 %. */
 export function damage(b: Bot, amount: number) {

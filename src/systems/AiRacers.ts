@@ -7,7 +7,9 @@ import type { Game } from '../core/Game';
 import type { TrackLine } from '../world/layout';
 import { buildVehicleModel, type VehicleModel } from '../entities/vehicleModels';
 import { VEHICLES, type VehicleDef } from '../data/vehicles';
-import { AI, F1, PLAYER_COLORS, ROAD, WEATHER_DEFS, type TyreCompound } from '../config';
+import { AI, CONTACT, F1, PLAYER_COLORS, ROAD, WEATHER_DEFS, type TyreCompound } from '../config';
+import { toSpeedHeading, type Body } from '../world/collide';
+import type { ContactOwner, Contacts } from './Contacts';
 import { activeWeathers } from '../../shared/protocol';
 import { clamp, lerp } from '../utils/math';
 import { damage, makeBot, placeBot, stepBot, trackIndex, type Bot, type BotWorld, type WallKind } from '../ai/driver';
@@ -28,7 +30,7 @@ export interface AiRacer extends Bot {
 
 const COMPOUNDS = ['soft', 'medium', 'hard'] as const;
 
-export class AiRacers {
+export class AiRacers implements ContactOwner {
   readonly list: AiRacer[] = [];
   /** Every bot that started (Elimination removes knocked-out bots from `list`; the rating still counts them). */
   readonly field = new Map<string, AiRacer>();
@@ -106,14 +108,17 @@ export class AiRacers {
 
   /** The bots' view of the game world. Collision call sites live here (swap in another contact model in one place). */
   private makeWorld(): BotWorld {
-    const g = this.game, lay = g.layout as unknown as { inDrs?(i: number): boolean; pit?: { i0: number; i1: number; side: 1 | -1 } };
+    const g = this.game, lay = g.layout as unknown as { inDrs?(i: number): boolean; runoff?(x: number, z: number): number; pit?: { i0: number; i1: number; side: 1 | -1 } };
     const ws = activeWeathers(g.opts);
     const w: BotWorld = {
       track: this.track, line: this.learned.line, hw: this.hw, envGrip: 1, wet: 0,
       onRoad: (x, z) => g.terrain.onRoad(x, z),
       roadDist: (x, z) => g.layout.roadDist(x, z),
+      // collision call sites (world/collide.ts via ChunkManager): the same swept barrier test and contact normal as the player
       blocked: (x, z, r) => g.chunks.blocked(x, z, r, this.yAt, 1.3),
+      sweep: (x0, z0, x1, z1, r) => g.chunks.sweep(x0, z0, x1, z1, r, this.yAt, 1.3),
       contact: (x, z, r, kind: WallKind, fx, fz) => g.chunks.contact(x, z, r, this.yAt, kind, fx, fz),
+      surface: (x, z) => (lay.runoff ? lay.runoff(x, z) : g.terrain.onRoad(x, z) ? 0 : 1),
       inDrs: lay.inDrs ? (i) => lay.inDrs!(i) : undefined,
       pit: this.f1 && lay.pit ? lay.pit : null,
     };
@@ -171,7 +176,6 @@ export class AiRacers {
         this.pitStop(b, step);
         if (!b.finished && b.s >= this.laps * this.L) { b.finished = true; b.finishTime = raceTime; }
       }
-      this.contacts();
     }
     for (const b of this.list) this.render(b, dt);
     if (started) this.skill.update(dt);
@@ -285,6 +289,7 @@ export class AiRacers {
         this.justPitted.set(b.id, f.lastPitLap);
         (b as AiRacer).model.tyreBands?.color.setHex(F1.tyres[f.compound].color);
         b.damage = 0; // front wing / bodywork fixed in the stop
+        f.wing = 0;
         b.hp = AI.hp;
       }
     } else if (f.pit === 3 && !this.inPitRange(b.idx)) f.pit = 0;
@@ -294,37 +299,28 @@ export class AiRacers {
     return p.i0 <= p.i1 ? i >= p.i0 && i <= p.i1 : i >= p.i0 || i <= p.i1;
   }
 
-  /**
-   * Car-to-car contact. Bots: equal-mass impulse along the contact normal (restitution 0.25) plus positional separation;
-   * hard hits damage and unsettle the car. Human players keep their previous contact response (pushed clear, small
-   * speed loss) so the player's handling is untouched; the bot takes the impulse.
-   */
-  private contacts() {
-    const L = this.list, R = 2.5;
-    for (let i = 0; i < L.length; i++) {
-      const a = L[i];
-      for (let j = i + 1; j < L.length; j++) {
-        const b = L[j], dx = b.x - a.x, dz = b.z - a.z, d2 = dx * dx + dz * dz;
-        if (d2 > R * R || d2 < 1e-6) continue;
-        const d = Math.sqrt(d2), nx = dx / d, nz = dz / d, pen = (R - d) * 0.5;
-        a.x -= nx * pen; a.z -= nz * pen; b.x += nx * pen; b.z += nz * pen;
-        impulse(a, b, nx, nz);
-      }
-      for (const p of this.game.players) {
-        const dx = p.B.x - a.x, dz = p.B.z - a.z, d = Math.hypot(dx, dz);
-        if (d > 0.01 && d < 2.6) {
-          const push = (2.6 - d) / d;
-          p.B.x += dx * push * 0.6;
-          p.B.z += dz * push * 0.6;
-          p.B.v *= 0.97;
-          a.x -= dx * push * 0.4;
-          a.z -= dz * push * 0.4;
-          const pvx = Math.sin(p.B.moveH) * p.B.v, pvz = Math.cos(p.B.moveH) * p.B.v;
-          botImpulseFrom(a, pvx, pvz, -dx / d, -dz / d);
-        }
-      }
-    }
+  /** Contact pass (systems/Contacts.ts, every physics step): each bot as a capsule with its real velocity. */
+  contactBodies(c: Contacts) {
+    for (const b of this.list) c.add('ai', b, this, b.name, b.def, b.x, b.z, b.y, b.h, Math.sin(b.moveH) * b.v, Math.cos(b.moveH) * b.v);
   }
+
+  /** Contact result for one bot: position correction (never into a barrier), velocity change, yaw kick, damage. */
+  applyContact(ref: object, c: Body) {
+    const b = ref as AiRacer, w = this.world, r = 1;
+    this.yAt = b.y;
+    if (c.px || c.pz) {
+      if (!w.blocked(b.x + c.px, b.z + c.pz, r)) { b.x += c.px; b.z += c.pz; }
+      else if (!w.blocked(b.x + c.px * 0.5, b.z + c.pz * 0.5, r)) { b.x += c.px * 0.5; b.z += c.pz * 0.5; }
+    }
+    if (c.dvx || c.dvz) {
+      const o = toSpeedHeading(Math.sin(b.moveH) * b.v + c.dvx, Math.cos(b.moveH) * b.v + c.dvz, b.h, b.moveH, this._sh);
+      b.v = o.v;
+      b.moveH = o.moveH;
+    }
+    if (c.spin) { b.yawV += c.spin; b.h += c.spin * CONTACT.heading; }
+    if (c.impact > CONTACT.damageMin && b.wallCd <= 0) { damage(b, (c.impact - CONTACT.damageMin) * CONTACT.damage); b.wallCd = CONTACT.cooldown; }
+  }
+  private readonly _sh = { v: 0, moveH: 0 };
 
   private render(b: AiRacer, dt: number) {
     const g = this.game, m = b.model;
@@ -374,38 +370,4 @@ export class AiRacers {
     this.disposed = true;
     for (const r of this.list) this.game.scene.remove(r.model.root);
   }
-}
-
-/** Equal-mass impulse between two bots along normal n (a → b). */
-function impulse(a: Bot, b: Bot, nx: number, nz: number) {
-  const avx = Math.sin(a.moveH) * a.v, avz = Math.cos(a.moveH) * a.v, bvx = Math.sin(b.moveH) * b.v, bvz = Math.cos(b.moveH) * b.v;
-  const rel = (bvx - avx) * nx + (bvz - avz) * nz;
-  if (rel >= 0) return; // separating
-  const j = (-(1 + 0.25) * rel) / 2;
-  setVel(a, avx - j * nx, avz - j * nz);
-  setVel(b, bvx + j * nx, bvz + j * nz);
-  if (-rel > 6) {
-    damage(a, -rel * 0.6);
-    damage(b, -rel * 0.6);
-    a.yawV += (Math.random() - 0.5) * -rel * 0.12;
-    b.yawV += (Math.random() - 0.5) * -rel * 0.12;
-  }
-}
-
-/** A player car hits a bot: the bot takes the impulse (player unchanged). n points from the player to the bot. */
-function botImpulseFrom(b: Bot, pvx: number, pvz: number, nx: number, nz: number) {
-  const bvx = Math.sin(b.moveH) * b.v, bvz = Math.cos(b.moveH) * b.v;
-  const rel = (bvx - pvx) * nx + (bvz - pvz) * nz;
-  if (rel >= 0) return;
-  const j = -(1 + 0.25) * rel * 0.5;
-  setVel(b, bvx + j * nx, bvz + j * nz);
-  if (-rel > 6) { damage(b, -rel * 0.6); b.yawV += (Math.random() - 0.5) * -rel * 0.12; }
-}
-
-/** Back to a signed speed along a travel direction on the heading's side (as the wall response does). */
-function setVel(b: Bot, vx: number, vz: number) {
-  const sp = Math.hypot(vx, vz);
-  if (sp < 0.05) { b.v = 0; return; }
-  const d = Math.atan2(vx, vz);
-  if (Math.cos(d - b.h) >= 0) { b.moveH = d; b.v = sp; } else { b.moveH = d + Math.PI; b.v = -sp; }
 }

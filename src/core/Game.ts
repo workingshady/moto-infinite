@@ -33,6 +33,7 @@ import { progressPaused } from '../admin/state';
 import { Replay } from '../systems/Replay';
 import { GEN, LEVELING, NET, PHYS, QUALITY, TRACKS, WORLD, type QualityName, type TyreCompound } from '../config';
 import { STORY } from '../data/story';
+import { Contacts, type ContactKind } from '../systems/Contacts';
 import { createModes, type ModeFeature } from '../modes';
 import { skipFrame } from './settings';
 import { feelUpdate, stopRumble } from './rumble';
@@ -85,6 +86,8 @@ export interface GameHooks {
 
 export interface GameEvents {
   progress: { player: Player; id: ChallengeId; value: number };
+  /** A local rider touched another vehicle (closing speed m/s). The payload object is reused: read it, don't keep it. */
+  bump: { player: Player; kind: ContactKind; ref: object; impact: number };
 }
 
 export class Game {
@@ -99,6 +102,8 @@ export class Game {
   readonly fx: Particles;
   readonly effects: Effects;
   readonly combat: Combat;
+  /** Vehicle-vs-vehicle contact (riders, AI, traffic, online players). */
+  readonly contacts: Contacts;
   readonly events = new Events<GameEvents>();
   readonly players: Player[] = [];
   readonly spawnPoints: Pose[];
@@ -146,6 +151,7 @@ export class Game {
     this.effects = new Effects(this.scene, this.terrain);
     this.entities = new EntityManager(this);
     this.combat = new Combat(this);
+    this.contacts = new Contacts(this);
     this.chunks = new ChunkManager(this);
 
     const aiCount = opts.attract || opts.net || opts.session === 'quali' || (opts.mode !== 'race' && opts.mode !== 'f1') ? 0 : opts.ai ?? 0;
@@ -289,6 +295,7 @@ export class Game {
     for (let i = 0; i < steps; i++) {
       this.time += h;
       for (const p of this.players) p.update(h);
+      this.contacts.step(h);
       this.entities.update(h);
       this.combat.update(h);
     }

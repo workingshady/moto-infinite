@@ -8,11 +8,12 @@ import type { EngineSound } from '../core/EngineSound';
 import type { Entity } from './EntityManager';
 import type { Pose } from '../world/layout';
 import type { NetState } from '../../shared/protocol';
-import { ASSIST, BIKE, DRIFT, EV, F1, type TyreCompound, LEVELING, CONTROL, LANDING, PHYS, PLAYER, POWERUPS, ROAD, WALL, WHEELIE, type PowerupKind } from '../config';
+import { ASSIST, BIKE, CONTACT, DRIFT, EV, F1, type TyreCompound, LEVELING, CONTROL, LANDING, PHYS, PLAYER, POWERUPS, ROAD, WALL, WHEELIE, type PowerupKind } from '../config';
 import { clamp, damp, lerp, rnd, TAU, wrapPi } from '../utils/math';
 import { buildRider, seatRider, type RiderModel } from './models';
 import { buildVehicleModel, type VehicleModel } from './vehicleModels';
 import { EvDrive, fullBurn } from './EvDrive';
+import { sweepSteps, toSpeedHeading } from '../world/collide';
 import { arcadeLongitudinal, arcadeTop, driftStep, f1Longitudinal, holdSlide, scrubStep, stepYaw, tyreGrip, tyreWear, wallBounce, yawGoal, type WallOut } from './vehiclePhysics';
 import { vehicleById, type VehicleDef } from '../data/vehicles';
 import { WEAPONS } from '../data/weapons';
@@ -52,6 +53,10 @@ export class Player {
   readonly f1 = {
     compound: 'medium' as TyreCompound, wear: 0, aeroOpen: false, slip: false, inPit: false, pitT: 0, stops: 0, penalty: 0,
     gripMul: 1, stillT: 0, overtake: false, limits: 0, limitT: 0, offT: 0,
+    /** Front wing damage 0..1 (a nose-first wall hit): costs WALL.wingDownforce of the downforce until the next stop. */
+    wing: 0,
+    /** Surface under the car: 0 track, 1 grass / run-off, 2 gravel trap. */
+    surface: 0,
   };
   readonly drift = { on: false, pts: 0, t: 0, cool: 0, angle: 0, total: 0, best: 0, zone: '', zoneMult: 1, jitter: 0, prevAngle: 0 };
   readonly W = { x: 0, z: 0, y: 0, h: 0, vy: 0, ground: true, phase: 0, amt: 0 };
@@ -91,7 +96,6 @@ export class Player {
   private nitroOn = false;
   /** Wall contact: impact-effect cooldown, recent-contact timer, time spent pinned against a wall. */
   private wallCd = 0;
-  private readonly wallOut: WallOut = { vx: 0, vz: 0, vn: 0, hard: false };
   private wallTouch = 0;
   private stuckT = 0;
   private style: Style | null = null;
@@ -184,6 +188,7 @@ export class Player {
       if (this.respawnT <= 0) {
         s.dead = false;
         s.hp = this.stats.hpMax;
+        this.f1.wing = 0;
         this.respawn();
       }
     }
@@ -247,7 +252,7 @@ export class Player {
         const wheelie = this.updateWheelie(dt, active && c.is('trick'), up, down);
         // yaw with inertia: the yaw rate eases toward what the steering asks for (heavier cars respond slower)
         // F1: the cornering limit (lateral g) grows with downforce ~ v², so yaw rate is capped at aLat / v (shared physics)
-        stepYaw(B, yawGoal(this.def, B.steer, st.grip, g.env.grip, B.v, boosting, handbrake, wheelie, this.f1.aeroOpen, this.f1.gripMul, onRoad), this.isCar, dt);
+        stepYaw(B, yawGoal(this.def, B.steer, st.grip, g.env.grip, B.v, boosting, handbrake, wheelie, this.f1, onRoad), this.isCar, dt);
         // weight transfer: a quick left-right flick, lifting off, or braking mid-turn makes the rear light
         const steerSign = Math.sign(want);
         if (steerSign && steerSign !== B.lastSteerSign) {
@@ -342,33 +347,7 @@ export class Player {
     if (!Number.isFinite(B.v) || !Number.isFinite(B.moveH) || !Number.isFinite(B.h)) { B.v = 0; B.moveH = B.h = Number.isFinite(B.h) ? B.h : 0; }
     this.wallCd = Math.max(0, this.wallCd - dt);
     this.wallTouch = Math.max(0, this.wallTouch - dt);
-    const nx = B.x + Math.sin(B.moveH) * B.v * dt, nz = B.z + Math.cos(B.moveH) * B.v * dt;
-    if (B.v !== 0) {
-      const rad = this.isCar ? 1.5 : 1;
-      const blk = g.chunks.blocked(nx, nz, rad, B.y, B.air ? 99 : this.ev?.glued ? EV.stick.maxStep : 1.3);
-      if (blk) this.hitWall(blk, nx, nz, rad, dt);
-      else {
-        const e = g.entities.hitTest(nx, B.y, nz, this.isCar ? 1.4 : 0.9);
-        if (e) {
-          if (e.type === 'cone') { g.entities.destroy(e, this); B.v *= 0.97; }
-          else if (e.type === 'barrel') g.entities.destroy(e, this);
-          else if (e.type === 'crate') {
-            if (Math.abs(B.v) > 16) { g.entities.destroy(e, this); B.v *= 0.8; this.cam.shake = Math.max(this.cam.shake, 0.2); }
-            else { B.v *= -0.3; g.audio.play('thud'); }
-          }
-        } else {
-          if (this.riding) {
-            const d = Math.abs(B.v) * dt;
-            s.dist += d;
-            // tyre wear: distance, plus extra when sliding or braking hard
-            if (this.def.f1) this.f1.wear = tyreWear(this.f1.wear, this.f1.compound, d, Math.abs(wrapPi(B.h - B.moveH)), down);
-            g.events.emit('progress', { player: this, id: 'dist', value: d });
-          }
-          B.x = nx;
-          B.z = nz;
-        }
-      }
-    }
+    if (B.v !== 0 || this.probeHit(B.x, B.z, B.h) === 'tree') this.move(dt, down);
     if (this.riding) this.wallRecover(dt);
     if (T.walls.length && !B.air) this.onDemoWall(dt);
     // vertical
@@ -567,10 +546,7 @@ export class Player {
   /** Within a few metres of a wall, container or the edge of a drift venue. */
   private nearWall() {
     const B = this.B, g = this.game, r = DRIFT.closeDist;
-    let close = false;
-    g.chunks.forNear(B.x, B.z, (c) => {
-      for (const o of c.obs) if ((B.x - o.x) ** 2 + (B.z - o.z) ** 2 < (o.r + r) ** 2) return (close = true);
-    });
+    let close = g.chunks.solidAt(B.x, B.z, r, -1e9);
     if (!close && g.layout.kind === 'drift') close = g.layout.roadDist(B.x, B.z) > ROAD.asphalt - r && g.layout.roadDist(B.x, B.z) < ROAD.asphalt + 1;
     return close;
   }
@@ -598,59 +574,196 @@ export class Player {
     this.cam.shake = Math.max(this.cam.shake, 0.4);
   }
 
+  /** Wall/barrier probe radius and the nose/tail probe offset for this vehicle (see WALL.radius / WALL.nose). */
+  private get wallShape() {
+    const k = this.def.f1 ? 'f1' : this.isCar ? 'car' : 'bike';
+    this._ws.r = WALL.radius[k];
+    this._ws.nose = WALL.nose[k];
+    return this._ws;
+  }
+  private readonly _ws = { r: 1, nose: 0 };
+  private stepH = 1.3;
+  /** Which probe touched last: +1 nose, 0 centre, -1 tail. */
+  private probeSide = 0;
+
   /**
-   * Contact with a wall, barrier, tree, cliff or shoreline at the proposed spot (nx, nz). Removes the into-wall part of
-   * the velocity (with a small rebound), keeps the speed along the wall minus friction, swings the heading toward the
-   * wall a limited amount and slides along it. Damage, sound and particles are rate-limited so scraping a barrier does
-   * not fire them every physics step.
+   * Is the vehicle blocked at (x, z) facing h? Terrain (water, cliffs) is checked at the centre; obstacles with the
+   * body's probes: one circle for bikes, nose + centre + tail circles for cars (so a head-on hit stops the nose at the
+   * wall instead of letting the bonnet sink in). Remembers which probe touched in `probeSide`.
    */
-  private hitWall(kind: 'water' | 'wall' | 'tree', nx: number, nz: number, rad: number, dt: number) {
-    const B = this.B, g = this.game, A = this.assist, maxStep = B.air ? 99 : 1.3;
+  private probeHit(x: number, z: number, h: number): false | 'water' | 'wall' | 'tree' {
+    const g = this.game, { r, nose } = this.wallShape, y = this.B.y;
+    const gy = g.terrain.groundAt(x, z);
+    this.probeSide = 0;
+    if (gy < 0.2) return 'water';
+    if (gy - y > this.stepH) return 'wall';
+    if (g.chunks.solidAt(x, z, r, y)) return 'tree';
+    if (nose > 0) {
+      const fx = Math.sin(h) * nose, fz = Math.cos(h) * nose;
+      if (g.chunks.solidAt(x + fx, z + fz, r, y)) { this.probeSide = 1; return 'tree'; }
+      if (g.chunks.solidAt(x - fx, z - fz, r, y)) { this.probeSide = -1; return 'tree'; }
+    }
+    return false;
+  }
+
+  /**
+   * Horizontal move for one physics step with a swept collision check: the path is tested in sub-steps no longer
+   * than half the probe radius, so even an F1 car at 90 m/s (1.5 m per step) can't skip through a thin barrier. The
+   * vehicle stops at the last free sub-step and `hitWall` takes over for the rest of the step.
+   */
+  private move(dt: number, braking: boolean) {
+    const B = this.B, g = this.game;
+    this.stepH = B.air ? 99 : this.ev?.glued ? EV.stick.maxStep : 1.3;
+    // already overlapping a barrier (respawn, shoved by another car): ease out along the contact normal first
+    if (this.probeHit(B.x, B.z, B.h) === 'tree' && !this.depenetrate()) {
+      B.x += Math.sin(B.moveH) * B.v * dt; // still stuck after the push: let it move so it can never lock up
+      B.z += Math.cos(B.moveH) * B.v * dt;
+      return;
+    }
+    if (B.v === 0) return;
+    const dx = Math.sin(B.moveH) * B.v * dt, dz = Math.cos(B.moveH) * B.v * dt;
+    const n = sweepSteps(Math.hypot(dx, dz), this.wallShape.r);
+    let fx = B.x, fz = B.z;
+    for (let k = 1; k <= n; k++) {
+      const px = B.x + (dx * k) / n, pz = B.z + (dz * k) / n, kind = this.probeHit(px, pz, B.h);
+      if (kind) {
+        this.addDist(Math.hypot(fx - B.x, fz - B.z), braking);
+        B.x = fx; B.z = fz;
+        this.hitWall(kind, px, pz, dt * (1 - (k - 1) / n));
+        return;
+      }
+      fx = px; fz = pz;
+    }
+    const e = g.entities.hitTest(fx, B.y, fz, this.isCar ? 1.4 : 0.9);
+    if (e) {
+      if (e.type === 'cone') { g.entities.destroy(e, this); B.v *= 0.97; }
+      else if (e.type === 'barrel') g.entities.destroy(e, this);
+      else if (e.type === 'crate') {
+        if (Math.abs(B.v) > 16) { g.entities.destroy(e, this); B.v *= 0.8; this.cam.shake = Math.max(this.cam.shake, 0.2); }
+        else { B.v *= -0.3; g.audio.play('thud'); }
+      }
+      return;
+    }
+    this.addDist(Math.hypot(fx - B.x, fz - B.z), braking);
+    B.x = fx;
+    B.z = fz;
+  }
+
+  /**
+   * Vehicle contact result (systems/Contacts): velocity change, position correction (never into a wall) and a yaw kick.
+   * The travel direction stays on the heading's side, so a shunt from behind pushes you forward, not into "reverse".
+   */
+  applyContact(dvx: number, dvz: number, px: number, pz: number, spin: number) {
+    const B = this.B;
+    if (px || pz) {
+      if (!this.probeHit(B.x + px, B.z + pz, B.h)) { B.x += px; B.z += pz; }
+      else if (!this.probeHit(B.x + px * 0.5, B.z + pz * 0.5, B.h)) { B.x += px * 0.5; B.z += pz * 0.5; }
+    }
+    if (dvx || dvz) {
+      const r = toSpeedHeading(Math.sin(B.moveH) * B.v + dvx, Math.cos(B.moveH) * B.v + dvz, B.h, B.moveH, this._sh);
+      B.v = r.v;
+      B.moveH = r.moveH;
+    }
+    if (spin) { B.yawV += spin; B.h += spin * CONTACT.heading; }
+    this.syncP();
+  }
+
+  /** Distance stats, F1 tyre wear and the distance challenge for a move of d metres. */
+  private addDist(d: number, braking: boolean) {
+    if (!this.riding || d <= 0) return;
+    const B = this.B;
+    this.s.dist += d;
+    // tyre wear: distance, plus extra when sliding or braking hard
+    if (this.def.f1) this.f1.wear = tyreWear(this.f1.wear, this.f1.compound, d, Math.abs(wrapPi(B.h - B.moveH)), braking);
+    this.game.events.emit('progress', { player: this, id: 'dist', value: d });
+  }
+
+  /** Push the vehicle out of any barrier it overlaps (a few small steps along the contact normal). True when free. */
+  private depenetrate(px0 = 0, pz0 = 0) {
+    const B = this.B, g = this.game, { r, nose } = this.wallShape;
+    for (let it = 0; it < 4; it++) {
+      if (this.probeHit(B.x, B.z, B.h) !== 'tree') return true;
+      const o = this.probeSide * nose, px = B.x + Math.sin(B.h) * o, pz = B.z + Math.cos(B.h) * o, back = Math.sign(B.v || 1);
+      const n = g.chunks.contact(px, pz, r, B.y, 'tree', -Math.sin(B.moveH) * back, -Math.cos(B.moveH) * back);
+      // a probe that ended up past a thin wall's centre line would be pushed out the far side: keep to the side we came from
+      let nx = n.x, nz = n.z;
+      if ((px0 || pz0) && nx * px0 + nz * pz0 < 0) { nx = px0; nz = pz0; }
+      const push = Math.min(Math.max(n.depth, 0.02) + 0.01, WALL.maxPush);
+      B.x += nx * push;
+      B.z += nz * push;
+    }
+    return this.probeHit(B.x, B.z, B.h) !== 'tree';
+  }
+
+  /**
+   * Contact with a wall, barrier, tree, cliff or shoreline at the proposed spot (nx, nz). Removes the into-wall part
+   * of the velocity (with a small rebound capped at a few m/s), keeps the speed along the wall minus Coulomb friction,
+   * swings the heading toward the wall's line a limited amount and slides along it for the rest of the step. Head-on
+   * hits stop hard and cost health in proportion to the into-wall speed; F1 noses lose their front wing. Damage, sound
+   * and particles are rate-limited so scraping a barrier does not fire them every physics step.
+   */
+  private hitWall(kind: 'water' | 'wall' | 'tree', nx: number, nz: number, dtLeft: number) {
+    const B = this.B, g = this.game, A = this.assist, { r, nose } = this.wallShape;
+    const side = kind === 'tree' ? this.probeSide : 0, o = side * nose;
     const mx = Math.sin(B.moveH) * B.v, mz = Math.cos(B.moveH) * B.v, spd = Math.hypot(mx, mz);
-    const n = g.chunks.contact(nx, nz, rad, B.y, kind, -mx, -mz);
-    // shared wall response (entities/vehiclePhysics.ts): remove the into-wall speed, keep the scrape along it
-    const w = wallBounce(mx, mz, n.x, n.z, A.glance, LANDING.wallDamageSpeed, this.wallOut), vn = w.vn, vx = w.vx, vz = w.vz;
+    const cpx = nx + Math.sin(B.h) * o, cpz = nz + Math.cos(B.h) * o;
+    const n = g.chunks.contact(cpx, cpz, r, B.y, kind, -mx, -mz);
+    const nX = n.x, nZ = n.z;
+    // shared wall response (entities/vehiclePhysics.ts): remove the into-wall speed (capped rebound), keep the scrape
+    const w = wallBounce(mx, mz, nX, nZ, A.glance, LANDING.wallDamageSpeed, this.wallOut), vn = w.vn, vx = w.vx, vz = w.vz;
     if (vn < 0) {
       const hard = w.hard;
       if (hard || -vn > 6) this.failDrift();
+      // F1: a nose-first hit at speed breaks the front wing (less downforce until the next pit stop)
+      if (this.def.f1 && side >= 0 && -vn > WALL.wingSpeed && -vn > spd * WALL.wingAngle && this.f1.wing < 1) {
+        this.f1.wing = 1;
+        this.hud.banner('FRONT WING DAMAGE', 'Less grip in fast corners: box for a new nose', '#ff9a3d');
+        g.fx.burst(cpx, B.y + 0.4, cpz, { n: 14, speed: 9, life: 1.1, size: [0.35, 0.15], colors: [0x1d1d1f, 0xd8322a, 0xf4f4f4], gravity: 12, drag: 0.8 });
+      }
       if (this.wallCd <= 0 && -vn > 4) {
         this.wallCd = WALL.fxCooldown;
         if (hard) {
-          this.cam.shake = Math.max(this.cam.shake, 0.5);
+          this.cam.shake = Math.max(this.cam.shake, clamp(-vn / 40, 0.45, 0.9));
           g.audio.play('crash');
-          this.hurt(-vn * 0.3 * (1 - this.stats.crashArmor) * A.crash, undefined, true);
-          g.fx.burst(nx, B.y + 1, nz, { n: 20, speed: 6, life: 0.8, size: [1, 3], colors: [0x9a8a70], gravity: -1, drag: 2, smoke: true, alpha: 0.6 });
+          if (this.isCar) g.audio.play('clank');
+          this.hurt(Math.max(0, -vn - WALL.damageMin) * WALL.damage * (1 - this.stats.crashArmor) * A.crash, undefined, true);
+          g.fx.burst(cpx, B.y + 1, cpz, { n: 20, speed: 6, life: 0.8, size: [1, 3], colors: [0x9a8a70], gravity: -1, drag: 2, smoke: true, alpha: 0.6 });
+          if (kind === 'tree') g.fx.burst(cpx, B.y + 0.5, cpz, { n: 18, speed: 8, life: 0.5, size: [0.35, 0.08], colors: [0xffd27a, 0xffffff, 0xff9a3d], gravity: 9, drag: 1.2 });
         } else {
           this.cam.shake = Math.max(this.cam.shake, 0.15);
           g.audio.play('thud');
-          g.fx.burst(nx, B.y + 0.6, nz, { n: 8, speed: 4, life: 0.5, size: [0.8, 1.6], colors: [0x9a8a70], gravity: -1, drag: 2, smoke: true, alpha: 0.5 });
+          // scraping a barrier: sparks along the wall
+          g.fx.burst(cpx, B.y + 0.5, cpz, { n: 8, speed: 5, life: 0.4, size: [0.3, 0.06], colors: [0xffd27a, 0xffffff], gravity: 9, drag: 1.5 });
         }
       }
     }
     // back to a signed speed along a travel direction that stays on the heading's side (no 180° "slide" after a rebound)
-    const sp = Math.min(Math.hypot(vx, vz), spd);
+    const res = toSpeedHeading(vx, vz, B.h, B.moveH, this._sh);
+    const sp = Math.min(Math.abs(res.v), spd);
     if (sp > 0.05) {
-      const d = Math.atan2(vx, vz);
-      if (Math.cos(d - B.h) >= 0) { B.moveH = d; B.v = sp; }
-      else { B.moveH = d + Math.PI; B.v = -sp; }
+      B.moveH = res.moveH;
+      B.v = Math.sign(res.v) * sp;
       // the nose swings toward the wall's line, a limited amount per impact
       const gap = wrapPi(B.moveH - B.h);
       if (Math.abs(gap) < Math.PI / 2 && vn < 0) {
-        const turn = clamp(gap * WALL.align, -WALL.maxSpin, WALL.maxSpin);
-        B.h += turn;
+        const h0 = B.h;
+        B.h += clamp(gap * WALL.align, -WALL.maxSpin, WALL.maxSpin);
+        if (kind === 'tree' && this.probeHit(B.x, B.z, B.h)) B.h = h0; // never swing the nose or tail into the wall
         B.yawV *= 0.3;
       }
     } else B.v = 0;
     this.wallTouch = 0.25;
-    // slide along the wall if there's room, else push out along the normal (never further into it)
-    const sx = B.x + vx * dt, sz = B.z + vz * dt;
-    if (!g.chunks.blocked(sx, sz, rad, B.y, maxStep)) { B.x = sx; B.z = sz; }
-    else if (g.chunks.blocked(B.x, B.z, rad, B.y, maxStep)) {
-      const push = Math.min(Math.max(n.depth, 0.05), 0.5);
-      const px = B.x + n.x * push, pz = B.z + n.z * push;
-      if (!g.chunks.blocked(px, pz, rad, B.y, maxStep) || kind === 'tree') { B.x = px; B.z = pz; }
+    // slide along the wall for the rest of the step if there's room (swept, so the slide can't tunnel either)
+    const sx = Math.sin(B.moveH) * B.v * dtLeft, sz = Math.cos(B.moveH) * B.v * dtLeft;
+    if (B.v !== 0) {
+      const f = g.chunks.sweep(B.x, B.z, B.x + sx, B.z + sz, r, B.y, this.stepH);
+      const k = f < 0 ? 1 : Math.max(0, f - 1 / sweepSteps(Math.hypot(sx, sz), r));
+      if (k > 0 && !this.probeHit(B.x + sx * k, B.z + sz * k, B.h)) { B.x += sx * k; B.z += sz * k; }
     }
+    if (kind === 'tree') this.depenetrate(nX, nZ);
   }
+  private readonly _sh = { v: 0, moveH: 0 };
+  private readonly wallOut: WallOut = { vx: 0, vz: 0, vn: 0, hard: false };
 
   /**
    * Auto-recovery: pinned against a wall (barely moving or reversing) for a couple of seconds, the car turns back to the
@@ -674,7 +787,7 @@ export class Player {
     const dx = road.x - B.x, dz = road.z - B.z, dl = Math.hypot(dx, dz);
     if (dl > 0.5) {
       const px = B.x + (dx / dl) * 2 * dt, pz = B.z + (dz / dl) * 2 * dt;
-      if (!g.chunks.blocked(px, pz, this.isCar ? 1.5 : 1, B.y, 1.3)) { B.x = px; B.z = pz; }
+      if (!this.probeHit(px, pz, B.h)) { B.x = px; B.z = pz; }
     }
     if (Math.abs(err) < 0.05) this.stuckT = 0;
   }
@@ -843,12 +956,13 @@ export class Player {
    */
   private f1Longitudinal(dt: number, gas: boolean, brake: boolean, ers: boolean, onRoad: boolean) {
     const B = this.B;
-    B.v = f1Longitudinal(B.v, this.def.f1!, this.f1, this.game.env.grip, dt, gas, brake, ers, onRoad, onRoad ? 0 : this.game.terrain.layout.roadDist(B.x, B.z));
+    B.v = f1Longitudinal(B.v, this.def.f1!, this.f1, this.game.env.grip, dt, gas, brake, ers, onRoad);
   }
 
   /** F1 per-step: tyre grip, straight-mode wing (DRS), slipstream, pit limiter and pit stops. */
   private f1Step(dt: number, wingKey: boolean, braking: boolean) {
-    const f = this.f1, B = this.B, g = this.game, lay = g.layout as unknown as { inDrs?(i: number): boolean; isPit?(x: number, z: number): boolean; nearest?(x: number, z: number, e?: boolean): { i: number } };
+    const f = this.f1, B = this.B, g = this.game, lay = g.layout as unknown as { runoff?(x: number, z: number): number; inDrs?(i: number): boolean; isPit?(x: number, z: number): boolean; nearest?(x: number, z: number, e?: boolean): { i: number } };
+    f.surface = lay.runoff ? lay.runoff(B.x, B.z) : g.terrain.onRoad(B.x, B.z) ? 0 : 1;
     f.gripMul = tyreGrip(f.compound, f.wear);
     // straight mode / DRS: only inside DRS zones, closes the moment you brake
     const idx = lay.nearest ? lay.nearest(B.x, B.z).i : -1;
@@ -876,7 +990,7 @@ export class Player {
     if (f.inPit) {
       if (B.v > F1.pitLimit) B.v = lerp(B.v, F1.pitLimit, Math.min(1, dt * 4));
       f.stillT = Math.abs(B.v) < 2 ? f.stillT + dt : 0;
-      if (f.stillT > 0.4 && f.pitT <= 0 && f.wear > 0.05) {
+      if (f.stillT > 0.4 && f.pitT <= 0 && (f.wear > 0.05 || f.wing > 0)) {
         f.pitT = F1.pitStop;
         this.controlsLocked = true;
         g.audio.play('mount');
@@ -889,6 +1003,7 @@ export class Player {
       if (f.pitT <= 0) {
         const next: TyreCompound = f.compound === 'soft' ? 'medium' : f.compound === 'medium' ? 'hard' : 'soft';
         this.setTyres(next);
+        f.wing = 0; // new nose
         f.stops++;
         this.s.nitro = this.stats.nitroMax;
         this.controlsLocked = false;
@@ -923,7 +1038,8 @@ export class Player {
     return prefs.nitroToggle && this.nitroOn;
   }
 
-  private crash(reason: string) {
+  /** Throw the rider off / spin the car out (bad landing, loop-out, hit by another vehicle). */
+  crash(reason: string) {
     const B = this.B, g = this.game;
     if (godPlay(g) && !crashFx()) return; // admin Full Power with crash effects off: ride on
     this.failDrift();
@@ -1220,6 +1336,20 @@ export class Player {
     return car ? M.localToWorld(out.set(0, d.max.y * 0.72 + 0.25, d.max.z * 0.5)) : M.localToWorld(out.set(0, d.max.y + 0.35, d.max.z * 0.3));
   }
 
+  /** Chase camera: a wall, fence or building between the vehicle and the camera pulls the camera in front of it. */
+  private unclip(P: { x: number; y: number; z: number }, pos: THREE.Vector3) {
+    const dx = pos.x - P.x, dz = pos.z - P.z, y0 = P.y + 1.6, dy = pos.y - y0, L = Math.hypot(dx, dz);
+    if (L < 2.5) return;
+    const n = Math.ceil(L / 0.5), ch = this.game.chunks;
+    for (let k = 1; k <= n; k++) {
+      const f = k / n;
+      if (!ch.solidAt(P.x + dx * f, P.z + dz * f, 0.3, y0 + dy * f)) continue;
+      const fb = Math.max((k - 1) / n, 2.5 / L);
+      pos.set(P.x + dx * fb, Math.max(y0 + dy * fb, y0 + 1), P.z + dz * fb);
+      return;
+    }
+  }
+
   updateCamera(dt: number, aspect: number) {
     const P = this.P, cam = this.cam, c = this.ctrl, B = this.B, speedKmh = Math.abs(B.v) * 3.6, g = this.game;
     if (c.is('up') || c.is('down')) cam.yaw *= Math.exp(-dt * 2.5);
@@ -1278,6 +1408,7 @@ export class Player {
       if (view === 'top') { dist = 5 * zoom; ht = (34 + Math.abs(B.v) * 0.25) * zoom; }
       cam.pos.set(P.x - Math.sin(a) * dist, P.y + ht, P.z - Math.cos(a) * dist);
       cam.pos.y = Math.max(cam.pos.y, g.terrain.groundAt(cam.pos.x, cam.pos.z) + 1.2);
+      if (view !== 'top') this.unclip(P, cam.pos);
       this.camera.position.lerp(cam.pos, damp(dt, view === 'top' ? 5 : this.riding ? 7 : 6));
       cam.look.lerp(this._v.set(P.x, P.y + (view === 'top' ? 0 : 1.6), P.z), damp(dt, 12));
       this.camera.up.set(0, 1, 0);
