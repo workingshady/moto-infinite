@@ -338,6 +338,45 @@ export const F1 = {
 };
 export type TyreCompound = keyof typeof F1.tyres;
 
+/**
+ * Computer racers (src/ai). Bots drive the same vehicle physics as the player (entities/vehiclePhysics.ts) with a
+ * pure-pursuit steering controller and a predictive throttle/brake that tracks a speed profile along a learned racing line.
+ */
+export const AI = {
+  /** Difficulty levels: pace = share of the physical corner/braking limit, mistakes per minute, start reaction (s),
+   *  Elo-like strength used by the Racecraft rating. Adaptive picks a pace from the player's rating. */
+  levels: {
+    rookie: { label: 'Rookie', icon: '🐣', pace: 0.8, mistakes: 1.6, react: [0.45, 0.9], rating: 750, catchUp: true },
+    amateur: { label: 'Amateur', icon: '🙂', pace: 0.88, mistakes: 0.8, react: [0.3, 0.6], rating: 950, catchUp: true },
+    pro: { label: 'Pro', icon: '😤', pace: 0.95, mistakes: 0.3, react: [0.2, 0.4], rating: 1150, catchUp: false },
+    legend: { label: 'Legend', icon: '👑', pace: 1, mistakes: 0.08, react: [0.12, 0.25], rating: 1350, catchUp: false },
+  },
+  /** Racecraft rating: start value, bounds, K factor shrinking with races, biggest change per race. */
+  rating: { start: 1000, min: 500, max: 1700, kMax: 64, kMin: 16, kHalfLife: 8, maxStep: 70, perfWeight: 0.35, crashCost: 6, offCost: 2 },
+  /** In-race catch-up (Rookie, Amateur, Adaptive only): pace change ±max, reached at `gapFull` seconds of gap, eased at `rate` /s. */
+  catchUp: { max: 0.03, gapFull: 6, rate: 0.01 },
+  /** Speed profile: safety margin on the physical limit, braking decel share, slip budget for arcade cornering (rad). */
+  profile: { margin: 0.96, brakeShare: 0.82, arcadeBrake: 30, slipMax: 0.16, steerShare: 0.85, f1MaxBrake: 6.2 * 9.81 },
+  /** Racing line optimiser: car half width + safety (m), smoothing iterations, neighbour stride (samples). */
+  line: { margin: 1.6, iters: 220, strides: [8, 4, 2, 1], cacheTracks: 10 },
+  /** Ghost learning: lateral blend weight per good ghost lap, speed blend, quality exponent, off-track rejection (m beyond edge). */
+  learn: { lineWeight: 0.6, speedWeight: 0.5, qualityExp: 6, offTrack: 2.5, minCover: 0.9 },
+  /** Steering: pure pursuit lookahead = base + time × speed (m), heading damping. */
+  steer: { lookBase: 7, lookTime: 0.55, lookMax: 70, damp: 0.25 },
+  /** Throttle/brake: speed error band (m/s) and PI gains; preview time for the target speed. */
+  speed: { band: 1.2, kp: 0.35, ki: 0.15, preview: 0.25 },
+  /** Racecraft: follow gap (s) scaled by aggression, overtake offset (m), side-by-side clearance (m). */
+  race: { followGap: [0.55, 0.25], passOffset: 3.2, clearance: 2.4, commit: 1.6, defendGap: 0.9, blueGap: 2.5 },
+  /** Recovery: stuck after this long slow (s), reverse time, reset after this long (s). */
+  recover: { stuckTime: 1.6, reverseTime: 1.4, resetTime: 9, offTrack: 6 },
+  /** Fixed physics step for bots; far bots (beyond lodDist from every player) step at half rate. */
+  step: 1 / 60, lodDist: 260,
+  hp: 100,
+  /** F1 strategy: pit when wear passes this (personal ±0.08), undercut gap (s), ERS reserve kept for defending (%). */
+  f1: { pitWear: 0.62, lastWear: 0.86, undercutGap: 1.6, ersReserve: 22, ersDeployMin: 30, pitLane: 6.5, wetCaution: 0.5 },
+};
+export type AiLevelId = keyof typeof AI.levels;
+
 /** Persistent career (src/core/career.ts): credits and career XP earned across sessions. */
 export const CAREER = {
   xpBase: 600, xpExp: 1.45, // career XP for level n → n+1 = base × n^exp

@@ -13,6 +13,7 @@ import { clamp, damp, lerp, rnd, TAU, wrapPi } from '../utils/math';
 import { buildRider, seatRider, type RiderModel } from './models';
 import { buildVehicleModel, type VehicleModel } from './vehicleModels';
 import { EvDrive, fullBurn } from './EvDrive';
+import { arcadeLongitudinal, arcadeTop, driftStep, f1Longitudinal, holdSlide, scrubStep, stepYaw, tyreGrip, tyreWear, wallBounce, yawGoal, type WallOut } from './vehiclePhysics';
 import { vehicleById, type VehicleDef } from '../data/vehicles';
 import { WEAPONS } from '../data/weapons';
 import { MILESTONES, TIERS, UPGRADES, type Card } from '../data/upgrades';
@@ -90,6 +91,7 @@ export class Player {
   private nitroOn = false;
   /** Wall contact: impact-effect cooldown, recent-contact timer, time spent pinned against a wall. */
   private wallCd = 0;
+  private readonly wallOut: WallOut = { vx: 0, vz: 0, vn: 0, hard: false };
   private wallTouch = 0;
   private stuckT = 0;
   private style: Style | null = null;
@@ -226,19 +228,15 @@ export class Player {
       if (B.pad > 0) boosting = true;
       const F = this.def.f1;
       if (F) this.f1Step(dt, active && c.is('trick'), down);
-      const top = st.top * (boosting ? BIKE.nitroTopMul : 1) * (onRoad ? 1 : lerp(BIKE.offroadTop, 1, this.def.offroad));
+      const top = arcadeTop(st.top, boosting, onRoad, this.def.offroad);
       if (!B.air) {
         // mid-wheelie the throttle stays on (holding C = gas) and ↓ only lowers the front instead of braking
         const inWheelie = B.wheelie > WHEELIE.active;
         const gas = up || (inWheelie && active && c.is('trick'));
         if (F) this.f1Longitudinal(dt, gas || boosting, down, boosting, onRoad);
         else {
-          if (gas) B.v += (B.v < 0 ? 40 : st.accel * (boosting ? BIKE.nitroAccelMul : 1)) * dt * (up ? c.throttle : 1); // analog trigger
-          else if (boosting) B.v += st.accel * BIKE.nitroAccelMul * dt; // nitro drives by itself: Space + ←/→ is enough
-          if (down && !inWheelie) B.v -= (B.v > 0 ? BIKE.brake : BIKE.reverse) * dt * c.brake;
-          if (!gas && !down && !boosting) B.v *= 1 - BIKE.coastDrag * dt;
-          if (!onRoad) B.v *= 1 - BIKE.offroadDrag * (1 - this.def.offroad) * dt;
-          if (B.v > top) B.v -= Math.min(B.v - top, 30 * dt);
+          // shared with the computer racers (entities/vehiclePhysics.ts)
+          B.v = arcadeLongitudinal(B.v, st.accel, top, this.def.offroad, gas, up ? c.throttle : 1, boosting, down && !inWheelie, down, c.brake, onRoad, dt);
         }
         if (g.env.grip < 1 && Math.abs(B.steer) > 0.6 && Math.abs(B.v) > 20) B.v *= 1 - (1 - g.env.grip) * dt; // wet roads scrub speed in corners
         B.v = Math.max(B.v, -BIKE.maxReverse);
@@ -248,17 +246,8 @@ export class Player {
         const handbrake = active && c.is('drift') && Math.abs(B.v) > 6;
         const wheelie = this.updateWheelie(dt, active && c.is('trick'), up, down);
         // yaw with inertia: the yaw rate eases toward what the steering asks for (heavier cars respond slower)
-        const yawTarget = B.steer * st.grip * g.env.grip * clamp(Math.abs(B.v) / 6, 0, 1) * Math.sign(B.v)
-          * (boosting ? CONTROL.boostSteer : 1) * (handbrake ? 1.55 : 1) * (wheelie ? 0.8 : 1);
-        // F1: the cornering limit (lateral g) grows with downforce ~ v², so yaw rate is capped at aLat / v
-        let yawGoal = yawTarget;
-        if (F) {
-          // lateral limit = μ·g·(1 + downforce/weight); turning faster than aLat / v just washes wide (understeer)
-          const v = Math.max(Math.abs(B.v), 6), aLat = F.mu * 9.81 * (1 + this.downforceRatio(v)) * this.f1.gripMul * g.env.grip * (onRoad ? 1 : 0.55);
-          yawGoal = clamp(yawTarget, -aLat / v, aLat / v);
-        }
-        B.yawV = lerp(B.yawV, yawGoal, damp(dt, this.isCar ? DRIFT.yawInertia.car : DRIFT.yawInertia.bike));
-        B.h += B.yawV * dt;
+        // F1: the cornering limit (lateral g) grows with downforce ~ v², so yaw rate is capped at aLat / v (shared physics)
+        stepYaw(B, yawGoal(this.def, B.steer, st.grip, g.env.grip, B.v, boosting, handbrake, wheelie, this.f1.aeroOpen, this.f1.gripMul, onRoad), this.isCar, dt);
         // weight transfer: a quick left-right flick, lifting off, or braking mid-turn makes the rear light
         const steerSign = Math.sign(want);
         if (steerSign && steerSign !== B.lastSteerSign) {
@@ -272,24 +261,12 @@ export class Player {
         // drift model: the travel direction chases the heading at the vehicle's traction rate.
         // Handbrake and power oversteer (throttle on a low-traction car) let the tail step out;
         // counter-steering (steering against the slide) catches it faster.
-        let trac = (handbrake ? this.def.slideTraction : this.def.traction) * g.env.grip * this.f1.gripMul;
-        const turning = Math.abs(B.steer) > 0.4 && Math.abs(B.v) > 14;
-        if (this.isCar && (up || boosting) && Math.abs(slip) > 0.1 && this.def.traction < 6) trac *= 0.75; // power oversteer
-        if (B.flick > 0) trac *= DRIFT.flickTraction; // feint / Scandinavian flick
-        if (this.isCar && turning && B.wasUp && !up && !down) trac *= DRIFT.liftTraction; // lift-off oversteer
-        if (this.isCar && turning && down && B.v > 0) trac *= DRIFT.brakeTraction; // trail braking
-        if (Math.sign(B.steer) === -Math.sign(slip) && Math.abs(B.steer) > 0.3) trac *= 1.6; // counter-steer catches it
-        B.wasUp = up;
-        B.moveH += wrapPi(B.h - B.moveH) * Math.min(1, dt * trac);
-        // throttle steers the angle mid-drift: power pushes the tail out, lifting tucks it in
-        const slip2 = wrapPi(B.h - B.moveH);
-        if (Math.abs(slip2) > DRIFT.minAngle && this.isCar) B.h += Math.sign(slip2) * (up || boosting ? 1 : -0.6) * DRIFT.throttleAngle * 0.12 * dt;
+        driftStep(B, this.def, this.isCar, g.env.grip, this.f1.gripMul, slip, handbrake, up, down, boosting, dt);
         // angle limit: assist holds the slide, on Pro you spin out past the limit
         const hold = DRIFT.holdAngle[prefs.assist] ?? DRIFT.holdAngle[1], sl = wrapPi(B.h - B.moveH);
         if (Math.abs(sl) > DRIFT.spinAngle && prefs.assist === 0 && Math.abs(B.v) > 10) this.spinOut();
-        else if (Math.abs(sl) > hold) B.h = B.moveH + Math.sign(sl) * lerp(Math.abs(sl), hold, damp(dt, 6));
-        if (handbrake) B.v -= Math.sign(B.v) * 6 * dt;
-        B.v *= 1 - Math.abs(Math.sin(slip)) * DRIFT.scrub * (up || boosting ? 0.5 : 1) * dt; // sideways = slower, power holds speed
+        else holdSlide(B, hold, dt);
+        scrubStep(B, slip, handbrake, up || boosting, dt); // sideways = slower, power holds speed
         if (this.isCar) B.lean = lerp(B.lean, -B.steer * clamp(Math.abs(B.v) / 30, 0, 1) * 0.06, damp(dt, 5)); // body roll
         else B.lean = lerp(B.lean, -B.steer * clamp(Math.abs(B.v) / 22, 0, 1) * 0.55, damp(dt, 6));
         // keys held while leaving the ground must be released before they do tricks
@@ -384,7 +361,7 @@ export class Player {
             const d = Math.abs(B.v) * dt;
             s.dist += d;
             // tyre wear: distance, plus extra when sliding or braking hard
-            if (this.def.f1) this.f1.wear = Math.min(1, this.f1.wear + (d / F1.tyres[this.f1.compound].life) * (1 + Math.abs(wrapPi(B.h - B.moveH)) * 4 + (down ? 0.6 : 0)));
+            if (this.def.f1) this.f1.wear = tyreWear(this.f1.wear, this.f1.compound, d, Math.abs(wrapPi(B.h - B.moveH)), down);
             g.events.emit('progress', { player: this, id: 'dist', value: d });
           }
           B.x = nx;
@@ -631,15 +608,10 @@ export class Player {
     const B = this.B, g = this.game, A = this.assist, maxStep = B.air ? 99 : 1.3;
     const mx = Math.sin(B.moveH) * B.v, mz = Math.cos(B.moveH) * B.v, spd = Math.hypot(mx, mz);
     const n = g.chunks.contact(nx, nz, rad, B.y, kind, -mx, -mz);
-    const vn = mx * n.x + mz * n.z; // < 0: moving into the wall
-    let vx = mx, vz = mz;
+    // shared wall response (entities/vehiclePhysics.ts): remove the into-wall speed, keep the scrape along it
+    const w = wallBounce(mx, mz, n.x, n.z, A.glance, LANDING.wallDamageSpeed, this.wallOut), vn = w.vn, vx = w.vx, vz = w.vz;
     if (vn < 0) {
-      const tx = mx - vn * n.x, tz = mz - vn * n.z, vt = Math.hypot(tx, tz);
-      let keep = vt > 1e-4 ? Math.max(0, vt - WALL.friction * -vn) / vt : 0;
-      const hard = -vn > LANDING.wallDamageSpeed;
-      if (hard) keep *= A.glance;
-      vx = tx * keep - WALL.restitution * vn * n.x;
-      vz = tz * keep - WALL.restitution * vn * n.z;
+      const hard = w.hard;
       if (hard || -vn > 6) this.failDrift();
       if (this.wallCd <= 0 && -vn > 4) {
         this.wallCd = WALL.fxCooldown;
@@ -864,50 +836,20 @@ export class Player {
     this.bike.tyreBands?.color.setHex(F1.tyres[c].color);
   }
 
-  /** Downforce as a multiple of the car's weight at speed v: ½ρ·ClA·v² / (m·g). Straight mode sheds some. */
-  private downforceRatio(v: number) {
-    const F = this.def.f1!;
-    return (0.5 * F1.rho * F.cla * v * v * (this.f1.aeroOpen ? F1.straightDown : 1)) / (F.mass * 9.81);
-  }
-
   /**
    * Real longitudinal dynamics: drive = min(power/v, traction), minus aero drag ½ρ·CdA·v² and rolling resistance.
    * Braking = μ·g·(1 + downforce ratio) so F1 cars brake harder from high speed. ERS adds electric power that fades
    * at very high speed; top speed is simply where power meets drag.
    */
   private f1Longitudinal(dt: number, gas: boolean, brake: boolean, ers: boolean, onRoad: boolean) {
-    const B = this.B, F = this.def.f1!, f = this.f1, v = Math.max(0, B.v), g = 9.81, dr = this.downforceRatio(v);
-    const grip = f.gripMul * this.game.env.grip;
-    if (B.v < -0.05 && !brake) {
-      // rolling backwards (e.g. after a wall rebound) without asking to reverse: rolling resistance and engine braking
-      // oppose the motion and the throttle brakes it first, so the car comes back forward instead of running away in reverse
-      const back = F1.rolling * g + F1.engineBrake + (gas ? Math.max(F.muLong * g * grip, BIKE.brake) : 0);
-      B.v = Math.min(0, B.v + back * dt);
-      return;
-    }
-    const cda = F.cda * (f.aeroOpen ? F1.straightDrag : 1) * (f.slip ? F1.slipDrag : 1);
-    const drag = (0.5 * F1.rho * cda * v * v) / F.mass + F1.rolling * g;
-    let a = -drag;
-    if (gas && B.v >= -0.5) {
-      const taper = clamp((F1.ersTaperTo - v) / (F1.ersTaperTo - F1.ersTaperFrom), 0, 1);
-      const kw = F.power + (ers && F.ers ? F.ers * taper * (f.overtake ? F1.overtakeErs : 1) : 0);
-      const traction = F.muLong * g * (1 + dr) * grip;
-      a += Math.min((kw * 1000 * F1.drivetrain) / (F.mass * Math.max(v, 4)), traction);
-    } else if (!brake) a -= F1.engineBrake;
-    if (brake) {
-      if (B.v > 0.5) a -= Math.min(F.muBrake * g * (1 + dr) * grip, 6.5 * g);
-      else a = -BIKE.reverse; // creep backwards (forward-motion drag doesn't apply going backwards)
-    }
-    if (!onRoad) a -= (this.game.terrain.layout.roadDist(B.x, B.z) > ROAD.shoulder + 3 ? F1.gravelDrag : F1.grassDrag) * v * 0.2;
-    B.v = Math.max(B.v + a * dt, B.v > 0 && !brake ? 0 : -BIKE.maxReverse);
-    if (B.v > 0 && B.v < 0.05 && !gas) B.v = 0;
+    const B = this.B;
+    B.v = f1Longitudinal(B.v, this.def.f1!, this.f1, this.game.env.grip, dt, gas, brake, ers, onRoad, onRoad ? 0 : this.game.terrain.layout.roadDist(B.x, B.z));
   }
 
   /** F1 per-step: tyre grip, straight-mode wing (DRS), slipstream, pit limiter and pit stops. */
   private f1Step(dt: number, wingKey: boolean, braking: boolean) {
     const f = this.f1, B = this.B, g = this.game, lay = g.layout as unknown as { inDrs?(i: number): boolean; isPit?(x: number, z: number): boolean; nearest?(x: number, z: number, e?: boolean): { i: number } };
-    const T = F1.tyres[f.compound];
-    f.gripMul = T.grip * lerp(1, F1.wornGrip, f.wear ** 1.4);
+    f.gripMul = tyreGrip(f.compound, f.wear);
     // straight mode / DRS: only inside DRS zones, closes the moment you brake
     const idx = lay.nearest ? lay.nearest(B.x, B.z).i : -1;
     const zone = idx >= 0 && !!lay.inDrs?.(idx);
