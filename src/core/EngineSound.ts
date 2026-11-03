@@ -9,7 +9,7 @@ import { clamp, damp, lerp } from '../utils/math';
 import { EvVoice } from './EvVoice';
 
 export interface EngineProfile {
-  type: 'single' | 'twin' | 'vtwin' | 'i4' | 'i6' | 'v8' | 'v10' | 'rotary' | 'hybrid' | 'electric';
+  type: 'single' | 'twin' | 'vtwin' | 'i4' | 'i6' | 'v8' | 'v10' | 'rotary' | 'hybrid' | 'twostroke' | 'flat' | 'v12' | 'electric';
   cyl: number;
   idle: number; // rpm
   redline: number; // rpm
@@ -66,6 +66,12 @@ function engineOrders(p: EngineProfile): Orders {
       return [[F / 2, 0.12], [F, 1], [1.5 * F, 0.08], [2 * F, 0.32], [3 * F, 0.1], [4 * F, 0.03]];
     case 'electric': // single-speed motor: smooth hum, no firing pulses (whine + tyres come from EvVoice)
       return [[1, 0.5], [2, 1], [3, 0.15], [4, 0.4], [6, 0.3], [8, 0.1], [12, 0.12]];
+    case 'twostroke': // fires every rev: raspy "ring-ding", strong harmonics of cyl x crank
+      return [[p.cyl, 1], [2 * p.cyl, 0.7], [3 * p.cyl, 0.5], [4 * p.cyl, 0.36], [5 * p.cyl, 0.25], [6 * p.cyl, 0.16], [8 * p.cyl, 0.08]];
+    case 'flat': // boxer: unequal-length headers give a half-order burble over the firing order
+      return [[0.5, 0.22 * L], [1, 0.3 * L], [F / 2, 0.25 * L], [F, 1], [1.5 * F, 0.18 * L], [2 * F, 0.4], [3 * F, 0.14], [4 * F, 0.05]];
+    case 'v12': // V12 / W16: smooth, dense firing order (cyl / 2) with a clean octave
+      return [[F / 2, 0.1], [F, 1], [1.5 * F, 0.05], [2 * F, 0.3], [3 * F, 0.08], [4 * F, 0.02]];
   }
 }
 
@@ -80,6 +86,9 @@ const VOICE: Record<EngineProfile['type'], { drive: number; body: number; cut: n
   v10: { drive: 1.0, body: 400, cut: 2.5, maxCut: 3400 },
   rotary: { drive: 1.4, body: 300, cut: 4.5, maxCut: 3000 },
   hybrid: { drive: 1.1, body: 220, cut: 3.5, maxCut: 2800 },
+  twostroke: { drive: 2.0, body: 350, cut: 7, maxCut: 3200 },
+  flat: { drive: 1.4, body: 160, cut: 4, maxCut: 2600 },
+  v12: { drive: 1.0, body: 380, cut: 2.6, maxCut: 3400 },
   electric: { drive: 0.5, body: 500, cut: 8, maxCut: 4200 },
 };
 
@@ -218,7 +227,7 @@ export class EngineSound {
       this.whistle.connect(this.whistleGain).connect(this.out);
       this.whistle.start(t);
     }
-    if (p.type === 'hybrid') {
+    if (p.type === 'hybrid' || p.type === 'electric') {
       // ERS / MGU-K whine: soft triangle, low-passed so only a couple of partials remain
       this.whine = ac.createOscillator();
       this.whine.type = 'triangle';

@@ -1,14 +1,17 @@
 // Garage: every rideable vehicle with its handling. Names are fictional, classes/eras mirror real-world types.
 // Speeds are game m/s (HUD shows them x3.6 as km/h, before nitro). `engine` drives the procedural engine sound.
 import type { EngineProfile } from '../core/EngineSound';
+import { EXTRA_VEHICLES, type ExtraVehicleId } from './vehiclesExtra';
 
 export type VehicleKind = 'bike' | 'car';
-export type VehicleModelId =
+export type CoreVehicleId =
   | 'street' | 'superbike' | 'dirt' | 'cafe' | 'cruiser'
   | 'drift_coupe' | 'hatch' | 'gt' | 'muscle' | 'rally'
   | 'rotary' | 'hyper' | 'touring' | 'trophy' | 'roadster'
   | 'f1_2026' | 'f1_v10' | 'f1_classic'
   | 'tesla_roadster' | 'tesla_model3';
+/** Core garage + the expansion pack in vehiclesExtra.ts. */
+export type VehicleModelId = CoreVehicleId | ExtraVehicleId;
 
 export interface VehicleDef {
   id: VehicleModelId;
@@ -150,6 +153,7 @@ export const VEHICLES: VehicleDef[] = [
     engine: { type: 'electric', cyl: 2, idle: 600, redline: 15000, gears: 1, crackle: 0, pitch: 0.9 },
     ev: { launch: 1.7, taper: 0.6, regen: 2.6, regenCharge: 7, rearBias: 0.14 },
     spec: { power: '510 hp · 741 Nm', weight: '1,851 kg', layout: 'AWD · dual motor' } },
+  ...EXTRA_VEHICLES, // 45 more (one per class era/archetype), see vehiclesExtra.ts
 ];
 
 /**
@@ -173,6 +177,14 @@ export const VEHICLE_UNLOCKS: Partial<Record<VehicleModelId, VehicleUnlock>> = {
   tesla_model3: { level: 6, price: 1600 },
   tesla_roadster: { level: 14, price: 6000 },
 };
-for (const v of VEHICLES) v.unlock ??= VEHICLE_UNLOCKS[v.id];
+for (const v of VEHICLES) v.unlock ??= VEHICLE_UNLOCKS[v.id] ?? extraUnlock(v);
+/** Expansion-pack vehicles (vehiclesExtra.ts): level and price scale with pace; F1 cars start at level 5. */
+function extraUnlock(v: VehicleDef): VehicleUnlock | undefined {
+  if (!EXTRA_VEHICLES.some((x) => x.id === v.id)) return undefined;
+  if (v.f1) { const level = Math.max(5, Math.min(11, Math.round(5 + ((parseInt(v.era, 10) || 1990) - 1955) / 14))); return { level, price: level * 400 }; }
+  const pace = v.top * 0.6 + v.accel * 0.5 + v.grip * 4;
+  const level = Math.max(v.f1 ? 5 : 2, Math.min(15, Math.round((pace - 22) / 2.2)));
+  return { level, price: Math.round((level * 320 + pace * 8) / 50) * 50 };
+}
 
 export const vehicleById =(id: string) => VEHICLES.find((v) => v.id === id) ?? VEHICLES[0];

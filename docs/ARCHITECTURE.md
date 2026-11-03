@@ -29,7 +29,7 @@ src/
     rumble.ts            Controller rumble + phone vibration, derived from player state each frame
     device.ts            Touch/coarse detection, first-run quality guess, fullscreen + orientation lock, screen wake lock
     DynamicRes.ts        Lowers/raises the render pixel ratio to hold the frame rate (detects 30 fps caps)
-  data/                  Pure data tables: weapons, upgrades, challenges, story, vehicles (garage stats)
+  data/                  Pure data tables: weapons, upgrades, challenges, story, vehicles (garage stats; vehiclesExtra + vehicleLooks = expansion pack)
   world/
     layout.ts            RoadLayout interface: GridRoads (open world) and Circuit (race loop)
     Terrain.ts           Height/colour of the ground, world themes, ramps and pads
@@ -42,7 +42,8 @@ src/
     Player.ts            One local rider: bike physics, tricks, walking, camera, XP, power-ups
     EntityManager.ts     Gems, crates, barrels, cones, power-ups, drones (scout/gunner/bomber)
     models.ts            Rider, drone, ghost, name tags
-    vehicleModels.ts     15 vehicle models (5 motorcycles, 10 cars) behind one buildVehicleModel(id, colour)
+    vehicleModels.ts     18 hand-built vehicle models behind one buildVehicleModel(id, colour); exports the builder kit
+    vehicleBuilders.ts   Parametric car / formula / bike builders for the 45 spec-driven vehicles (data/vehicleLooks.ts)
     teslaModels.ts       Tesla Roadster (2nd gen) and Model 3 Performance models (no badges), registered in vehicleModels
     EvDrive.ts           Electric cars: instant-torque launch, regen braking -> boost meter, Track Mode rotation, Roadster cold-gas thrusters + hover hop
     assets.ts            Shared geometries and materials
@@ -71,6 +72,7 @@ src/
   ui/
     Menu.ts              Landing page, setup panel (solo/split/lobby share it), settings, pause, results
     Preview.ts           3D character preview + top-down map preview
+    garagePicker.ts      Garage tabs (bikes + each car class), sort chips, card grid (styles/garage.css)
     Hud.ts               Per-player HUD (stats, minimap, reticle, story, race panel)
     Touch.ts             Phone/tablet controls: mode-aware buttons, joystick or tilt steering, drag-to-edit layout, settings sheet, rotate hint
     TouchLayout.ts       Touch settings (saved per device) and the button table: which buttons each mode/vehicle shows, default slots
