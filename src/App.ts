@@ -13,6 +13,9 @@ import { DRIFT_TRACKS } from './world/DriftTrack';
 import { F1_TRACKS } from './world/F1Track';
 import { vehicleById } from './data/vehicles';
 import { driftSeed } from './ui/Preview';
+import { applySettings } from './core/settings';
+import { watchPads } from './core/gamepad';
+import { initMenuNav } from './ui/menuNav';
 
 const store = {
   get<T>(k: string, fallback: T): T {
@@ -51,6 +54,9 @@ export class App {
     this.input.onPause = () => this.togglePause();
     this.input.onMute = () => this.audio.toggleMute();
     this.input.onToggleHelp = () => document.body.classList.toggle('nohelp');
+    applySettings(); // HUD scale/opacity, colourblind palette, reduced motion
+    watchPads(); // controller hot-plug toasts
+    initMenuNav(this.menu.root); // keyboard / gamepad menu navigation
     this.attract();
     const code = new URLSearchParams(location.search).get('room')?.toUpperCase();
     if (code && ROOM_CODE_RE.test(code)) this.menu.showJoin(code); // pick name/colour first

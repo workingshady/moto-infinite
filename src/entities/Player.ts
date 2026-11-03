@@ -20,6 +20,7 @@ import { PlayerChallenges } from '../systems/Challenges';
 import { STORY } from '../data/story';
 import { prefs, savePrefs } from '../core/prefs';
 import { CAM_LABEL, CAM_VIEWS, isCamView, type CamView } from '../core/cameraViews';
+import { fmtSpeed, fovOffset, motionScale, shakeScale } from '../core/settings';
 
 type Style = 'NO-HANDER' | 'SUPERMAN' | 'HEEL CLICKER';
 
@@ -216,9 +217,9 @@ export class Player {
         const gas = up || (inWheelie && active && c.is('trick'));
         if (F) this.f1Longitudinal(dt, gas || boosting, down, boosting, onRoad);
         else {
-          if (gas) B.v += (B.v < 0 ? 40 : st.accel * (boosting ? BIKE.nitroAccelMul : 1)) * dt;
+          if (gas) B.v += (B.v < 0 ? 40 : st.accel * (boosting ? BIKE.nitroAccelMul : 1)) * dt * (up ? c.throttle : 1); // analog trigger
           else if (boosting) B.v += st.accel * BIKE.nitroAccelMul * dt; // nitro drives by itself: Space + ←/→ is enough
-          if (down && !inWheelie) B.v -= (B.v > 0 ? BIKE.brake : BIKE.reverse) * dt;
+          if (down && !inWheelie) B.v -= (B.v > 0 ? BIKE.brake : BIKE.reverse) * dt * c.brake;
           if (!gas && !down && !boosting) B.v *= 1 - BIKE.coastDrag * dt;
           if (!onRoad) B.v *= 1 - BIKE.offroadDrag * (1 - this.def.offroad) * dt;
           if (B.v > top) B.v -= Math.min(B.v - top, 30 * dt);
@@ -226,7 +227,7 @@ export class Player {
         if (g.env.grip < 1 && Math.abs(B.steer) > 0.6 && Math.abs(B.v) > 20) B.v *= 1 - (1 - g.env.grip) * dt; // wet roads scrub speed in corners
         B.v = Math.max(B.v, -BIKE.maxReverse);
         // steering eases in and re-centres smoothly instead of snapping
-        const want = (left ? 1 : 0) - (right ? 1 : 0);
+        const want = ((left ? 1 : 0) - (right ? 1 : 0)) * c.steerMag; // analog stick: partial lock
         B.steer = lerp(B.steer, want, damp(dt, want ? CONTROL.steerIn : CONTROL.steerOut));
         const handbrake = active && c.is('drift') && Math.abs(B.v) > 6;
         const wheelie = this.updateWheelie(dt, active && c.is('trick'), up, down);
@@ -545,7 +546,7 @@ export class Player {
     if (t < W.minTime) return;
     const fast = dist / t > W.fastSpeed;
     const xp = Math.round((t * W.xpPerSec + perfect * W.perfectXpPerSec + (fast ? t * W.fastXpPerSec : 0)) * this.stats.trickMul);
-    const extras = [fast ? `avg ${Math.round((dist / t) * 3.6)} km/h` : '', perfect > 0.5 ? `PERFECT BALANCE ${perfect.toFixed(1)}s` : ''].filter(Boolean).join(' · ');
+    const extras = [fast ? `avg ${fmtSpeed((dist / t) * 3.6)}` : '', perfect > 0.5 ? `PERFECT BALANCE ${perfect.toFixed(1)}s` : ''].filter(Boolean).join(' · ');
     this.hud.banner(`${fast ? 'HIGH-SPEED ' : ''}WHEELIE ${t.toFixed(1)}s · ${Math.round(dist)} m`, `${extras ? extras + ' · ' : ''}+${xp} XP`, fast ? '#ff7ad9' : perfect > 0.5 ? '#7cffb2' : '#ffd23f');
     this.game.audio.play('trick');
     this.addXP(xp);
@@ -1225,6 +1226,7 @@ export class Player {
       this.camera.lookAt(cam.look);
       if (view === 'top') { speedFov = 0.3; fovBase = 55; }
     }
+    fovBase += fovOffset(); speedFov *= motionScale(); shakeMul *= shakeScale(); // Settings: FOV, reduced motion, shake
     if (cam.shake > 0) {
       const k = cam.shake * shakeMul;
       this.camera.position.x += rnd(k);

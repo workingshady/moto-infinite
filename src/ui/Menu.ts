@@ -1,6 +1,6 @@
 // Landing page, game setup (shared by solo, split screen and online lobby), settings, pause and results.
 // Plain DOM: each screen is a template string; clicks are handled by data-attributes in one place.
-import { ASSIST, DRONE_LEVELS, GEN, PLAYER_COLORS, QUALITY, THEME_DEFS, TRACKS, WEATHER_DEFS, combineWeather, type QualityName } from '../config';
+import { DRONE_LEVELS, GEN, PLAYER_COLORS, THEME_DEFS, TRACKS, WEATHER_DEFS, combineWeather, type QualityName } from '../config';
 import { DEFAULT_GEN, FIXED_WEATHERS, GEN_MAX, MAX_PLAYERS, THEMES, TIMES, WEATHERS, activeWeathers, type WorldGen, type GameMode, type LobbySettings, type PlayerInfo, type TimeOfDay, type Weather, type WorldTheme } from '../../shared/protocol';
 import type { Standing } from '../systems/Race';
 import { fmt } from '../systems/Race';
@@ -27,7 +27,12 @@ function garageCards(sel: string, attr: string, kind: VehicleKind) {
 }
 
 import { prefs, savePrefs } from '../core/prefs';
-import { CAM_LABEL, CAM_VIEWS, isCamView } from '../core/cameraViews';
+import { isCamView } from '../core/cameraViews';
+import { SettingsPanel } from './SettingsPanel';
+import { keysText, padText } from '../core/bindings';
+import { buttonName, currentPadType, padFamily } from '../core/gamepad';
+import { fmtSpeed } from '../core/settings';
+import type { Action } from '../core/Input';
 
 const K = (k: string) => `<kbd class="key">${k}</kbd>`;
 /** Keys shown by the Settings keyboard tester. */
@@ -169,6 +174,7 @@ export class Menu {
   /** Settings → keyboard tester: shows live which game keys the browser actually receives (ghosting check). */
   private keyTest = false;
   private keysDown = new Set<string>();
+  private settingsUi: SettingsPanel;
   inGame = false;
 
   constructor(private a: MenuActions, public profile: Profile, public quality: QualityName, private muted: () => boolean) {
@@ -186,6 +192,7 @@ export class Menu {
     addEventListener('keydown', (e) => track(e, true), true);
     addEventListener('keyup', (e) => track(e, false), true);
     addEventListener('blur', () => { this.keysDown.clear(); this.paintKeyTest(); });
+    this.settingsUi = new SettingsPanel(this.root, { rerender: () => this.show('settings'), setQuality: (q) => { this.quality = q; this.a.setQuality(q); }, volumes: () => this.a.volumes() });
   }
 
   /** Redraws the key tester if it is on screen; returns whether it is. */
@@ -348,7 +355,7 @@ export class Menu {
             <div class="dim small">${v.cls} · ${v.era} · ${v.spec.layout}</div>
             <p class="hint">${escapeHtml(v.desc)}</p>
             <button class="chip hot" data-go="hearEngine">▶ Hear engine</button>
-            <div class="spec-grid"><span>Top speed</span><b>${Math.round(v.top * 3.6)} km/h (${Math.round(v.top * 3.6 * 1.6)} with nitro)</b><span>Power</span><b>${v.spec.power}</b><span>Weight</span><b>${v.spec.weight}</b><span>Off-road</span><b>${Math.round(v.offroad * 100)}%</b><span>Wheelies</span><b>${v.wheelie ? 'Yes (C)' : 'No'}</b></div>
+            <div class="spec-grid"><span>Top speed</span><b>${fmtSpeed(v.top * 3.6)} (${fmtSpeed(v.top * 3.6 * 1.6)} with nitro)</b><span>Power</span><b>${v.spec.power}</b><span>Weight</span><b>${v.spec.weight}</b><span>Off-road</span><b>${Math.round(v.offroad * 100)}%</b><span>Wheelies</span><b>${v.wheelie ? 'Yes (C)' : 'No'}</b></div>
           </div>
           <div class="garage-list">
             <div class="tabs"><button class="chip ${k === 'bike' ? 'on' : ''}" data-gkind="bike">🏍 Motorcycles (5)</button><button class="chip ${k === 'car' ? 'on' : ''}" data-gkind="car">🏎 Cars (10)</button></div>
@@ -464,54 +471,39 @@ export class Menu {
             : '<button class="btn primary" data-go="ready">✋ I\'m ready</button>'; })()}</div>`;
       }
       case 'settings':
-        return `
-        <h2>Settings</h2>
-        <div class="opt"><span>Graphics</span><div class="chips">${(Object.keys(QUALITY) as QualityName[]).map((q) => `<button class="chip ${q === this.quality ? 'on' : ''}" data-quality="${q}">${QUALITY[q].label}</button>`).join('')}</div></div>
-        <p class="hint">Low turns off shadows and shortens view distance. Use it on laptops, phones and in split screen if it stutters.</p>
-        <div class="opt"><span>Assist</span><div class="chips">${ASSIST.map((a, i) => `<button class="chip ${prefs.assist === i ? 'on' : ''}" data-assist="${i}">${a.label}</button>`).join('')}</div></div>
-        <p class="hint">Riding assist keeps the bike on the road when you're not steering, glances you off trees instead of stopping dead, and softens crashes. Pro = no help.</p>
-        <div class="opt"><span>Nitro</span><div class="chips"><button class="chip ${prefs.nitroToggle ? '' : 'on'}" data-go="nitroHold">Hold</button><button class="chip ${prefs.nitroToggle ? 'on' : ''}" data-go="nitroToggle">Tap to toggle</button></div></div>
-        <p class="hint">Toggle mode helps keyboards that ignore 3 keys at once: tap nitro once, then only steer.</p>
-        <div class="opt"><span>Camera</span><div class="chips">${CAM_VIEWS.map((v) => `<button class="chip ${(prefs.cams?.[0] ?? 'chase') === v ? 'on' : ''}" data-cam="${v}">${CAM_LABEL[v]}</button>`).join('')}</div></div>
-        <p class="hint">Starting view for every player. Switch any time while riding with ${K('V')} (player 2: ${K('L')}, gamepad: right stick ↑). Each player keeps their own last choice.</p>
-        <div class="opt"><span>Keyboard</span><div class="chips"><button class="chip ${this.keyTest ? 'on' : ''}" data-go="keytest">⌨ Test keys</button></div></div>
-        ${this.keyTest ? `<div class="keytest" data-keytest></div>
-        <p class="hint">Hold the keys you play with: each one lights up while the browser receives it. If ${K('←')} goes dark when you also hold ${K('Space')} + ${K('↑')}, your keyboard is <b>ghosting</b> (a hardware limit, many keyboards drop ↑ ← Space together but not ↑ → Space). Fixes: nitro drives by itself so let go of ${K('↑')}; use ${K('W')}${K('A')}${K('S')}${K('D')}; use ${K('N')} or ${K('B')} for nitro; or pick <b>Nitro: Tap to toggle</b> above. Tip: tapping Shift 5× may open Windows Sticky Keys, so prefer ${K('N')}/${K('B')} for tapping.</p>` : ''}
-        <div class="opt"><span>Music</span><div class="chips">${([['Off', 0], ['Low', 0.3], ['Med', 0.6], ['High', 1]] as const).map(([l, v]) => `<button class="chip ${prefs.music === v ? 'on' : ''}" data-music="${v}">${l}</button>`).join('')}</div></div>
-        <div class="opt"><span>Effects</span><div class="chips">${([['Off', 0], ['Low', 0.4], ['Med', 0.7], ['High', 1]] as const).map(([l, v]) => `<button class="chip ${prefs.sfx === v ? 'on' : ''}" data-sfx="${v}">${l}</button>`).join('')}</div></div>
-        <p class="hint">All sound is generated live: each vehicle has its own engine (cylinders, gears, turbo, exhaust crackle) and the soundtrack builds with the action.</p>
-        <div class="opt"><span>Sound</span><div class="chips"><button class="chip" data-go="mute">${this.muted() ? '🔇 Off' : '🔊 On'}</button></div></div>
-        <div class="row-buttons"><button class="btn ghost" data-go="back">← Back</button></div>`;
+        return this.settingsUi.render({ quality: this.quality, keyTest: this.keyTest, muted: this.muted() });
       case 'howto': {
         const row = (k: string, t: string) => `<tr><td>${k}</td><td>${t}</td></tr>`;
+        // current bindings (Settings → Controls), so the guide matches what the player set
+        const kb = (a: Action, n = 2) => keysText('solo', a, n), p2 = (a: Action, n = 2) => keysText('p2', a, n), gp = (a: Action) => padText(a);
         return `
         <h2>How to play</h2>
         <div class="howto">
           <section><h3>🏍 Riding</h3><table class="keys">
-            ${row('↑ / W', 'Throttle (walk forward on foot)')}
-            ${row('↓ / S', 'Brake, then reverse')}
-            ${row('← → / A D', 'Steer. Eases in, full grip at any speed. Wet or snowy roads have less grip')}
-            ${row('E', 'Get on / off your bike or car')}
-            ${row('R', 'Respawn on the nearest road')}
+            ${row(kb('up'), 'Throttle (walk forward on foot)')}
+            ${row(kb('down'), 'Brake, then reverse')}
+            ${row(`${kb('left')} · ${kb('right')}`, 'Steer. Eases in, full grip at any speed. Wet or snowy roads have less grip')}
+            ${row(kb('ride'), 'Get on / off your bike or car')}
+            ${row(kb('respawn'), 'Respawn on the nearest road')}
             ${row('Right-drag · wheel', 'Look around · zoom the camera')}
-            ${row('V', 'Next camera view (see 🎥 Camera & HUD)')}
+            ${row(kb('camera'), 'Next camera view (see 🎥 Camera & HUD)')}
           </table></section>
           <section><h3>💨 Nitro</h3><table class="keys">
-            ${row('Space / Shift / N / B', 'Hold for nitro. It drives the vehicle by itself, so nitro + ←/→ is enough: no need to hold ↑')}
+            ${row(kb('nitro', 5), 'Hold for nitro. It drives the vehicle by itself, so nitro + ←/→ is enough: no need to hold ↑')}
             ${row('Settings → Nitro', '"Tap to toggle": tap once, then only steer (fixes keyboards that drop 3 keys at once)')}
             ${row('Settings → ⌨ Test keys', 'Steer works one way only while boosting? Your keyboard is ghosting (often ↑ ← Space). Let go of ↑, use WASD, or N / B for nitro')}
-            ${row('Space (on foot)', 'Jump')}
+            ${row(`${kb('jump')} (on foot)`, 'Jump')}
           </table></section>
           <section><h3>🤸 Wheelies (motorcycles)</h3><table class="keys">
-            ${row('1. Lift', 'Hold C on the ground at any speed above ~15 km/h, even flat out with nitro. The front comes up by itself and holds there')}
+            ${row('1. Lift', `Hold ${kb('trick', 1)} on the ground at any speed above ~15 km/h, even flat out with nitro. The front comes up by itself and holds there`)}
             ${row('2. Angle', '↑ lifts it higher, ↓ lowers it. During a wheelie ↓ does NOT brake, and the throttle stays on, so you keep your speed')}
             ${row('3. Steer', '←/→ still steer (slightly softer), so you can wheelie through high-speed runs')}
-            ${row('4. Land', 'Release C: the front comes down smoothly. Over 0.8 s earns XP, time in the GREEN band = PERFECT BALANCE, averaging over 120 km/h = HIGH-SPEED WHEELIE bonus')}
+            ${row('4. Land', `Release ${kb('trick', 1)}: the front comes down smoothly. Over 0.8 s earns XP, time in the GREEN band = PERFECT BALANCE, averaging over ${fmtSpeed(120)} = HIGH-SPEED WHEELIE bonus`)}
             ${row('⚠ Assist', 'Normal/Easy: wheelie control stops you looping out, the needle can touch the red but gets pulled back. Pro: real balance physics, hold ↑ too long and you flip over backwards')}
             ${row('Note', 'Every bike except the Thunder Cruiser can wheelie. Cars cannot')}
           </table></section>
           <section><h3>🌀 Drifting (cars and bikes)</h3><table class="keys">
-            ${row('1. Entry', 'Turn in at speed and tap X (handbrake), or flick ← then → quickly (feint), or lift off / brake mid-corner')}
+            ${row('1. Entry', `Turn in at speed and tap ${kb('drift', 1)} (handbrake), or flick ← then → quickly (feint), or lift off / brake mid-corner`)}
             ${row('2. Hold it', 'Steer AGAINST the slide (counter-steer) to hold the angle; throttle pushes the tail out, lifting tucks it in')}
             ${row('3. Score', 'Angle × speed × zone bonus × smoothness. +25% CLOSE to walls, +50% TANDEM next to another driver')}
             ${row('4. Bank', 'Straighten up for a moment to bank the points (NICE / GREAT / INSANE). Hitting a wall loses the chain')}
@@ -521,8 +513,8 @@ export class Menu {
           <section><h3>🏎 Formula 1</h3><table class="keys">
             ${row('Start', 'Five red lights come on one per second, then a random pause. Go on LIGHTS OUT; rolling early = +5 s penalty')}
             ${row('Downforce', 'The faster you go, the more grip: fast corners are flat-out, slow hairpins need hard braking (~5 g)')}
-            ${row('C · DRS', 'In DRS zones (main straights) opens the rear wing: less drag, higher top speed. Closes when you brake')}
-            ${row('Space · ERS', 'Deploys electric boost. ERS recharges while braking')}
+            ${row(`${kb('trick', 1)} · DRS`, 'In DRS zones (main straights) opens the rear wing: less drag, higher top speed. Closes when you brake')}
+            ${row(`${kb('nitro', 1)} · ERS`, 'Deploys electric boost. ERS recharges while braking')}
             ${row('Slipstream', 'Follow close behind another car: less drag, "SLIP" lights up. Pull out to pass')}
             ${row('Tyres', 'Soft = fastest, wears out quickly. Medium = balanced. Hard = slow but lasts. Sliding and locking up add wear; worn tyres lose grip')}
             ${row('Pit stop', 'Drive into the pit lane (80 km/h limiter), stop in the box: fresh tyres in ~2.6 s, ERS refilled')}
@@ -532,26 +524,26 @@ export class Menu {
             ${row('Hands off', 'The bike levels itself and lands straight')}
             ${row('↑ / ↓', 'After takeoff let go, then press to flip (backflip / frontflip)')}
             ${row('← / →', 'Spin (360°). Flip + spin in one jump = CORKSCREW bonus')}
-            ${row('C in the air', 'Style trick: alone = No-Hander, + ↑ = Superman, + ↓ = Heel Clicker. Let go before landing')}
+            ${row(`${kb('trick', 1)} in the air`, 'Style trick: alone = No-Hander, + ↑ = Superman, + ↓ = Heel Clicker. Let go before landing')}
             ${row('Combo', 'Land tricks within 5 s of each other to multiply the score')}
           </table></section>
           <section><h3>🔫 Combat & upgrades</h3><table class="keys">
-            ${row('F / left click', 'Fire. Auto-aims at the red reticle and leads moving drones. ✕ hit, red ✕ kill')}
-            ${row('Q', 'Next weapon. Rocket unlocks at Lv2, Railgun 3, Swarm 4, Mine 5')}
-            ${row('Level up', 'Cards appear and time slows. 1 / 2 / 3 picks, T rerolls (2 per run)')}
-            ${row('Tab', 'Put cards away / open them again later ("upgrade ready" badge)')}
+            ${row(`${kb('fire')} / left click`, 'Fire. Auto-aims at the red reticle and leads moving drones. ✕ hit, red ✕ kill')}
+            ${row(kb('weapon'), 'Next weapon. Rocket unlocks at Lv2, Railgun 3, Swarm 4, Mine 5')}
+            ${row('Level up', `Cards appear and time slows. ${kb('pick1', 1)} / ${kb('pick2', 1)} / ${kb('pick3', 1)} picks, ${kb('reroll', 1)} rerolls (2 per run)`)}
+            ${row(kb('upgrade'), 'Put cards away / open them again later ("upgrade ready" badge)')}
           </table></section>
           <section><h3>👥 Player 2 (split screen)</h3><table class="keys">
-            ${row('Arrows', 'Drive / steer')}
-            ${row('Right Shift / Num0', 'Nitro · jump')}
-            ${row('/ · Enter · .', 'Fire · get on/off · next weapon')}
-            ${row("' · ;", 'Trick / wheelie · handbrake drift')}
-            ${row('8 9 0 · \\ · ]', 'Pick cards · open/close cards · reroll')}
-            ${row('Backspace', 'Respawn')}
-            ${row('L / Num .', 'Next camera view')}
+            ${row((['up', 'down', 'left', 'right'] as Action[]).map((a) => p2(a, 1)).join(' '), 'Drive / steer')}
+            ${row(`${p2('nitro')} · ${p2('jump')}`, 'Nitro · jump')}
+            ${row(`${p2('fire', 1)} · ${p2('ride', 1)} · ${p2('weapon', 1)}`, 'Fire · get on/off · next weapon')}
+            ${row(`${p2('trick', 1)} · ${p2('drift', 1)}`, 'Trick / wheelie · handbrake drift')}
+            ${row(`${p2('pick1', 1)} ${p2('pick2', 1)} ${p2('pick3', 1)} · ${p2('upgrade', 1)} · ${p2('reroll', 1)}`, 'Pick cards · open/close cards · reroll')}
+            ${row(p2('respawn'), 'Respawn')}
+            ${row(p2('camera'), 'Next camera view')}
           </table></section>
           <section><h3>🎥 Camera & HUD</h3><table class="keys">
-            ${row('V (P2: L)', 'Cycle views: Chase → Far chase → Hood → First person → Cinematic → Top-down. Your choice is remembered; set the starting view in Settings')}
+            ${row(`${kb('camera', 1)} (P2: ${p2('camera', 1)})`, 'Cycle views: Chase → Far chase → Hood → First person → Cinematic → Top-down. Your choice is remembered; set the starting view in Settings')}
             ${row('First person', 'Bikes: rider\'s helmet view, leans with the bike and follows wheelies and flips. Cars: driver\'s seat. F1: cockpit behind the halo')}
             ${row('Hood', 'Low camera on the front of the vehicle: best feel for speed and lines')}
             ${row('Cinematic', 'TV-style trackside shots that cut ahead of you; slow orbit when stopped')}
@@ -559,13 +551,13 @@ export class Menu {
             ${row('Gauges', 'Bottom right: speedometer with nitro ring, rev counter with redline and gear, NOS / AIR lights. F1 cars use the F1 dash instead')}
             ${row('On foot', 'Hood / first person switch to the chase camera until you ride again')}
           </table></section>
-          <section><h3>🎮 Gamepad</h3><table class="keys">
-            ${row('A / RT · LT', 'Throttle · brake')}
-            ${row('Left stick / D-pad', 'Steer (and flips/spins in the air)')}
-            ${row('B / RB', 'Nitro · jump')}
-            ${row('X · Y', 'Fire · get on/off')}
-            ${row('LB · L3', 'Handbrake drift · trick / wheelie')}
-            ${row('R3 · Back · Start', 'Cards · next weapon · pause')}
+          <section><h3>🎮 Gamepad · ${padFamily(currentPadType())}</h3><table class="keys">
+            ${row(`${gp('up')} · ${gp('down')}`, 'Throttle · brake (triggers are analog)')}
+            ${row(`Left stick / ${gp('left')} ${gp('right')}`, 'Steer (and flips/spins in the air)')}
+            ${row(`${gp('nitro')} · ${gp('jump')}`, 'Nitro · jump')}
+            ${row(`${gp('fire')} · ${gp('ride')}`, 'Fire · get on/off')}
+            ${row(`${gp('drift')} · ${gp('trick')}`, 'Handbrake drift · trick / wheelie')}
+            ${row(`${gp('upgrade')} · ${gp('weapon')} · ${buttonName(9)}`, 'Cards · next weapon · pause')}
             ${row('Right stick ← → · ↑', 'Look around · next camera view')}
           </table></section>
           <section><h3>🗺 Modes</h3><p class="hint">

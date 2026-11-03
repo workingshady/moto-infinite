@@ -14,6 +14,8 @@ import { clamp, escapeHtml, hex, lerpAngle, TAU } from '../utils/math';
 import { fmt } from '../systems/Race';
 import { Gauges } from './Gauges';
 import { CAM_LABEL } from '../core/cameraViews';
+import { displayBindings, keyLabel } from '../core/bindings';
+import { pal, spd, speedUnit } from '../core/settings';
 
 const TEMPLATE = `
 <canvas class="lines"></canvas>
@@ -57,7 +59,7 @@ const TEMPLATE = `
   <div class="panel prompt" data-k="prompt">Press <b data-k="rideKey">E</b> to ride</div>
   <div class="wmeter" data-k="wmeter"><div class="wtrack"><i class="wzone" data-k="wzone"></i><i class="wneedle" data-k="wneedle"></i></div><span data-k="wtxt"></span></div>
   <div class="upbadge" data-k="upbadge"></div>
-  <div class="panel f1dash" data-k="f1dash"><div class="f1top"><b data-k="f1speed">0</b><span>km/h</span><i data-k="f1gear">N</i></div><div class="rpm"><i data-k="f1rpm"></i></div><div class="f1row"><span class="tyre" data-k="f1tyre">M</span><span data-k="f1wear">0%</span><span class="lbl">ERS</span><div class="bar ers"><i data-k="f1ers"></i></div></div><div class="f1flags"><span data-k="f1drs">DRS</span><span data-k="f1slip">SLIP</span><span data-k="f1pit">PIT 80</span></div></div>
+  <div class="panel f1dash" data-k="f1dash"><div class="f1top"><b data-k="f1speed">0</b><span data-k="f1unit">km/h</span><i data-k="f1gear">N</i></div><div class="rpm"><i data-k="f1rpm"></i></div><div class="f1row"><span class="tyre" data-k="f1tyre">M</span><span data-k="f1wear">0%</span><span class="lbl">ERS</span><div class="bar ers"><i data-k="f1ers"></i></div></div><div class="f1flags"><span data-k="f1drs">DRS</span><span data-k="f1slip">SLIP</span><span data-k="f1pit">PIT 80</span></div></div>
 </div>
 <!-- bottom-right: speedometer + tachometer -->
 <div class="zone z-br"><div class="gauges" data-k="gauges"></div></div>
@@ -96,7 +98,8 @@ export class Hud {
     this.lines = this.root.querySelector<HTMLCanvasElement>('.lines')!;
     this.lctx = this.lines.getContext('2d')!;
     this.els.race.style.display = game.opts.mode === 'race' || game.opts.mode === 'f1' ? '' : 'none';
-    this.els.rideKey.textContent = p.ctrl.bindings.ride[0].replace('Key', '');
+    this.els.rideKey.textContent = this.key(displayBindings(p.ctrl).ride);
+    this.els.f1unit.textContent = speedUnit();
     this.buildKeycard();
     this.els.gauges.appendChild(this.gauges.canvas);
     if (game.opts.locals.length > 1) {
@@ -110,7 +113,7 @@ export class Hud {
 
   /** Compact key list for this player's vehicle and bindings. */
   private buildKeycard() {
-    const b = this.p.ctrl.bindings, k = (l: string[]) => `<kbd>${this.key(l)}</kbd>`, car = this.p.def.kind === 'car';
+    const b = displayBindings(this.p.ctrl), k = (l: string[]) => `<kbd>${this.key(l)}</kbd>`, car = this.p.def.kind === 'car';
     const f1 = !!this.p.def.f1 && this.game.opts.mode === 'f1';
     const rows = f1 ? [
       [`${k(b.up)} ${k(b.down)} ${k(b.left)} ${k(b.right)}`, 'throttle · brake (~5 g) · steer'],
@@ -208,17 +211,12 @@ export class Hud {
 
   /** Friendly label for a key code: ArrowUp -> ↑, ShiftLeft -> Shift, KeyF -> F. */
   private key(list: string[]) {
-    const names: Record<string, string> = {
-      ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→', ShiftLeft: 'Shift', ShiftRight: 'R-Shift', Space: 'Space',
-      Backslash: '\\', BracketRight: ']', Slash: '/', Period: '.', Quote: "'", Semicolon: ';', Enter: 'Enter', Tab: 'Tab', Backspace: '⌫',
-    };
-    const c = list[0] ?? '';
-    return names[c] ?? c.replace('Digit', '').replace('Numpad', 'Num').replace('Key', '');
+    return keyLabel(list[0] ?? '');
   }
 
   /** Non-blocking card row at the bottom: rarity colours, stack counts, reroll button. */
   showCards(cards: Card[], onPick: (i: number) => void, onReroll: () => void, rerolls: number, stacks: Record<string, number>) {
-    const k = this.p.ctrl.bindings, picks = [k.pick1, k.pick2, k.pick3];
+    const k = displayBindings(this.p.ctrl), picks = [k.pick1, k.pick2, k.pick3];
     this.els.cards.innerHTML = cards.map((c, i) => {
       const t = TIERS[c.tier], n = stacks[c.u.id] ?? 0;
       return `<button class="card tier${c.tier}" data-i="${i}" style="--tier:${t.color};animation-delay:${i * 0.08}s">
@@ -238,7 +236,7 @@ export class Hud {
     this.els.levelup.style.display = 'none';
     this.els.upbadge.style.display = pending > 0 ? 'block' : 'none';
     this.root.classList.remove('cards-open');
-    this.els.upbadge.innerHTML = `⬆ ${pending} upgrade${pending > 1 ? 's' : ''} ready · press <kbd>${this.key(this.p.ctrl.bindings.upgrade)}</kbd>`;
+    this.els.upbadge.innerHTML = `⬆ ${pending} upgrade${pending > 1 ? 's' : ''} ready · press <kbd>${this.key(displayBindings(this.p.ctrl).upgrade)}</kbd>`;
   }
 
   hideCards() {
@@ -324,7 +322,7 @@ export class Hud {
     e.tower.style.display = isF1 && !!g.race ? 'block' : 'none';
     if (isF1) {
       const d = p.dash, f = p.f1;
-      e.f1speed.textContent = String(Math.round(Math.abs(B.v) * 3.6));
+      e.f1speed.textContent = String(Math.round(spd(Math.abs(B.v) * 3.6)));
       e.f1gear.textContent = B.v < -0.5 ? 'R' : Math.abs(B.v) < 0.5 ? 'N' : String(d.gear);
       const r = Math.min(1, d.rpm / d.redline);
       e.f1rpm.style.width = r * 100 + '%';
@@ -347,9 +345,9 @@ export class Hud {
       this.root.classList.toggle('gauges-on', showG);
     }
     if (showG && !(this.root.classList.contains('split') && frame % 2)) {
-      const d = p.dash, raw = p.stats.top * 3.6 * 1.6, step = raw <= 200 ? 20 : raw <= 360 ? 40 : 60;
+      const d = p.dash, raw = spd(p.stats.top * 3.6 * 1.6), step = raw <= 200 ? 20 : raw <= 360 ? 40 : 60;
       this.gauges.draw({
-        kmh: p.s.dead ? 0 : speedKmh, maxKmh: Math.ceil(raw / step) * step, rpm: d.rpm, redline: d.redline,
+        kmh: p.s.dead ? 0 : spd(speedKmh), maxKmh: Math.ceil(raw / step) * step, rpm: d.rpm, redline: d.redline,
         gear: Math.abs(B.v) < 0.5 ? 'N' : String(d.gear), reverse: B.v < -0.5,
         nitro: s.nitro / p.stats.nitroMax, boost: p.cam.boost, air: B.air ? B.airT : 0,
       }, this.root.classList.contains('split') ? dt * 2 : dt);
@@ -474,10 +472,10 @@ export class Hud {
       a.strokeStyle = 'rgba(0,0,0,.6)'; a.lineWidth = 7; path(0, 0); a.closePath(); a.stroke();
       a.strokeStyle = '#d7dce4'; a.lineWidth = 3.5; path(0, 0); a.closePath(); a.stroke();
       const f1 = g.layout as unknown as { drsZones?: { i0: number; i1: number }[]; pit?: { i0: number; i1: number; side: number } };
-      a.strokeStyle = '#39c46a'; a.lineWidth = 3.5;
+      a.strokeStyle = pal('#39c46a'); a.lineWidth = 3.5;
       for (const z of f1.drsZones ?? []) { path(z.i0, z.i1); a.stroke(); }
       if (f1.pit) {
-        a.strokeStyle = '#3c8dff'; a.lineWidth = 2;
+        a.strokeStyle = pal('#3c8dff'); a.lineWidth = 2;
         a.beginPath();
         const span = (f1.pit.i1 - f1.pit.i0 + t.n) % t.n;
         for (let k = 0; k <= span; k += 2) {
@@ -503,7 +501,7 @@ export class Hud {
     // next checkpoint
     if (g.race && !p.race.finished) {
       const n = g.race.nextGate(p), [a, b] = toM(n.x, n.z);
-      mm.strokeStyle = '#7cffb2'; mm.lineWidth = 2;
+      mm.strokeStyle = pal('#7cffb2'); mm.lineWidth = 2;
       mm.beginPath(); mm.arc(a, b, 5, 0, TAU); mm.stroke();
     }
     const car = (x: number, z: number, color: number, label?: string) => {
@@ -564,7 +562,7 @@ export class Hud {
       const [a, b] = toM(en.x, en.z);
       if (!inMap(a, b)) return;
       if (en.type === 'gem') { mm.fillStyle = '#46e3ff'; mm.fillRect(a - 1.5, b - 1.5, 3, 3); }
-      else { mm.fillStyle = en.type === 'drone' ? '#ff3355' : '#ffd23f'; mm.beginPath(); mm.arc(a, b, 3.5, 0, TAU); mm.fill(); }
+      else { mm.fillStyle = en.type === 'drone' ? pal('#ff3355') : '#ffd23f'; mm.beginPath(); mm.arc(a, b, 3.5, 0, TAU); mm.fill(); }
     });
     const dot = (x: number, z: number, color: number) => { const [a, b] = toM(x, z); if (!inMap(a, b)) return; mm.fillStyle = hex(color); mm.strokeStyle = '#000'; mm.lineWidth = 1.5; mm.beginPath(); mm.arc(a, b, 4, 0, TAU); mm.fill(); mm.stroke(); };
     for (const o of g.players) if (o !== p) dot(o.P.x, o.P.z, o.color);

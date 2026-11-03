@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { QUALITY, type QualityName } from '../config';
+import { settings } from './settings';
 
 /** Screen rectangle in CSS pixels, origin top-left. */
 export interface Viewport { x: number; y: number; w: number; h: number }
@@ -20,7 +21,7 @@ export class Renderer {
   apply(quality: QualityName) {
     this.quality = quality;
     const q = QUALITY[quality];
-    this.gl.setPixelRatio(Math.min(devicePixelRatio, q.pixelRatio));
+    this.gl.setPixelRatio(Math.min(devicePixelRatio, q.pixelRatio) * settings.renderScale); // render-resolution scale (Settings)
     this.gl.shadowMap.enabled = q.shadows;
     this.gl.shadowMap.type = quality === 'high' ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
   }

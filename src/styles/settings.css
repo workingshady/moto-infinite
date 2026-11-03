@@ -1,0 +1,72 @@
+/* Settings tabs, key rebinding, menu focus ring, toasts, FPS counter and accessibility options. */
+
+/* ---------------------------------------------------------------- settings screen */
+.card-wrap.scr-settings { width: min(720px, 100%); }
+.set-tabs { display: flex; gap: 4px; flex-wrap: wrap; margin: -4px 0 12px; border-bottom: 1px solid rgba(255, 255, 255, 0.12); }
+.set-tab { border: 0; background: transparent; color: var(--dim); padding: 8px 12px; font-size: 13px; font-weight: 700; border-radius: 10px 10px 0 0;
+  border-bottom: 3px solid transparent; margin-bottom: -1px; }
+.set-tab:hover { color: var(--text); }
+.set-tab.on { color: var(--text); border-bottom-color: var(--accent2); background: rgba(60, 200, 255, 0.08); }
+.set-body { max-height: min(62vh, 640px); overflow-y: auto; padding-right: 6px; }
+.set-body .opt > span { width: 120px; }
+.set-h { margin: 16px 0 4px; font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+.set-sub { margin: 2px 0 8px; }
+.row-buttons.left { justify-content: flex-start; }
+.btn.small { padding: 6px 12px; font-size: 12px; }
+
+.srange { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 180px; }
+.srange input[type=range] { flex: 1; accent-color: var(--accent2); height: 22px; }
+.srange output { min-width: 56px; font-size: 13px; font-variant-numeric: tabular-nums; color: var(--text); }
+
+/* ---------------------------------------------------------------- key rebinding table */
+.bind-table { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 2px 18px; }
+.bind-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 3px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.06); font-size: 13px; }
+.bind-row > span { color: var(--dim); }
+.bkeys { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+.bkey { min-width: 34px; height: 28px; padding: 0 8px; border-radius: 7px; border: 1px solid rgba(255, 255, 255, 0.25); font: 12px ui-monospace, monospace;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.06)); box-shadow: 0 2px 0 rgba(0, 0, 0, 0.35); }
+.bkey:hover { border-color: var(--accent2); }
+.bkey.add { opacity: 0.45; border-style: dashed; box-shadow: none; background: transparent; }
+.bkey.add:hover { opacity: 1; }
+.bkey.listen { border-color: var(--accent); background: rgba(255, 210, 63, 0.18); color: var(--accent); animation: bindPulse 0.9s ease-in-out infinite; }
+@keyframes bindPulse { 50% { box-shadow: 0 0 0 4px rgba(255, 210, 63, 0.25); } }
+.bind-msg { margin: 4px 0 8px; padding: 6px 10px; border-radius: 8px; background: rgba(60, 200, 255, 0.12); font-size: 13px; }
+
+/* ---------------------------------------------------------------- keyboard / gamepad focus ring */
+#menu :focus-visible, #menu .navfocus { outline: 3px solid var(--accent); outline-offset: 2px; }
+#menu .chip.navfocus, #menu .btn.navfocus { box-shadow: 0 0 0 6px rgba(255, 210, 63, 0.18); }
+
+/* ---------------------------------------------------------------- toasts + FPS counter */
+.toasts { position: fixed; top: 14px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; z-index: 60; pointer-events: none; }
+.toast { background: var(--panel-solid); border: 1px solid rgba(60, 200, 255, 0.45); border-radius: 999px; padding: 8px 16px; font-size: 13px; font-weight: 700;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.3); animation: toastIn 0.25s ease-out; transition: opacity 0.4s, transform 0.4s; }
+.toast.warn { border-color: rgba(255, 77, 94, 0.6); }
+.toast.out { opacity: 0; transform: translateY(-8px); }
+@keyframes toastIn { from { opacity: 0; transform: translateY(-10px); } }
+.fps-counter { position: fixed; right: 8px; top: 6px; z-index: 55; display: none; pointer-events: none; font: 700 11px ui-monospace, monospace;
+  background: rgba(0, 0, 0, 0.55); color: #9effc4; padding: 2px 6px; border-radius: 6px; }
+.fps-counter.on { display: block; }
+
+/* ---------------------------------------------------------------- HUD scale / opacity (low specificity so mode rules still win) */
+:where(#hud-layer .hud .zone) { zoom: var(--hud-scale, 1); }
+:where(#hud-layer .hud .zone) { opacity: var(--hud-opacity, 1); }
+
+/* ---------------------------------------------------------------- colourblind-safe palette (Okabe-Ito: blue = good, orange = bad) */
+body.cb-safe { --good: #56b4e9; --bad: #e69f00; }
+body.cb-safe .bar .hp { background: linear-gradient(90deg, #e69f00, #f0c040); }
+body.cb-safe .bar .cbar { background: linear-gradient(90deg, #56b4e9, #3c8dff); }
+body.cb-safe .wzone { background: rgba(86, 180, 233, 0.55); border-color: #56b4e9; }
+body.cb-safe .dtags .tandem { background: #56b4e9; }
+body.cb-safe .hitmark.kill { color: #e69f00; }
+
+/* ---------------------------------------------------------------- reduced motion */
+body.reduce-motion .hud .lines, body.reduce-motion .hud .vignette { display: none; }
+body.reduce-motion .hud .lvlburst .rays { display: none; }
+body.reduce-motion .hud .upbadge, body.reduce-motion .hud .reticle, body.reduce-motion .rpm i.shift { animation: none !important; }
+body.reduce-motion #menu *, body.reduce-motion #menu *::before, body.reduce-motion .toast { animation: none !important; transition: none !important; }
+
+@media (max-width: 600px) {
+  .set-tab { padding: 6px 8px; font-size: 12px; }
+  .set-body .opt > span { width: 100%; }
+  .bind-table { grid-template-columns: 1fr; }
+}

@@ -1,5 +1,6 @@
 // Keyboard, mouse, touch and gamepads are merged into per-player "controllers" holding abstract actions.
 // Gameplay code only asks controller.is('fire'), never about keys, so rebinding happens here only.
+import { readPad } from './gamepad';
 
 export type Action =
   | 'up' | 'down' | 'left' | 'right' | 'nitro' | 'jump' | 'fire'
@@ -27,7 +28,7 @@ export const BINDINGS: Record<'solo' | 'p1' | 'p2', Bindings> = {
 
 // Standard gamepad layout: 0=A 1=B 2=X 3=Y 4=LB 5=RB 6=LT 7=RT 8=Back 9=Start 12-15=D-pad
 // Every button is taken, so the camera cycles with the right stick pushed up (see poll).
-const PAD: Record<Action, number[]> = {
+export const PAD: Record<Action, number[]> = {
   up: [0, 7, 12], down: [6, 13], left: [14], right: [15], nitro: [1, 5], jump: [1], fire: [2],
   ride: [3], weapon: [8], respawn: [], trick: [10], drift: [4], upgrade: [11], reroll: [], pick1: [14], pick2: [12], pick3: [15], camera: [],
 };
@@ -40,6 +41,10 @@ export class Controller {
   gamepad: number;
   lookDelta = 0;
   zoom = 1;
+  /** Analog amounts 0..1 for gamepad sticks / triggers (1 for keys and buttons). */
+  steerMag = 1;
+  throttle = 1;
+  brake = 1;
 
   constructor(bindings: Bindings, gamepad: number) {
     this.bindings = bindings;
@@ -135,17 +140,10 @@ export class Input {
       for (const a of Object.keys(c.bindings) as Action[]) {
         if (c.bindings[a].some((k) => this.keys.has(k) || this.tapped.has(k))) c.held.add(a);
       }
+      c.steerMag = c.throttle = c.brake = 1;
       const pad = pads[c.gamepad];
       if (pad && pad.connected) {
-        for (const a of Object.keys(PAD) as Action[]) if (PAD[a].some((b) => pad.buttons[b]?.pressed)) c.held.add(a);
-        const ax = pad.axes[0] ?? 0, ay = pad.axes[1] ?? 0;
-        if (ax < -0.45) c.held.add('left');
-        if (ax > 0.45) c.held.add('right');
-        if (ay < -0.5) c.held.add('up');
-        if (ay > 0.5) c.held.add('down');
-        const rx = pad.axes[2] ?? 0;
-        if (Math.abs(rx) > 0.2) c.lookDelta -= rx * 0.05;
-        if ((pad.axes[3] ?? 0) < -0.7) c.held.add('camera');
+        if (this.enabled) readPad(c, pad, PAD); // menus read the pad themselves while paused
         if (pad.buttons[9]?.pressed) start = true;
       }
       if (i === 0) {

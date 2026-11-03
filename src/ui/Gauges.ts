@@ -1,6 +1,7 @@
 // Analog instrument cluster drawn on one small canvas: speedometer, tachometer with redline and gear,
 // nitro ring and warning lights. Dial faces are cached; each frame only redraws needles, arcs and text.
 import { clamp } from '../utils/math';
+import { speedUnit } from '../core/settings';
 
 const W = 236, H = 150;
 const A0 = Math.PI * 0.75, SWEEP = Math.PI * 1.5; // 7:30 o'clock round to 4:30
@@ -54,7 +55,7 @@ export class Gauges {
     c.fillText(String(Math.round(s.kmh)), SP.x, SP.y + 7);
     c.font = '700 9px system-ui, sans-serif';
     c.fillStyle = 'rgba(255,255,255,.6)';
-    c.fillText('km/h', SP.x, SP.y + 20);
+    c.fillText(speedUnit(), SP.x, SP.y + 20);
     c.fillStyle = boosting ? '#7fe6ff' : 'rgba(127,230,255,.85)';
     c.font = '800 9px system-ui, sans-serif';
     c.fillText(`NITRO ${Math.round(s.nitro * 100)}%`, SP.x, SP.y + 50);
