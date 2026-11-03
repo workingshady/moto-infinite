@@ -67,6 +67,24 @@ export interface Career {
   stats: CareerStats;
   unlocked: string[]; // bought vehicles (starters are always owned)
   achievements: Record<string, number>; // id → unlock timestamp (ms)
+  /** Racecraft rating per discipline (src/ai/rating.ts): r = Elo-like rating, n = rated races, at = last update (ms). */
+  racecraft: Partial<Record<RacecraftDiscipline, RacecraftRating>>;
+}
+
+export type RacecraftDiscipline = 'race' | 'f1' | 'elim';
+export interface RacecraftRating { r: number; n: number; at: number }
+const RC_DISCIPLINES: RacecraftDiscipline[] = ['race', 'f1', 'elim'];
+
+/** Valid racecraft ratings only (bounded, finite), unknown disciplines dropped. */
+export function cleanRacecraft(raw: unknown): Career['racecraft'] {
+  const out: Career['racecraft'] = {};
+  if (!raw || typeof raw !== 'object') return out;
+  for (const d of RC_DISCIPLINES) {
+    const v = (raw as Record<string, unknown>)[d] as Partial<RacecraftRating> | undefined;
+    if (!v || typeof v !== 'object' || typeof v.r !== 'number' || !Number.isFinite(v.r)) continue;
+    out[d] = { r: Math.min(3000, Math.max(0, v.r)), n: Math.max(0, Math.floor(num(v.n))), at: Math.max(0, num(v.at)) };
+  }
+  return out;
 }
 
 const KEY = 'moto:career';
@@ -100,7 +118,7 @@ function migrate(raw: unknown): Career {
   if (r.achievements && typeof r.achievements === 'object') for (const [id, t] of Object.entries(r.achievements)) ach[id] = num(t, Date.now());
   return {
     v: VERSION, level: Math.max(1, Math.floor(num(r.level, 1))), xp: Math.max(0, num(r.xp)), credits: Math.max(0, num(r.credits)), earned: Math.max(0, num(r.earned)),
-    stats: st, unlocked: strs(r.unlocked), achievements: ach,
+    stats: st, unlocked: strs(r.unlocked), achievements: ach, racecraft: cleanRacecraft(r.racecraft),
   };
 }
 

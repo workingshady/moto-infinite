@@ -37,6 +37,8 @@ export interface LobbySettings {
   tyre: 'soft' | 'medium' | 'hard';
   /** Circuit race format (local games only, see src/modes): classic, time attack with medals, elimination. */
   variant?: RaceVariant;
+  /** Computer racer difficulty (local games only, src/ai): rookie, amateur, pro, legend or adaptive (default). */
+  aiLevel?: 'rookie' | 'amateur' | 'pro' | 'legend' | 'adaptive';
   /** Open-world traffic density, 0 off .. 2 heavy (local games only). */
   traffic?: number;
 }

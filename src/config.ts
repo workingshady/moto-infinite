@@ -358,7 +358,7 @@ export const AI = {
   /** Speed profile: safety margin on the physical limit, braking decel share, slip budget for arcade cornering (rad). */
   profile: { margin: 0.96, brakeShare: 0.82, arcadeBrake: 30, slipMax: 0.16, steerShare: 0.85, f1MaxBrake: 6.2 * 9.81 },
   /** Racing line optimiser: car half width + safety (m), smoothing iterations, neighbour stride (samples). */
-  line: { margin: 1.6, iters: 220, strides: [8, 4, 2, 1], cacheTracks: 10 },
+  line: { margin: 1.6, iters: 600, strides: [8, 4, 2, 1], cacheTracks: 10 },
   /** Ghost learning: lateral blend weight per good ghost lap, speed blend, quality exponent, off-track rejection (m beyond edge). */
   learn: { lineWeight: 0.6, speedWeight: 0.5, qualityExp: 6, offTrack: 2.5, minCover: 0.9 },
   /** Steering: pure pursuit lookahead = base + time × speed (m), heading damping. */

@@ -338,7 +338,9 @@ export class Hud {
     // F1 dash (every frame: speed, gear, rpm lights)
     const isF1 = g.opts.mode === 'f1' && !!p.def.f1;
     e.f1dash.style.display = isF1 ? 'block' : 'none';
-    e.tower.style.display = isF1 && !!g.race ? 'block' : 'none';
+    // timing tower: F1 always; circuit races against computer racers get a compact one (names + personality icons)
+    const towerOn = !!g.race && (isF1 || (!!g.ai?.list.length && g.players.length === 1));
+    e.tower.style.display = towerOn ? 'block' : 'none';
     if (isF1) {
       const d = p.dash, f = p.f1;
       e.f1speed.textContent = String(Math.round(spd(Math.abs(B.v) * 3.6)));
@@ -372,13 +374,18 @@ export class Hud {
       }, this.root.classList.contains('split') ? dt * 2 : dt);
     }
     if (frame % 3) return;
-    if (isF1 && g.race && frame % 15 === 0) {
-      // timing tower: positions with gaps (metres behind converted with the leader's average speed)
-      const rows = g.race.standings(), lead = rows[0], len = (g.layout as unknown as { length: number }).length, avg = 60;
-      e.tower.innerHTML = '<div class="label">TIMING</div>' + rows.slice(0, 12).map((row, i) => {
+    if (towerOn && g.race && frame % 15 === 0) {
+      // timing tower: positions with gaps (metres behind converted with the leader's average speed); computer racers
+      // show their personality icon, F1 cars their tyre compound and PIT while in the pit lane
+      const rows = g.race.standings(), lead = rows[0], len = (g.layout as unknown as { length: number }).length, avg = isF1 ? 60 : 30;
+      const max = isF1 ? 12 : 6, mine = rows.findIndex((r) => r.local && r.id === String(p.index));
+      const shown = rows.map((row, i) => ({ row, i })).filter(({ i }) => i < max || i === mine);
+      e.tower.innerHTML = `<div class="label">${isF1 ? 'TIMING' : 'POSITIONS'}</div>` + shown.map(({ row, i }) => {
         const gap = i === 0 ? 'Leader' : row.time !== null && lead.time !== null ? '+' + (row.time - lead.time).toFixed(1) + 's' : '+' + Math.max(0, ((lead.prog - row.prog) * len) / avg).toFixed(1) + 's';
         const me = row.local && row.id === String(p.index);
-        return `<div class="trow ${me ? 'me' : ''}"><b>${i + 1}</b><i style="background:${hex(row.color)}"></i><span>${escapeHtml(row.name)}</span><em>${row.time !== null && i === 0 ? fmt(row.time) : gap}</em></div>`;
+        const tyre = row.tyre ? `<u class="tyre" style="border-color:${hex(F1.tyres[row.tyre as keyof typeof F1.tyres]?.color ?? 0xffffff)}">${row.tyre[0].toUpperCase()}</u>` : '';
+        const icon = row.icon ? `<small title="${escapeHtml(row.persona ?? '')}">${row.icon}</small>` : '';
+        return `<div class="trow ${me ? 'me' : ''}"><b>${i + 1}</b><i style="background:${hex(row.color)}"></i><span>${icon}${escapeHtml(row.name)}</span><em>${row.pit ? '<u class="pit">PIT</u>' : ''}${tyre}${row.time !== null && i === 0 ? fmt(row.time) : gap}</em></div>`;
       }).join('');
     }
     // text (every 3rd frame)

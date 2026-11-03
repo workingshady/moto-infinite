@@ -1,29 +1,28 @@
 // Computer-driven opponents for circuit races and Formula 1 (local games only).
-// Each AI follows the racing line with a speed profile computed from track curvature, its car's grip
-// (plus downforce for F1 cars), and a backwards braking pass; it moves to the inside of corners and
-// pulls out to overtake when someone is in the way.
+// Every AI drives the same vehicle physics as the player (entities/vehiclePhysics.ts) through src/ai: a learned racing
+// line, a speed profile from the car's real limits, pure-pursuit steering, racecraft, mistakes, damage, recovery and
+// (F1) tyre strategy, pit stops, DRS and ERS. This class adapts the Game to the bot world, runs a fixed-step loop with
+// distance LOD, resolves car contact, and renders the models.
 import type { Game } from '../core/Game';
 import type { TrackLine } from '../world/layout';
 import { buildVehicleModel, type VehicleModel } from '../entities/vehicleModels';
 import { VEHICLES, type VehicleDef } from '../data/vehicles';
-import { F1, PLAYER_COLORS } from '../config';
-import { clamp, lerp, lerpAngle } from '../utils/math';
+import { AI, F1, PLAYER_COLORS, ROAD, WEATHER_DEFS, type TyreCompound } from '../config';
+import { activeWeathers } from '../../shared/protocol';
+import { clamp, lerp } from '../utils/math';
+import { damage, makeBot, placeBot, stepBot, trackIndex, type Bot, type BotWorld, type WallKind } from '../ai/driver';
+import { makeField, type AiLevel } from '../ai/personality';
+import { halfWidthOf, lapEstimate, speedProfile, type HalfWidthFn } from '../ai/racingLine';
+import { tactics, trackGap, type Car } from '../ai/tactics';
+import { chooseCompound, shouldPit } from '../ai/strategy';
+import { botNames, buildLearned, disciplineOf, fetchLeaderGhost, playerRating, SkillTracker } from '../ai/racecraft';
+import type { Learned } from '../ai/learn';
+import { learnedProfile } from '../ai/learn';
 
-export interface AiRacer {
-  id: string;
+export interface AiRacer extends Bot {
   name: string;
   color: number;
-  def: VehicleDef;
   model: VehicleModel;
-  s: number; // metres along the line since the race start (negative = behind the start line)
-  v: number;
-  off: number; // lateral offset from the centre line
-  skill: number;
-  react: number; // start reaction delay
-  finished: boolean;
-  finishTime: number;
-  x: number; y: number; z: number; h: number;
-  vmax: Float32Array;
   wheel: number;
 }
 
@@ -31,135 +30,324 @@ const COMPOUNDS = ['soft', 'medium', 'hard'] as const;
 
 export class AiRacers {
   readonly list: AiRacer[] = [];
+  /** Every bot that started (Elimination removes knocked-out bots from `list`; the rating still counts them). */
+  readonly field = new Map<string, AiRacer>();
+  readonly level: AiLevel;
+  readonly world: BotWorld;
+  readonly skill: SkillTracker;
+  learned: Learned;
+  private cars: Car[] = [];
+  private carOf = new Map<object, Car>();
+  private acc = 0;
+  private tacT = 0;
+  private catchT = 0;
+  private stratLap = new Map<string, number>();
+  private justPitted = new Map<string, number>();
+  private readonly hw: HalfWidthFn;
+  private readonly L: number;
+  private disposed = false;
+  /** AI CPU time per frame (smoothed) and the worst frame, in ms. */
+  cpuMs = 0;
+  cpuMax = 0;
 
-  constructor(private game: Game, private track: TrackLine, count: number, f1: boolean, private halfWidth: number, private laps: number, firstSlot: number) {
-    const me = game.players[0]?.def, kindPool = VEHICLES.filter((v) => !v.f1 && v.kind === (me?.kind ?? 'car'));
+  constructor(private game: Game, private track: TrackLine, count: number, private f1: boolean, halfWidth: number, private laps: number, firstSlot: number) {
+    const me = game.players[0]?.def, kindPool = VEHICLES.filter((v) => !v.f1 && v.kind === (me?.kind ?? 'car') && !v.ev?.thrusters);
     // same class as the player first (a muscle car races muscle cars), then the rest of its kind
     const pool = f1 ? VEHICLES.filter((v) => v.f1 && v.id === me?.id) : [...kindPool.filter((v) => v.cls === me?.cls), ...kindPool.filter((v) => v.cls !== me?.cls)];
     const fallback = VEHICLES.filter((v) => (f1 ? !!v.f1 : !v.f1));
+    this.level = game.opts.aiLevel ?? 'adaptive';
+    this.hw = halfWidthOf(track, halfWidth);
+    this.L = track.n * track.spacing;
+    const ref: VehicleDef = me && (f1 ? !!me.f1 : !me.f1) ? me : (pool[0] ?? fallback[0]);
+    this.learned = buildLearned(game.opts.trackId, track, this.hw, ref);
+    if (!f1 && pool.length > 1) {
+      // close racing: the rides whose ideal lap on THIS track is nearest the player's (same machinery wins first)
+      const lapOf = (d: VehicleDef) => lapEstimate(this.learned.line, d, speedProfile(this.learned.line, d)), mine = lapOf(ref);
+      const ranked = pool.map((d) => ({ d, e: Math.abs(lapOf(d) / mine - 1) - (d.cls === ref.cls ? 0.01 : 0) })).sort((a, b) => a.e - b.e);
+      pool.length = 0;
+      pool.push(...ranked.slice(0, Math.max(3, Math.min(6, count))).map((r) => r.d));
+    }
+    this.world = this.makeWorld();
+    this.skill = new SkillTracker(game);
+    const profiles = makeField(count, this.level, playerRating(disciplineOf(game.opts)));
+    const names = botNames(count, f1);
+    const startTyre = (game.opts.tyre ?? 'medium') as TyreCompound;
     for (let i = 0; i < count; i++) {
       const def = (pool.length ? pool : fallback)[i % (pool.length || fallback.length)];
       const color = PLAYER_COLORS[(i + 2) % PLAYER_COLORS.length] ^ ((i * 0x1f3a5) & 0x1f1f1f);
       const model = buildVehicleModel(def.id, color);
-      model.tyreBands?.color.setHex(F1.tyres[COMPOUNDS[i % 3]].color);
+      model.headlight.visible = false; // 19 extra spot lights would cost every phone a lot of fragment work
+      const prof = profiles[i];
+      // F1 grid: a strategic mix of starting compounds (the player's choice for some, others the alternatives)
+      const compound: TyreCompound | null = f1 ? (i % 3 === 0 ? startTyre : COMPOUNDS[(COMPOUNDS.indexOf(startTyre) + (i % 3)) % 3]) : null;
+      if (compound) model.tyreBands?.color.setHex(F1.tyres[compound].color);
       game.scene.add(model.root);
-      const pose = game.layout.spawn(firstSlot + i), near = track.nearest(pose.x, pose.z, true);
-      const s = near.i * track.spacing - (near.i > track.n / 2 ? track.length : 0);
-      const tz = track.tz[near.i], tx = track.tx[near.i];
-      const r: AiRacer = {
-        id: 'ai' + i, name: F1.aiNames[i % F1.aiNames.length], color, def, model, s, v: 0,
-        off: (pose.x - track.px[near.i]) * tz - (pose.z - track.pz[near.i]) * tx, // signed side offset of the grid slot
-        skill: 0.86 + Math.random() * 0.12, react: 0.15 + Math.random() * 0.45, finished: false, finishTime: 0,
-        x: pose.x, y: 0, z: pose.z, h: pose.h, vmax: new Float32Array(0), wheel: 0,
-      };
-      r.vmax = this.speedProfile(r);
-      this.list.push(r);
+      const pose = game.layout.spawn(firstSlot + i);
+      const vmax = learnedProfile(this.learned, def, 0.92 + 0.16 * prof.aggression);
+      const b = makeBot('ai' + i, def, prof, vmax, pose.x, pose.z, pose.h, compound) as AiRacer;
+      Object.assign(b, { name: names[i], color, model, wheel: 0 });
+      if (b.f1) {
+        b.f1.pitWear = AI.f1.pitWear + (prof.aggression - 0.5) * 0.12 + (Math.random() - 0.5) * 0.06;
+        const n = track.n, p = this.world.pit;
+        if (p) { const span = (p.i1 - p.i0 + n) % n; b.f1.box = (p.i0 + Math.round(span * (0.3 + (0.45 * i) / Math.max(1, count)))) % n; }
+      }
+      placeBot(b, this.world, pose.x, pose.z, pose.h);
+      this.list.push(b);
+      this.field.set(b.id, b);
     }
+    // leaderboard #1 ghost: fetched lazily in the background; offline = skipped. Applied if it lands before the start.
+    void fetchLeaderGhost(game.opts, ref).then((got) => {
+      if (!got || this.disposed || game.race?.started) return;
+      this.learned = buildLearned(game.opts.trackId, track, this.hw, ref);
+      for (const b of this.list) b.vmax = learnedProfile(this.learned, b.def, 0.92 + 0.16 * b.prof.aggression);
+      Object.assign(this.world, { line: this.learned.line });
+    });
   }
 
-  /** Max speed at each sample: cornering limit from curvature, then a backwards braking pass. */
-  private speedProfile(r: AiRacer) {
-    const t = this.track, n = t.n, out = new Float32Array(n), def = r.def, F = def.f1;
-    // F1: top speed where power meets drag; cornering μ·g·(1 + k·v²) with k from the downforce area
-    const top = F ? Math.cbrt(((F.power + F.ers * 0.6) * 1000 * F1.drivetrain) / (0.5 * 1.225 * F.cda)) * r.skill : def.top * r.skill;
-    const aLat0 = (F ? F.mu * 9.81 : def.grip * 4.8) * (0.9 + r.skill * 0.1), K = F ? (0.5 * 1.225 * F.cla) / (F.mass * 9.81) : 0;
-    for (let i = 0; i < n; i++) {
-      let k = 0;
-      for (let j = -4; j <= 4; j++) k = Math.max(k, Math.abs(Math.asin(clamp(t.curvature((i + j + n) % n), -1, 1))) / (6 * t.spacing));
-      const denom = k - aLat0 * K; // downforce: grip grows with v², so fast corners open up
-      out[i] = denom <= 0 ? top : Math.min(top, Math.sqrt(aLat0 / denom));
-    }
-    // braking pass: decel grows with downforce at speed (μ_brake·g·(1 + k·v²)), capped at 6 g
-    for (let pass = 0; pass < 2; pass++)
-      for (let i = n - 1; i >= 0; i--) {
-        const nx = out[(i + 1) % n], dec = F ? Math.min(F.muBrake * 9.81 * (1 + K * nx * nx), 58) * 0.88 : 16;
-        out[i] = Math.min(out[i], Math.sqrt(nx * nx + 2 * dec * t.spacing));
-      }
-    return out;
+  /** The bots' view of the game world. Collision call sites live here (swap in another contact model in one place). */
+  private makeWorld(): BotWorld {
+    const g = this.game, lay = g.layout as unknown as { inDrs?(i: number): boolean; pit?: { i0: number; i1: number; side: 1 | -1 } };
+    const ws = activeWeathers(g.opts);
+    const w: BotWorld = {
+      track: this.track, line: this.learned.line, hw: this.hw, envGrip: 1, wet: 0,
+      onRoad: (x, z) => g.terrain.onRoad(x, z),
+      roadDist: (x, z) => g.layout.roadDist(x, z),
+      blocked: (x, z, r) => g.chunks.blocked(x, z, r, this.yAt, 1.3),
+      contact: (x, z, r, kind: WallKind, fx, fz) => g.chunks.contact(x, z, r, this.yAt, kind, fx, fz),
+      inDrs: lay.inDrs ? (i) => lay.inDrs!(i) : undefined,
+      pit: this.f1 && lay.pit ? lay.pit : null,
+    };
+    w.wet = Math.max(0, ...ws.map((x) => WEATHER_DEFS[x].rain));
+    return w;
   }
+  /** Ground height of the bot being stepped (for step-height checks against walls). */
+  private yAt = 0;
 
   /** Move a racer to a grid slot (index for layout.spawn). */
   place(r: AiRacer, slot: number) {
-    const t = this.track, pose = this.game.layout.spawn(slot), near = t.nearest(pose.x, pose.z, true);
-    r.s = near.i * t.spacing - (near.i > t.n / 2 ? t.length : 0);
-    r.off = (pose.x - t.px[near.i]) * t.tz[near.i] - (pose.z - t.pz[near.i]) * t.tx[near.i];
-    r.x = pose.x;
-    r.z = pose.z;
-    r.h = pose.h;
+    const pose = this.game.layout.spawn(slot);
+    placeBot(r, this.world, pose.x, pose.z, pose.h);
+    if (r.f1) {
+      const p = this.world.pit, n = this.track.n;
+      if (p) { const span = (p.i1 - p.i0 + n) % n; r.f1.box = (p.i0 + Math.round(span * (0.3 + 0.45 * ((slot * 0.37) % 1)))) % n; }
+    }
+    this.render(r, 0);
   }
 
   progress(r: AiRacer) {
-    return r.s / this.track.length;
+    return r.s / this.L;
   }
 
   update(dt: number, started: boolean, raceTime: number) {
-    const t = this.track, n = t.n, g = this.game;
-    const players = g.players.map((p) => ({ s: this.trackPos(p.B.x, p.B.z), off: this.sideOf(p.B.x, p.B.z), x: p.B.x, z: p.B.z }));
-    for (const r of this.list) {
-      const idx = (((Math.floor(r.s / t.spacing)) % n) + n) % n;
-      if (started && raceTime > r.react && !r.finished) {
-        const target = r.vmax[idx], F = r.def.f1;
-        if (r.v < target) {
-          if (F) {
-            // same longitudinal model as the player: power-limited, traction-limited, minus drag
-            const K = (0.5 * 1.225 * F.cla) / (F.mass * 9.81), drive = Math.min(((F.power + F.ers * 0.6) * 1000 * F1.drivetrain) / (F.mass * Math.max(r.v, 4)), F.muLong * 9.81 * (1 + K * r.v * r.v));
-            r.v += (drive * r.skill - (0.5 * 1.225 * F.cda * r.v * r.v) / F.mass) * dt;
-          } else r.v += r.def.accel * r.skill * (1 - (r.v / (r.def.top * 1.1)) ** 2 * 0.7) * dt;
-        } else r.v = Math.max(target, r.v - (F ? 40 : 18) * dt);
-        r.v = Math.min(r.v, target + 2);
-      } else if (r.finished) r.v *= 1 - 0.6 * dt;
-      // racing line: inside of the next corner, unless someone is in the way
-      const ahead = (idx + Math.round(40 / t.spacing)) % n, curve = t.curvature(ahead);
-      let offTarget = clamp(-Math.sign(curve) * Math.min(1, Math.abs(curve) * 6) * this.halfWidth * 0.55, -this.halfWidth * 0.7, this.halfWidth * 0.7);
-      const blockers = [...this.list.filter((o) => o !== r).map((o) => ({ s: o.s, off: o.off })), ...players];
-      for (const b of blockers) {
-        const gap = b.s - r.s;
-        if (gap > 0 && gap < 14 && Math.abs(b.off - r.off) < 2.6) {
-          offTarget = b.off + (b.off > 0 ? -3.6 : 3.6); // pull out to pass
-          r.v = Math.min(r.v, Math.max(0, r.v - 2 * dt)); // lift slightly while side by side
-        }
+    const g = this.game, w = this.world;
+    w.envGrip = g.env.grip;
+    w.wet = clamp((1 - g.env.grip) / 0.12, 0, 1); // rain / snow show up as lower grip (dynamic weather follows it live)
+    const t0 = performance.now();
+    this.syncCars();
+    // racecraft ~10 Hz
+    this.tacT -= dt;
+    if (this.tacT <= 0) {
+      this.tacT = 0.1;
+      for (const b of this.list) {
+        const me = this.carOf.get(b)!;
+        tactics(b, me, this.cars, w, 0.1);
+        this.slip(b);
       }
-      r.off = lerp(r.off, clamp(offTarget, -this.halfWidth + 1.2, this.halfWidth - 1.2), Math.min(1, dt * 0.9));
-      r.s += r.v * dt;
-      if (!r.finished && r.s >= this.laps * t.length) { r.finished = true; r.finishTime = raceTime; }
-      // world pose, interpolated between samples
-      const fi = (((r.s / t.spacing) % n) + n) % n, i0 = Math.floor(fi), i1 = (i0 + 1) % n, f = fi - i0;
-      const tx = lerp(t.tx[i0], t.tx[i1], f), tz = lerp(t.tz[i0], t.tz[i1], f);
-      const cx = lerp(t.px[i0], t.px[i1], f), cz = lerp(t.pz[i0], t.pz[i1], f);
-      r.x = cx + tz * r.off;
-      r.z = cz - tx * r.off;
-      r.y = g.terrain.groundAt(r.x, r.z);
-      r.h = lerpAngle(r.h, Math.atan2(tx, tz), Math.min(1, dt * 8));
-      const m = r.model;
-      r.wheel += (r.v * dt) / m.wheelRadius;
-      m.wheels.forEach((w) => (w.rotation.x = r.wheel));
-      m.steer.forEach((w) => (w.rotation.y = clamp(-curve * 3, -0.4, 0.4)));
-      m.root.position.set(r.x, r.y, r.z);
-      m.root.rotation.set(0, r.h, 0);
-      if (m.rearFlap) m.rearFlap.rotation.x = lerp(m.rearFlap.rotation.x, r.v > r.vmax[idx] - 1 && Math.abs(curve) < 0.02 ? 0.5 : 0, Math.min(1, dt * 6));
+      if (this.f1 && started) this.strategy();
     }
-    // contact: AI cars push the player out instead of overlapping
-    for (const p of g.players)
-      for (const r of this.list) {
-        const dx = p.B.x - r.x, dz = p.B.z - r.z, d = Math.hypot(dx, dz);
+    if (started) this.catchUp(dt, raceTime);
+    // fixed-step physics with distance LOD (far bots: half rate, same rules)
+    this.acc = Math.min(this.acc + dt, 0.25); // never more than 15 steps a frame (no spiral of death on slow phones)
+    const h = AI.step;
+    while (this.acc >= h) {
+      this.acc -= h;
+      for (const b of this.list) {
+        const far = this.farFromPlayers(b);
+        if (far) { b.lodAcc += h; if (b.lodAcc < h * 2 - 1e-6) continue; }
+        const step = far ? b.lodAcc : h;
+        b.lodAcc = 0;
+        this.yAt = b.y;
+        stepBot(b, w, step, raceTime, started);
+        this.pitStop(b, step);
+        if (!b.finished && b.s >= this.laps * this.L) { b.finished = true; b.finishTime = raceTime; }
+      }
+      this.contacts();
+    }
+    for (const b of this.list) this.render(b, dt);
+    if (started) this.skill.update(dt);
+    const ms = performance.now() - t0;
+    this.cpuMs += (ms - this.cpuMs) * 0.05; // smoothed AI cost per frame (debug / perf tests)
+    this.cpuMax = Math.max(this.cpuMax, ms);
+  }
+
+  /** Common car list: bots and local players (reused objects). */
+  private syncCars() {
+    const g = this.game, out = this.cars;
+    out.length = 0;
+    for (const b of this.list) {
+      let c = this.carOf.get(b);
+      if (!c) this.carOf.set(b, (c = { id: b.id, s: 0, lat: 0, v: 0, x: 0, z: 0, h: 0, bot: b }));
+      c.s = b.s; c.lat = b.lat; c.v = b.v; c.x = b.x; c.z = b.z; c.h = b.moveH;
+      out.push(c);
+    }
+    for (const p of g.players) {
+      let c = this.carOf.get(p);
+      if (!c) this.carOf.set(p, (c = { id: String(p.index), s: 0, lat: 0, v: 0, x: 0, z: 0, h: 0, bot: null }));
+      const t = this.track, i = t.nearest(p.B.x, p.B.z, true).i;
+      c.lat = (p.B.x - t.px[i]) * t.tz[i] - (p.B.z - t.pz[i]) * t.tx[i];
+      c.s = p.race.prog >= -1 ? p.race.prog * this.L : i * t.spacing;
+      c.v = p.B.v; c.x = p.B.x; c.z = p.B.z; c.h = p.B.moveH;
+      out.push(c);
+    }
+  }
+
+  private farFromPlayers(b: Bot) {
+    const d2 = AI.lodDist * AI.lodDist;
+    for (const p of this.game.players) if ((p.B.x - b.x) ** 2 + (p.B.z - b.z) ** 2 < d2) return false;
+    return this.game.players.length > 0;
+  }
+
+  /** F1 slipstream flag (same cone rule as the player's). */
+  private slip(b: Bot) {
+    if (!b.f1) return;
+    const fx = Math.sin(b.moveH), fz = Math.cos(b.moveH);
+    let on = false;
+    if (Math.abs(b.v) > 25)
+      for (const c of this.cars) {
+        if (c.bot === b) continue;
+        const dx = c.x - b.x, dz = c.z - b.z, d = Math.hypot(dx, dz);
+        if (d > 3 && d < F1.slipDist && (dx * fx + dz * fz) / d > Math.cos(F1.slipAngle)) { on = true; break; }
+      }
+    b.f1.slip = on;
+  }
+
+  /**
+   * Fair, subtle catch-up (Rookie, Amateur, Adaptive only; never Pro/Legend): each bot's pace eases by at most ±3 %
+   * toward keeping the race close to the player. Pace is capped at the bot's physical limit (effectivePace ≤ 1) and
+   * nothing ever moves a car: it only changes how hard it drives.
+   */
+  private catchUp(dt: number, raceTime: number) {
+    const p = this.game.players[0], C = AI.catchUp;
+    if (!p || raceTime < 5) return;
+    this.catchT += dt;
+    const ps = this.carOf.get(p)?.s ?? 0, avg = Math.max(15, Math.abs(p.B.v) || 30);
+    for (const b of this.list) {
+      if (!b.prof.catchUp || b.finished) { b.adj = 0; continue; }
+      const gapS = (ps - b.s) / avg; // > 0: the bot is behind the player
+      const want = clamp(gapS / C.gapFull, -1, 1) * C.max;
+      b.adj += clamp(want - b.adj, -C.rate * dt, C.rate * dt);
+    }
+  }
+
+  /** F1: decide on approach to the pit entry; the pit stop itself runs in pitStop(). */
+  private strategy() {
+    const w = this.world, p = w.pit, n = this.track.n;
+    if (!p) return;
+    for (const b of this.list) {
+      const f = b.f1;
+      if (!f || f.pit || b.finished) continue;
+      const toEntry = (p.i0 - b.idx + n) % n, lap = Math.floor(b.s / this.L);
+      if (toEntry * this.track.spacing > 900 || toEntry * this.track.spacing < 300 || this.stratLap.get(b.id) === lap) continue;
+      this.stratLap.set(b.id, lap);
+      const ahead = this.carAhead(b), behind = this.carBehind(b);
+      const wet = w.wet > 0.5;
+      const d = shouldPit({
+        lap: lap + 1, laps: this.laps, lapLen: this.L, compound: f.compound, startCompound: f.startCompound, wear: f.wear, stops: f.stops, pitWear: f.pitWear,
+        gapAhead: b.gapAhead, gapBehind: b.gapBehind, aheadPitted: !!ahead?.f1 && ahead.f1.stops > f.stops, behindJustPitted: !!behind && (this.justPitted.get(behind.id) ?? -9) >= lap - 0, wet,
+      });
+      if (d.pit) {
+        f.pit = 1;
+        f.next = chooseCompound({ lap: lap + 1, laps: this.laps, lapLen: this.L, startCompound: f.startCompound, compound: f.compound, wet });
+      }
+    }
+  }
+  private carAhead(b: Bot) { let best: Bot | null = null, bg = 1e9; for (const o of this.list) { if (o === b) continue; const gp = trackGap(b.s, o.s, this.L); if (gp > 0 && gp < bg) { bg = gp; best = o; } } return best; }
+  private carBehind(b: Bot) { let best: Bot | null = null, bg = -1e9; for (const o of this.list) { if (o === b) continue; const gp = trackGap(b.s, o.s, this.L); if (gp < 0 && gp > bg) { bg = gp; best = o; } } return best; }
+
+  /** Pit box: stop, tyres off/on, ERS full, then leave through the lane (limiter in driver.ts). */
+  private pitStop(b: Bot, dt: number) {
+    const f = b.f1, p = this.world.pit, n = this.track.n;
+    if (!f || !p || !f.pit) return;
+    if (f.pit === 1) {
+      const toBox = (f.box - b.idx + n) % n;
+      if ((toBox <= 1 || toBox > n - 3) && Math.abs(b.v) < 1.5 && this.inPitRange(b.idx)) { f.pit = 2; f.pitT = F1.pitStop + Math.random() * 0.8; b.v = 0; }
+      else if (!this.inPitRange(b.idx) && (b.idx - p.i1 + n) % n < n / 2 && (b.idx - p.i1 + n) % n > 5) f.pit = 0; // missed the entry: next lap
+    } else if (f.pit === 2) {
+      b.v = 0;
+      f.pitT -= dt;
+      if (f.pitT <= 0) {
+        f.compound = f.next;
+        f.wear = 0;
+        f.ers = 100;
+        f.stops++;
+        f.pit = 3;
+        f.lastPitLap = Math.floor(b.s / this.L);
+        this.justPitted.set(b.id, f.lastPitLap);
+        (b as AiRacer).model.tyreBands?.color.setHex(F1.tyres[f.compound].color);
+        b.damage = 0; // front wing / bodywork fixed in the stop
+        b.hp = AI.hp;
+      }
+    } else if (f.pit === 3 && !this.inPitRange(b.idx)) f.pit = 0;
+  }
+  private inPitRange(i: number) {
+    const p = this.world.pit!;
+    return p.i0 <= p.i1 ? i >= p.i0 && i <= p.i1 : i >= p.i0 || i <= p.i1;
+  }
+
+  /**
+   * Car-to-car contact. Bots: equal-mass impulse along the contact normal (restitution 0.25) plus positional separation;
+   * hard hits damage and unsettle the car. Human players keep their previous contact response (pushed clear, small
+   * speed loss) so the player's handling is untouched; the bot takes the impulse.
+   */
+  private contacts() {
+    const L = this.list, R = 2.5;
+    for (let i = 0; i < L.length; i++) {
+      const a = L[i];
+      for (let j = i + 1; j < L.length; j++) {
+        const b = L[j], dx = b.x - a.x, dz = b.z - a.z, d2 = dx * dx + dz * dz;
+        if (d2 > R * R || d2 < 1e-6) continue;
+        const d = Math.sqrt(d2), nx = dx / d, nz = dz / d, pen = (R - d) * 0.5;
+        a.x -= nx * pen; a.z -= nz * pen; b.x += nx * pen; b.z += nz * pen;
+        impulse(a, b, nx, nz);
+      }
+      for (const p of this.game.players) {
+        const dx = p.B.x - a.x, dz = p.B.z - a.z, d = Math.hypot(dx, dz);
         if (d > 0.01 && d < 2.6) {
           const push = (2.6 - d) / d;
           p.B.x += dx * push * 0.6;
           p.B.z += dz * push * 0.6;
           p.B.v *= 0.97;
-          r.v *= 0.97;
+          a.x -= dx * push * 0.4;
+          a.z -= dz * push * 0.4;
+          const pvx = Math.sin(p.B.moveH) * p.B.v, pvz = Math.cos(p.B.moveH) * p.B.v;
+          botImpulseFrom(a, pvx, pvz, -dx / d, -dz / d);
         }
       }
+    }
+  }
+
+  private render(b: AiRacer, dt: number) {
+    const g = this.game, m = b.model;
+    b.y = g.terrain.groundAt(b.x, b.z);
+    b.wheel += (b.v * dt) / m.wheelRadius;
+    m.wheels.forEach((wh) => (wh.rotation.x = b.wheel));
+    m.steer.forEach((wh) => (wh.rotation.y = b.steer * 0.45));
+    m.root.position.set(b.x, b.y, b.z);
+    m.root.rotation.set(0, b.h, b.lean);
+    m.brakeMat.emissiveIntensity = b.brk > 0.1 ? 2.6 : 0.6;
+    if (m.rearFlap) m.rearFlap.rotation.x = lerp(m.rearFlap.rotation.x, b.f1?.aeroOpen ? 0.5 : 0, Math.min(1, dt * 10));
+    if (m.frontFlap) m.frontFlap.rotation.x = lerp(m.frontFlap.rotation.x, b.f1?.aeroOpen ? 0.25 : 0, Math.min(1, dt * 10));
+  }
+
+  /** Standings extras: personality icon, F1 tyre and pit state. */
+  badge(r: AiRacer) {
+    const f = r.f1;
+    return { icon: r.prof.arch.icon, persona: r.prof.arch.name, level: r.prof.level, tyre: f ? f.compound : undefined, pit: !!f && f.pit > 0 && this.inPitRange(r.idx), stops: f?.stops ?? 0 };
   }
 
   /** Metres along the line for any world point (used for blocking/overtakes). */
   trackPos(x: number, z: number) {
     return this.track.nearest(x, z, true).i * this.track.spacing;
-  }
-
-  private sideOf(x: number, z: number) {
-    const t = this.track, i = t.nearest(x, z, true).i;
-    return (x - t.px[i]) * t.tz[i] - (z - t.pz[i]) * t.tx[i];
   }
 
   /** Is any racer just ahead of (x,z) facing h within the slipstream cone? */
@@ -172,8 +360,52 @@ export class AiRacers {
     return false;
   }
 
+  /** Off the road distance for HUD / tests. */
+  offTrack(b: Bot) {
+    return this.game.layout.roadDist(b.x, b.z) - ROAD.asphalt;
+  }
+
+  /** Re-sync after a bot was moved by someone else (tests, debug). */
+  resync(b: Bot) {
+    trackIndex(b, this.world);
+  }
+
   dispose() {
+    this.disposed = true;
     for (const r of this.list) this.game.scene.remove(r.model.root);
   }
 }
 
+/** Equal-mass impulse between two bots along normal n (a → b). */
+function impulse(a: Bot, b: Bot, nx: number, nz: number) {
+  const avx = Math.sin(a.moveH) * a.v, avz = Math.cos(a.moveH) * a.v, bvx = Math.sin(b.moveH) * b.v, bvz = Math.cos(b.moveH) * b.v;
+  const rel = (bvx - avx) * nx + (bvz - avz) * nz;
+  if (rel >= 0) return; // separating
+  const j = (-(1 + 0.25) * rel) / 2;
+  setVel(a, avx - j * nx, avz - j * nz);
+  setVel(b, bvx + j * nx, bvz + j * nz);
+  if (-rel > 6) {
+    damage(a, -rel * 0.6);
+    damage(b, -rel * 0.6);
+    a.yawV += (Math.random() - 0.5) * -rel * 0.12;
+    b.yawV += (Math.random() - 0.5) * -rel * 0.12;
+  }
+}
+
+/** A player car hits a bot: the bot takes the impulse (player unchanged). n points from the player to the bot. */
+function botImpulseFrom(b: Bot, pvx: number, pvz: number, nx: number, nz: number) {
+  const bvx = Math.sin(b.moveH) * b.v, bvz = Math.cos(b.moveH) * b.v;
+  const rel = (bvx - pvx) * nx + (bvz - pvz) * nz;
+  if (rel >= 0) return;
+  const j = -(1 + 0.25) * rel * 0.5;
+  setVel(b, bvx + j * nx, bvz + j * nz);
+  if (-rel > 6) { damage(b, -rel * 0.6); b.yawV += (Math.random() - 0.5) * -rel * 0.12; }
+}
+
+/** Back to a signed speed along a travel direction on the heading's side (as the wall response does). */
+function setVel(b: Bot, vx: number, vz: number) {
+  const sp = Math.hypot(vx, vz);
+  if (sp < 0.05) { b.v = 0; return; }
+  const d = Math.atan2(vx, vz);
+  if (Math.cos(d - b.h) >= 0) { b.moveH = d; b.v = sp; } else { b.moveH = d + Math.PI; b.v = -sp; }
+}

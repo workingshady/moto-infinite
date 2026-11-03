@@ -13,6 +13,22 @@ export interface CareerData {
   stats: Record<string, number | string[] | Record<string, number>>;
   unlocked: string[];
   achievements: Record<string, number>;
+  /** Racecraft rating per discipline (race / f1 / elim): r = rating, n = rated races, at = last update ms. Optional (older saves). */
+  racecraft?: Partial<Record<RacecraftKey, { r: number; n: number; at: number }>>;
+}
+export type RacecraftKey = 'race' | 'f1' | 'elim';
+export const RACECRAFT_KEYS: RacecraftKey[] = ['race', 'f1', 'elim'];
+
+/** Validates the racecraft block: known disciplines only, rating 0..3000, race count and time bounded. */
+export function sanitizeRacecraft(raw: unknown, now = Date.now()): NonNullable<CareerData['racecraft']> {
+  const out: NonNullable<CareerData['racecraft']> = {};
+  if (!isObj(raw)) return out;
+  for (const k of RACECRAFT_KEYS) {
+    const v = raw[k];
+    if (!isObj(v) || typeof v.r !== 'number' || !Number.isFinite(v.r)) continue;
+    out[k] = { r: Math.round(clamp(v.r, SAVE_LIMITS.rating) * 10) / 10, n: Math.floor(clamp(v.n, SAVE_LIMITS.stat)), at: Math.round(clamp(v.at, now + 864e5)) };
+  }
+  return out;
 }
 
 /** A settings-like blob plus when it was last changed on the device that wrote it (latest wins). */
@@ -52,6 +68,8 @@ export const SAVE_LIMITS = {
   taEntries: 1000,
   taBest: 3600,
   wids: 32,
+  /** Racecraft rating ceiling. */
+  rating: 3000,
 } as const;
 
 /** Stats with a tighter, physical upper bound. */
@@ -102,6 +120,7 @@ function sanitizeCareer(raw: unknown, now: number): CareerData | null {
     stats,
     unlocked: idList(raw.unlocked),
     achievements,
+    racecraft: sanitizeRacecraft(raw.racecraft, now),
   };
 }
 

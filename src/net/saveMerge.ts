@@ -11,8 +11,9 @@
 // Without a base (first sync of progress made before signing in) base = an empty career: both progressions add up.
 // Settings, prefs, touch layout, profile: the section edited most recently wins as a whole.
 // Time Attack bests: the faster time and the better medal per track x vehicle.
+// Racecraft rating: per discipline the copy rated over more races wins (ties: the newer one).
 import type { CareerData, SaveData, Section, SectionName, TaBest } from '../../shared/cloudSave';
-import { SECTIONS } from '../../shared/cloudSave';
+import { RACECRAFT_KEYS, SECTIONS } from '../../shared/cloudSave';
 
 /** Records where the higher value wins (never summed). */
 export const MAX_STATS = new Set(['topSpeed', 'bestDrift', 'longestWheelie', 'bestFlight', 'bestAir', 'bestCombo', 'bestRunLevel', 'bestMedal', 'bestNearChain']);
@@ -27,7 +28,7 @@ const isRec = (v: unknown): v is Record<string, number> => !!v && typeof v === '
 const union = (a: string[], b: string[]) => [...new Set([...a, ...b])];
 
 export function emptyCareer(): CareerData {
-  return { v: 1, level: 1, xp: 0, credits: 0, earned: 0, stats: {}, unlocked: [], achievements: {} };
+  return { v: 1, level: 1, xp: 0, credits: 0, earned: 0, stats: {}, unlocked: [], achievements: {}, racecraft: {} };
 }
 
 /** Total career XP for a level + XP pair (`need(l)` = XP from level l to l+1). */
@@ -70,6 +71,7 @@ export function mergeCareer(local: CareerData, cloud: CareerData, base: CareerDa
   for (const [id, t] of Object.entries(local.achievements)) achievements[id] = achievements[id] ? Math.min(achievements[id], t) : t;
   const lv = fromTotalXp(totalXp(cloud.level, cloud.xp, need) + Math.max(0, totalXp(local.level, local.xp, need) - totalXp(b.level, b.xp, need)), need);
   return {
+    racecraft: mergeRacecraft(local.racecraft, cloud.racecraft),
     v: Math.max(cloud.v, local.v),
     level: lv.level,
     xp: lv.xp,
@@ -79,6 +81,20 @@ export function mergeCareer(local: CareerData, cloud: CareerData, base: CareerDa
     unlocked: union(cloud.unlocked, local.unlocked),
     achievements,
   };
+}
+
+/**
+ * Racecraft rating (a skill estimate, not a counter): per discipline the copy rated over more races wins (it has seen
+ * more of the player); equal race counts → the most recently updated one. Never summed or averaged.
+ */
+export function mergeRacecraft(local: CareerData['racecraft'], cloud: CareerData['racecraft']): NonNullable<CareerData['racecraft']> {
+  const out: NonNullable<CareerData['racecraft']> = { ...(cloud ?? {}) };
+  for (const k of RACECRAFT_KEYS) {
+    const l = local?.[k], c = out[k];
+    if (!l) continue;
+    if (!c || l.n > c.n || (l.n === c.n && l.at > c.at)) out[k] = { ...l };
+  }
+  return out;
 }
 
 export function mergeTa(local: Record<string, TaBest>, cloud: Record<string, TaBest>): Record<string, TaBest> {
