@@ -305,4 +305,43 @@ export class Audio {
       },
     };
   }
+
+  /**
+   * Cold-gas thruster hiss loop (Tesla Roadster "SpaceX package"): bright high-passed noise with a little
+   * flutter. set(level 0..1.2, _, gain): level brightens the hiss, gain is the loop volume.
+   */
+  createHiss(): Engine | null {
+    const ac = this.ac;
+    if (!ac || !this.master || !this.noiseBuf) return null;
+    const src = ac.createBufferSource(), hp = ac.createBiquadFilter(), bp = ac.createBiquadFilter(), gain = ac.createGain();
+    src.buffer = this.noiseBuf;
+    src.loop = true;
+    src.playbackRate.value = 1.3;
+    hp.type = 'highpass';
+    hp.frequency.value = 1800;
+    hp.Q.value = 0.7;
+    bp.type = 'peaking';
+    bp.frequency.value = 4200;
+    bp.Q.value = 0.8;
+    bp.gain.value = 5;
+    const flut = ac.createOscillator(), flutG = ac.createGain();
+    flut.frequency.value = 17;
+    flutG.gain.value = 0;
+    flut.connect(flutG).connect(gain.gain);
+    gain.gain.value = 0;
+    src.connect(hp).connect(bp).connect(gain).connect(this.engines ?? this.master);
+    src.start(0, Math.random() * 0.9);
+    flut.start();
+    return {
+      set(level, _filter, g) {
+        const now = ac.currentTime;
+        hp.frequency.setTargetAtTime(1500 + level * 900, now, 0.05);
+        gain.gain.setTargetAtTime(g, now, g > 0 ? 0.03 : 0.12); // sharp valve open, softer close
+        flutG.gain.setTargetAtTime(g * 0.15, now, 0.05);
+      },
+      stop() {
+        try { src.stop(); flut.stop(); gain.disconnect(); } catch { /* already stopped */ }
+      },
+    };
+  }
 }

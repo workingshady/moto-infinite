@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { Basic, M, canvasTex, mesh } from './assets';
 import { PI, TAU } from '../utils/math';
 import type { VehicleKind, VehicleModelId } from '../data/vehicles';
+import { teslaModel3, teslaRoadster } from './teslaModels';
 
 export interface VehicleModel {
   kind: VehicleKind;
@@ -957,8 +958,14 @@ const BUILDERS: Record<VehicleModelId, (color: number) => VehicleModel> = {
   drift_coupe: driftCoupe, hatch, gt, muscle, rally,
   rotary, hyper, touring, trophy, roadster,
   f1_2026, f1_v10, f1_classic,
+  tesla_roadster: teslaRoadster, tesla_model3: teslaModel3,
 };
 
 export function buildVehicleModel(id: VehicleModelId, color: number): VehicleModel {
   return (BUILDERS[id] ?? BUILDERS.street)(color);
 }
+
+// Builder kit shared with model files that live next to this one (e.g. teslaModels.ts).
+// Those files may only use these inside builder functions (import cycle: not at module top level).
+export { kit, rigWith, carWheel, carDone, prism, box, cyl, sym, mirrors, winMat, lampMat, dark, carbon, chrome, rimDark, rimGrey };
+export type { Kit };

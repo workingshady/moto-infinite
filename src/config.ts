@@ -366,3 +366,34 @@ export const REPLAY = {
   speeds: [0.25, 0.5, 1, 2],
   photoMaxDist: 40, photoMinDist: 1.5, photoOrbitMax: 30, // photo camera: how far from the rider it may fly / orbit
 };
+
+/**
+ * Electric cars (data/vehicles.ts `ev`) and the Tesla Roadster's cold-gas "SpaceX package" thrusters.
+ * Thrusters replace nitro: while boost is held they add push, retro-thrust when braking (↓) and side-thruster grip;
+ * the hover hop (C, or double-tap jump) is a short, limited lift: Musk's hover/flight talk is a claim, not a spec.
+ */
+export const EV = {
+  regenMinSpeed: 3, // m/s: below this lifting off just coasts
+  brakeCharge: 0.6, // share of regenCharge also harvested while braking (blended brakes)
+  rearBiasMinSpeed: 14,
+  thrust: {
+    accel: 9, // m/s² on top of the normal boost
+    brake: 26, // m/s² of retro-thrust while braking with thrusters held
+    grip: 5, // extra rate the travel direction locks to the heading (less slide)
+    yaw: 0.35, // extra turn rate (rad/s at full steer) from the side thrusters
+    hiss: 0.1, // loop level
+    puffs: 1, // particles per nozzle per physics step (scaled by quality)
+    color: 0xf4f8ff,
+    nozzles: [[-0.62, 0.4, -2.36], [-0.3, 0.4, -2.36], [0.3, 0.4, -2.36], [0.62, 0.4, -2.36]] as [number, number, number][],
+    side: [1.0, 0.35, 1.95] as [number, number, number], // side nozzle (x mirrored), local metres
+    front: [0.7, 0.3, 2.36] as [number, number, number], // retro nozzles for thrust braking (x mirrored)
+  },
+  hop: {
+    vy: 11, // m/s launch
+    hover: 0.9, // seconds of reduced gravity after the hop
+    lift: 0.72, // share of gravity cancelled while hovering
+    cost: 30, // boost meter
+    cooldown: 1.6,
+    doubleTap: 0.3, // seconds between two jump presses
+  },
+};

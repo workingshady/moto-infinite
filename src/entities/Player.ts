@@ -12,6 +12,7 @@ import { ASSIST, BIKE, DRIFT, F1, type TyreCompound, LEVELING, CONTROL, LANDING,
 import { clamp, damp, lerp, rnd, TAU, wrapPi } from '../utils/math';
 import { buildRider, seatRider, type RiderModel } from './models';
 import { buildVehicleModel, type VehicleModel } from './vehicleModels';
+import { EvDrive } from './EvDrive';
 import { vehicleById, type VehicleDef } from '../data/vehicles';
 import { WEAPONS } from '../data/weapons';
 import { MILESTONES, TIERS, UPGRADES, type Card } from '../data/upgrades';
@@ -35,6 +36,8 @@ export class Player {
   readonly rider: RiderModel;
   readonly hud: Hud;
   readonly challenges: PlayerChallenges | null;
+  /** Electric cars: instant torque, regen, Roadster thrusters (null for everything else). */
+  readonly ev: EvDrive | null;
 
   readonly B = {
     x: 0, z: 0, y: 0, h: 0, moveH: 0, v: 0, vy: 0, lean: 0, pitch: 0, pitchV: 0, steer: 0,
@@ -102,6 +105,7 @@ export class Player {
     this.def = vehicleById(vehicle);
     this.bike = buildVehicleModel(this.def.id, color);
     this.dims.setFromObject(this.bike.root); // still at the origin, unrotated, no rider yet
+    this.ev = this.def.ev ? new EvDrive(this) : null;
     const d = this.def, st = this.stats;
     Object.assign(st, { top: d.top, accel: d.accel, grip: d.grip, hpMax: PLAYER.hpMax + d.hp });
     this.s.hp = st.hpMax;
@@ -206,7 +210,7 @@ export class Player {
       if (s.nitro <= 1) this.nitroOn = false;
       const wantN = active && (prefs.nitroToggle ? this.nitroOn : c.is('nitro')) && s.nitro > 1;
       if (wantN) {
-        if (!B.wasN) { g.audio.play('nitro'); g.audio.play('whoosh'); this.cam.shake = Math.max(this.cam.shake, 0.25); this.cam.fovKick = 8; }
+        if (!B.wasN) { if (!this.ev?.thrusters) g.audio.play('nitro'); g.audio.play('whoosh'); this.cam.shake = Math.max(this.cam.shake, 0.25); this.cam.fovKick = 8; }
         s.nitro -= BIKE.nitroBurn * dt;
         boosting = true;
       }
@@ -337,6 +341,7 @@ export class Player {
       B.lean = lerp(B.lean, 0.22, damp(dt, 4));
       B.wasN = false;
     }
+    if (this.ev) this.ev.step(dt, active, up, down, boosting, B.wasN);
     // F1: ERS harvests energy under braking; everything else regenerates nitro over time
     const regen = this.def.f1 ? (down && Math.abs(B.v) > 10 ? F1.ersRegen : F1.ersIdle) : st.nitroRegen;
     s.nitro = clamp(s.nitro + regen * dt, 0, st.nitroMax);
@@ -432,7 +437,7 @@ export class Player {
     else if (this.flame < 0) this.bike.flameMat.color.setHSL((g.time * 0.6) % 1, 1, 0.6);
     else this.bike.flameMat.color.setHex(this.flame);
     this.bike.headlight.intensity = g.env.night * 2.4;
-    if (boost > 0.1) {
+    if (boost > 0.1 && !this.ev) {
       const ex = B.x - fx * 1.7 + Math.cos(B.h) * 0.33, ez = B.z - fz * 1.7 - Math.sin(B.h) * 0.33;
       for (const col of [0x66ccff, 0x8a7dff, 0xffffff]) g.fx.emit(ex, B.y + 0.65, ez, -fx * 10 + rnd(2), rnd(1.5) + 1, -fz * 10 + rnd(2), 0.35, 0.9, 0.1, col, 1, 0, 2);
     }
@@ -1336,6 +1341,7 @@ export class Player {
   dispose() {
     this.engine?.stop();
     this.screech?.stop();
+    this.ev?.dispose();
     this.hud.dispose();
   }
 }

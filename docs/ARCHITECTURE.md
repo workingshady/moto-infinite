@@ -18,6 +18,7 @@ src/
     Input.ts             Keyboard/mouse/touch/gamepads → per-player Controller actions
     Audio.ts             WebAudio mixer (sfx / engines / music buses -> compressor) and one-shot effects
     EngineSound.ts       Per-vehicle engine: firing pulses (rpm/60 x cyl/2), gearbox, turbo, crackle, limiter, wind, rumble
+    EvVoice.ts           Electric motor voice for 'electric' engines: inverter tone, gear whine, tyre roar (no gears/crackle)
     Music.ts             Generative synthwave soundtrack on a lookahead scheduler; layers follow the action
     Events.ts            Typed event bus (challenge progress etc.)
     cameraViews.ts       Chase, far, hood, first person, cinematic, top-down
@@ -42,6 +43,8 @@ src/
     EntityManager.ts     Gems, crates, barrels, cones, power-ups, drones (scout/gunner/bomber)
     models.ts            Rider, drone, ghost, name tags
     vehicleModels.ts     15 vehicle models (5 motorcycles, 10 cars) behind one buildVehicleModel(id, colour)
+    teslaModels.ts       Tesla Roadster (2nd gen) and Model 3 Performance models (no badges), registered in vehicleModels
+    EvDrive.ts           Electric cars: instant-torque launch, regen braking -> boost meter, Track Mode rotation, Roadster cold-gas thrusters + hover hop
     assets.ts            Shared geometries and materials
   systems/
     Combat.ts            Projectiles, railgun beams, mines, bombs, explosions, PvP

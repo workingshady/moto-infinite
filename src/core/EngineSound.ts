@@ -6,9 +6,10 @@
 // Everything is band-limited (no raw saw / square), gently saturated and low-passed so sustained high
 // rpm stays clear rather than piercing.
 import { clamp, damp, lerp } from '../utils/math';
+import { EvVoice } from './EvVoice';
 
 export interface EngineProfile {
-  type: 'single' | 'twin' | 'vtwin' | 'i4' | 'i6' | 'v8' | 'v10' | 'rotary' | 'hybrid';
+  type: 'single' | 'twin' | 'vtwin' | 'i4' | 'i6' | 'v8' | 'v10' | 'rotary' | 'hybrid' | 'electric';
   cyl: number;
   idle: number; // rpm
   redline: number; // rpm
@@ -63,6 +64,8 @@ function engineOrders(p: EngineProfile): Orders {
       return [[F / 2, 0.12], [F, 1], [2 * F, 0.6], [3 * F, 0.42], [4 * F, 0.28], [5 * F, 0.18], [6 * F, 0.1], [7 * F, 0.05]];
     case 'hybrid': // small turbo engine, muffled by the turbine: clean fundamental
       return [[F / 2, 0.12], [F, 1], [1.5 * F, 0.08], [2 * F, 0.32], [3 * F, 0.1], [4 * F, 0.03]];
+    case 'electric': // single-speed motor: smooth hum, no firing pulses (whine + tyres come from EvVoice)
+      return [[1, 0.5], [2, 1], [3, 0.15], [4, 0.4], [6, 0.3], [8, 0.1], [12, 0.12]];
   }
 }
 
@@ -77,6 +80,7 @@ const VOICE: Record<EngineProfile['type'], { drive: number; body: number; cut: n
   v10: { drive: 1.0, body: 400, cut: 2.5, maxCut: 3400 },
   rotary: { drive: 1.4, body: 300, cut: 4.5, maxCut: 3000 },
   hybrid: { drive: 1.1, body: 220, cut: 3.5, maxCut: 2800 },
+  electric: { drive: 0.5, body: 500, cut: 8, maxCut: 4200 },
 };
 
 /** Gentle tanh saturation, normalised so ±1 in gives ±1 out. */
@@ -140,6 +144,7 @@ export class EngineSound {
   private rumble: AudioBufferSourceNode;
   private rumbleGain: GainNode;
   private voice: (typeof VOICE)[EngineProfile['type']];
+  private ev: EvVoice | null = null;
 
   rpm: number;
   gear = 1;
@@ -247,6 +252,7 @@ export class EngineSound {
 
     for (const o of [this.osc, this.lfo]) o.start(t);
     this.intake.start(t, Math.random() * 0.9);
+    if (p.type === 'electric') this.ev = new EvVoice(ac, this.out, dest, noise);
   }
 
   update(dt: number, s: DriveState) {
@@ -270,7 +276,7 @@ export class EngineSound {
     }
     this.rpm = lerp(this.rpm, target, damp(dt, target < this.rpm ? 6 : 9));
     // rev limiter: a soft bounce at the top of the last gear
-    const atLimit = s.throttle && this.rpm > p.redline * 0.96;
+    const atLimit = s.throttle && this.rpm > p.redline * 0.96 && !this.ev; // motors have no limiter bounce
     this.limiter = atLimit ? (this.limiter + dt * 12) % 1 : 0;
     const cut = atLimit && this.limiter < 0.35;
     const rpm = this.rpm * (cut ? 0.965 : 1);
@@ -291,9 +297,10 @@ export class EngineSound {
     this.shiftDip = Math.max(0, this.shiftDip - dt);
     this.fatigue = lerp(this.fatigue, s.throttle && r > 0.8 ? 1 : 0, damp(dt, s.throttle && r > 0.8 ? 0.25 : 0.8));
     const level = (0.55 + 0.45 * Math.min(1, r / 0.55)) * (0.5 + load * 0.5) * (cut ? 0.8 : 1) * (this.shiftDip > 0 ? 0.65 : 1) * (1 - this.fatigue * 0.25);
-    this.engineGain.gain.setTargetAtTime(0.8 * level, now, this.shiftDip > 0 ? 0.015 : k);
+    this.engineGain.gain.setTargetAtTime(0.8 * level * (this.ev ? 0.3 : 1), now, this.shiftDip > 0 ? 0.015 : k);
     this.intakeFilt.frequency.setTargetAtTime(clamp(fire * 2, 150, 1600), now, k);
-    this.intakeGain.gain.setTargetAtTime(load * 0.035 * r * r, now, k);
+    this.intakeGain.gain.setTargetAtTime(this.ev ? 0 : load * 0.035 * r * r, now, k);
+    this.ev?.update(now, r, load, s);
 
     // turbo: spools with load and rpm, blows off when you lift
     this.spool = lerp(this.spool, s.throttle && rpm > p.redline * 0.45 ? 1 : 0, damp(dt, s.throttle ? 1.8 : 6));
@@ -329,6 +336,7 @@ export class EngineSound {
     for (const n of [this.osc, this.lfo, this.intake, this.wind, this.rumble, this.whistle, this.whine]) {
       try { n?.stop(); } catch { /* already stopped */ }
     }
+    this.ev?.stop();
     this.out.disconnect();
     this.windGain.disconnect();
     this.rumbleGain.disconnect();
