@@ -337,3 +337,20 @@ export const F1 = {
   aiNames: ['M. Verstappo', 'L. Hamiltone', 'C. Leclair', 'L. Norrison', 'O. Piastro', 'G. Russo', 'F. Alonzo', 'C. Sainte', 'P. Gaslee', 'Y. Tsunami', 'A. Albone', 'E. Ocone'],
 };
 export type TyreCompound = keyof typeof F1.tyres;
+
+/** Persistent career (src/core/career.ts): credits and career XP earned across sessions. */
+export const CAREER = {
+  xpBase: 600, xpExp: 1.45, // career XP for level n → n+1 = base × n^exp
+  xpPerScore: 0.25, // career XP per in-session score point
+  creditsPerGem: 3,
+  creditsPerScore: 0.02, // trickle from every point scored
+  creditsPerDrift: 1 / 150, // per banked drift point
+  creditsPerWheelieSec: 4,
+  creditsPerKm: 6,
+  creditsPerDrone: 15,
+  raceStart: 20, // credits for taking part in a race against at least one rival
+  racePlace: [250, 150, 90], // podium credits (P1, P2, P3)
+  raceXp: [600, 350, 200], // podium career XP
+  saveEvery: 10, // seconds between autosaves while playing
+  toastTime: 4.2, // seconds an achievement toast stays up
+};

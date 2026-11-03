@@ -24,6 +24,7 @@ import { Combat } from '../systems/Combat';
 import { Race, type Standing } from '../systems/Race';
 import { RemotePlayers } from '../net/RemotePlayers';
 import { Tutorial } from '../systems/Tutorial';
+import { CareerTracker } from '../systems/CareerTracker';
 import { GEN, LEVELING, NET, PHYS, QUALITY, TRACKS, WORLD, type QualityName } from '../config';
 import { STORY } from '../data/story';
 
@@ -84,6 +85,7 @@ export class Game {
   race: Race | null = null;
   ai: AiRacers | null = null;
   tutorial: Tutorial | null = null;
+  career: CareerTracker | null = null;
   remotes: RemotePlayers | null = null;
   time = 0;
   frame = 0;
@@ -143,6 +145,7 @@ export class Game {
       if ((opts.mode === 'race' && this.layout instanceof Circuit) || (opts.mode === 'f1' && this.layout instanceof F1Track)) this.race = new Race(this, this.layout, opts.laps, opts.trackId);
       if (this.net) this.wireNet(this.net);
       if (opts.tutorial) this.tutorial = new Tutorial(this);
+      this.career = new CareerTracker(this);
     }
     addEventListener('resize', this.onResize);
     this.resize();
@@ -249,6 +252,7 @@ export class Game {
     if (!this.tutorial || this.tutorial.complete) for (const p of this.players) p.challenges?.update(dt);
     this.tutorial?.update(dt);
     this.race?.update(dt);
+    this.career?.update(dt);
     this.remotes?.update(dt);
     this.updateMusic();
     const focus = this.players.length ? this.players.map((p) => p.P) : [this.attractFocus()];
@@ -307,6 +311,7 @@ export class Game {
     this.audio.music?.setIntensity(0); // back to calm menu music
     removeEventListener('resize', this.onResize);
     this.offs.forEach((off) => off());
+    this.career?.dispose();
     this.players.forEach((p) => p.dispose());
     this.remotes?.dispose();
     this.ai?.dispose();

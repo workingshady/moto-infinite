@@ -11,13 +11,15 @@ import { VEHICLES, vehicleById, type VehicleKind } from '../data/vehicles';
 import { DRIFT_TRACKS } from '../world/DriftTrack';
 import { F1_TRACKS } from '../world/F1Track';
 import { clamp } from '../utils/math';
+import { buyVehicle, isUnlocked } from '../core/career';
+import { careerHomeHtml, careerPanelHtml, garageLockBox, sessionSummaryHtml, vehicleLockHtml } from './CareerPanel';
 
 const bar = (v: number) => `<i style="width:${Math.round(clamp(v, 0.05, 1) * 100)}%"></i>`;
-/** Garage card grid: bikes or cars, stat bars, the selected one highlighted. */
-function garageCards(sel: string, attr: string, kind: VehicleKind) {
-  return VEHICLES.filter((v) => v.kind === kind).map((v) => `
-    <button class="veh ${v.id === sel ? 'on' : ''}" data-${attr}="${v.id}">
-      <div class="veh-head"><b>${escapeHtml(v.name)}</b><span>${v.cls} · ${v.era}</span></div>
+/** Garage card grid: bikes or cars, stat bars, the selected one highlighted. Player 2 only sees unlocked ones. */
+function garageCards(sel: string, attr: string, kind: VehicleKind, ownedOnly = false) {
+  return VEHICLES.filter((v) => v.kind === kind && (!ownedOnly || isUnlocked(v.id))).map((v) => `
+    <button class="veh ${v.id === sel ? 'on' : ''} ${isUnlocked(v.id) ? '' : 'locked'}" data-${attr}="${v.id}">
+      <div class="veh-head"><b>${escapeHtml(v.name)}</b><span>${v.cls} · ${v.era}</span></div>${vehicleLockHtml(v.id)}
       <div class="stat"><span>Speed</span><div class="sbar">${bar(v.top / 46)}</div></div>
       <div class="stat"><span>Accel</span><div class="sbar">${bar(v.accel / 25)}</div></div>
       <div class="stat"><span>Handling</span><div class="sbar">${bar(v.grip / 2.3)}</div></div>
@@ -116,7 +118,7 @@ export interface MenuActions {
   saveProfile(p: Profile): void;
 }
 
-type Screen = 'garage' | 'onboard' | 'joinroom' | 'home' | 'mode' | 'online' | 'lobby' | 'settings' | 'howto' | 'pause' | 'results' | 'loading';
+type Screen = 'career' | 'garage' | 'onboard' | 'joinroom' | 'home' | 'mode' | 'online' | 'lobby' | 'settings' | 'howto' | 'pause' | 'results' | 'loading';
 interface LobbyView { code: string; link: string; players: PlayerInfo[]; settings: LobbySettings; host: boolean; you: string }
 
 const TIME_LABEL: Record<TimeOfDay, string> = { day: '☀️ Day', dawn: '🌅 Dawn', sunset: '🌇 Sunset', night: '🌙 Night', cycle: '🔄 Live cycle' };
@@ -164,6 +166,8 @@ export class Menu {
   private garageBack: Screen = 'home';
   private garageFor: 1 | 2 = 1;
   private garageKind: VehicleKind = 'bike';
+  /** Locked vehicle being looked at in the garage (the ride itself stays unchanged). */
+  private peek: string | null = null;
   private preview = new CharacterPreview();
   private lineup: LobbyShowcase | null | false = null; // created on first lobby view; false = WebGL failed
   /** Settings → keyboard tester: shows live which game keys the browser actually receives (ghosting check). */
@@ -212,7 +216,7 @@ export class Menu {
     this.root.style.display = '';
     this.screen = s;
     this.root.className = s === 'pause' || s === 'results' ? 'overlay dim' : s === 'lobby' ? 'overlay lobby-screen' : 'overlay';
-    const wide = s === 'home' || s === 'mode' || s === 'lobby' || s === 'onboard' || s === 'garage' || s === 'howto';
+    const wide = s === 'home' || s === 'mode' || s === 'lobby' || s === 'onboard' || s === 'garage' || s === 'howto' || s === 'career';
     this.root.innerHTML = `<div class="card-wrap ${wide ? 'wide' : ''} scr-${s}">${this.render(s, data)}</div>`;
     this.afterRender();
   }
@@ -250,7 +254,7 @@ export class Menu {
     const host = this.root.querySelector<HTMLElement>('#charHost');
     if (host) {
       const p2 = this.screen === 'garage' && this.garageFor === 2;
-      this.preview.setLook((p2 ? this.profile.vehicle2 : this.profile.vehicle) ?? 'street', p2 ? this.profile.color2 : this.profile.color);
+      this.preview.setLook((this.screen === 'garage' && this.peek) || ((p2 ? this.profile.vehicle2 : this.profile.vehicle) ?? 'street'), p2 ? this.profile.color2 : this.profile.color);
       this.preview.mount(host);
     }
     const lineHost = this.root.querySelector<HTMLElement>('#lineupHost');
@@ -302,7 +306,7 @@ export class Menu {
         <div class="opt"><span>Laps</span><div class="chips">${chips('laps', [1, 3, 5, 10], LAPS.includes(s.laps) ? s.laps : -1, (n) => `${n}`)}</div></div>
         ${s.session === 'race' ? `<div class="opt"><span>AI grid</span><div class="chips">${chips('ai', [0, 3, 5, 9, 15], s.ai, (n) => (n ? `${n} rivals` : 'None'))}</div></div>` : ''}
         <div class="opt"><span>Tyres</span><div class="chips">${chips('tyre', ['soft', 'medium', 'hard'] as const, s.tyre, (x) => ({ soft: '🔴 Soft (fast, short)', medium: '🟡 Medium', hard: '⚪ Hard (lasts long)' })[x])}</div></div>
-        <div class="opt"><span>Car</span><div class="chips">${(['f1_2026', 'f1_v10', 'f1_classic'] as const).map((id) => `<button class="chip ${(this.profile.f1car ?? 'f1_2026') === id ? 'on' : ''}" data-f1car="${id}">${vehicleById(id).name} · ${vehicleById(id).era}</button>`).join('')}</div></div>
+        <div class="opt"><span>Car</span><div class="chips">${(['f1_2026', 'f1_v10', 'f1_classic'] as const).map((id) => `<button class="chip ${(this.profile.f1car ?? 'f1_2026') === id ? 'on' : ''}" data-f1car="${id}" ${isUnlocked(id) ? '' : `disabled title="Unlock in the garage: career level ${vehicleById(id).unlock?.level}"`}>${isUnlocked(id) ? '' : '🔒 '}${vehicleById(id).name} · ${vehicleById(id).era}</button>`).join('')}</div></div>
         <p class="hint"><b>Keys:</b> C = DRS / straight mode in DRS zones · Space = ERS deploy (recharges under braking) · stop in the pit box for fresh tyres (80 km/h limiter). Five red lights, then lights out: moving early = +5 s.</p>` : ''}
         ${s.mode === 'drift' ? `
         <div class="opt"><span>Venue</span><div class="chips">${chips('trackId', DRIFT_TRACKS.map((t) => t.id), s.trackId, (id) => DRIFT_TRACKS.find((t) => t.id === id)!.name)}</div></div>
@@ -337,8 +341,9 @@ export class Menu {
   private render(s: Screen, data?: unknown): string {
     const P = this.profile;
     switch (s) {
+      case 'career': return careerPanelHtml();
       case 'garage': {
-        const sel = (this.garageFor === 2 ? P.vehicle2 : P.vehicle) ?? 'street', v = vehicleById(sel), k = this.garageKind;
+        const sel = (this.garageFor === 2 ? P.vehicle2 : P.vehicle) ?? 'street', v = vehicleById(this.peek ?? sel), k = this.garageKind;
         return `
         <h2>🏁 Garage${this.garageFor === 2 ? ' · Player 2' : ''}</h2>
         <div class="garage">
@@ -347,15 +352,16 @@ export class Menu {
             <h3>${escapeHtml(v.name)}</h3>
             <div class="dim small">${v.cls} · ${v.era} · ${v.spec.layout}</div>
             <p class="hint">${escapeHtml(v.desc)}</p>
+            ${garageLockBox(v.id, this.garageFor === 1)}
             <button class="chip hot" data-go="hearEngine">▶ Hear engine</button>
             <div class="spec-grid"><span>Top speed</span><b>${Math.round(v.top * 3.6)} km/h (${Math.round(v.top * 3.6 * 1.6)} with nitro)</b><span>Power</span><b>${v.spec.power}</b><span>Weight</span><b>${v.spec.weight}</b><span>Off-road</span><b>${Math.round(v.offroad * 100)}%</b><span>Wheelies</span><b>${v.wheelie ? 'Yes (C)' : 'No'}</b></div>
           </div>
           <div class="garage-list">
             <div class="tabs"><button class="chip ${k === 'bike' ? 'on' : ''}" data-gkind="bike">🏍 Motorcycles (5)</button><button class="chip ${k === 'car' ? 'on' : ''}" data-gkind="car">🏎 Cars (10)</button></div>
-            <div class="veh-grid">${garageCards(sel, 'veh', k)}</div>
+            <div class="veh-grid">${garageCards(this.peek ?? sel, 'veh', k, this.garageFor === 2)}</div>
           </div>
         </div>
-        <div class="row-buttons"><span></span><button class="btn primary" data-go="garageDone">Ride this →</button></div>`;
+        <div class="row-buttons"><span></span><button class="btn primary" data-go="garageDone">${this.peek ? `Keep ${escapeHtml(vehicleById(sel).name)} →` : 'Ride this →'}</button></div>`;
       }
       case 'onboard': {
         const sl = SLIDES[this.slide], last = this.slide === SLIDES.length - 1;
@@ -395,6 +401,7 @@ export class Menu {
               <button class="btn" data-go="online">🌐 Online room · invite friends</button>
               <button class="btn" data-go="tutorial">🎓 Tutorial & training ride</button>
             </div>
+            ${careerHomeHtml()}
             <div class="row-buttons"><button class="btn ghost" data-go="howto">Controls</button><button class="btn ghost" data-go="settings">Settings</button></div>
           </div>
           <div class="hero-right">
@@ -587,12 +594,14 @@ export class Menu {
           <button class="btn" data-go="settings">Settings</button>
           <button class="btn" data-go="howto">Controls</button>
           <button class="btn ghost" data-go="quit">Quit to menu</button>
-        </div>`;
+        </div>
+        ${sessionSummaryHtml()}`;
       case 'results': {
         const rows = data as Standing[];
         return `
         <h2>🏁 Race results</h2>
         <table class="results">${rows.map((r, i) => `<tr><td>${['🥇', '🥈', '🥉'][i] ?? i + 1}</td><td><i style="background:${hex(r.color)}"></i>${escapeHtml(r.name)}</td><td>${r.time !== null ? fmt(r.time) : 'racing…'}</td></tr>`).join('')}</table>
+        ${sessionSummaryHtml()}
         <div class="row-buttons"><button class="btn ghost" data-go="quit">Menu</button><button class="btn primary" data-go="again">Race again</button></div>`;
       }
       case 'loading':
@@ -703,7 +712,13 @@ export class Menu {
     if (d.kick) return this.a.kick(d.kick);
     if (d.f1car) { P.f1car = d.f1car; this.a.saveProfile(P); return this.show(this.screen); }
     if (d.gkind) { this.garageKind = d.gkind as VehicleKind; return this.show('garage'); }
+    if (d.buy) {
+      if (buyVehicle(d.buy) && this.garageFor === 1) { P.vehicle = d.buy; this.peek = null; this.a.saveProfile(P); }
+      return this.show('garage');
+    }
+    if (d.veh && !isUnlocked(d.veh)) { this.peek = d.veh; return this.show('garage'); }
     if (d.veh) {
+      this.peek = null;
       if (this.garageFor === 2) P.vehicle2 = d.veh;
       else P.vehicle = d.veh;
       this.a.saveProfile(P);
@@ -752,10 +767,13 @@ export class Menu {
         this.readNames();
         this.garageFor = d.go === 'garage2' ? 2 : 1;
         this.garageBack = this.screen;
+        this.peek = null;
         this.garageKind = vehicleById((this.garageFor === 2 ? P.vehicle2 : P.vehicle) ?? 'street').kind;
         return this.show('garage');
-      case 'hearEngine': return this.a.hearEngine((this.garageFor === 2 ? P.vehicle2 : P.vehicle) ?? 'street');
+      case 'hearEngine': return this.a.hearEngine(this.peek ?? (this.garageFor === 2 ? P.vehicle2 : P.vehicle) ?? 'street');
+      case 'career': this.readNames(); return this.show('career');
       case 'garageDone':
+        this.peek = null;
         if (this.garageBack === 'lobby' && this.lobby) {
           const me = this.lobby.players.find((p) => p.id === this.lobby!.you);
           this.a.updateProfile(me?.name ?? P.name, me?.color ?? P.color, P.vehicle);
