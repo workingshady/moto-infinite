@@ -33,7 +33,9 @@ export class AiRacers {
   readonly list: AiRacer[] = [];
 
   constructor(private game: Game, private track: TrackLine, count: number, f1: boolean, private halfWidth: number, private laps: number, firstSlot: number) {
-    const pool = f1 ? VEHICLES.filter((v) => v.f1 && v.id === game.players[0]?.def.id) : VEHICLES.filter((v) => !v.f1 && v.kind === (game.players[0]?.def.kind ?? 'car'));
+    const me = game.players[0]?.def, kindPool = VEHICLES.filter((v) => !v.f1 && v.kind === (me?.kind ?? 'car'));
+    // same class as the player first (a muscle car races muscle cars), then the rest of its kind
+    const pool = f1 ? VEHICLES.filter((v) => v.f1 && v.id === me?.id) : [...kindPool.filter((v) => v.cls === me?.cls), ...kindPool.filter((v) => v.cls !== me?.cls)];
     const fallback = VEHICLES.filter((v) => (f1 ? !!v.f1 : !v.f1));
     for (let i = 0; i < count; i++) {
       const def = (pool.length ? pool : fallback)[i % (pool.length || fallback.length)];

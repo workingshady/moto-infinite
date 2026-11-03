@@ -1,13 +1,16 @@
 // Garage: every rideable vehicle with its handling. Names are fictional, classes/eras mirror real-world types.
 // Speeds are game m/s (HUD shows them x3.6 as km/h, before nitro). `engine` drives the procedural engine sound.
 import type { EngineProfile } from '../core/EngineSound';
+import { EXTRA_VEHICLES, type ExtraVehicleId } from './vehiclesExtra';
 
 export type VehicleKind = 'bike' | 'car';
-export type VehicleModelId =
+export type CoreVehicleId =
   | 'street' | 'superbike' | 'dirt' | 'cafe' | 'cruiser'
   | 'drift_coupe' | 'hatch' | 'gt' | 'muscle' | 'rally'
   | 'rotary' | 'hyper' | 'touring' | 'trophy' | 'roadster'
   | 'f1_2026' | 'f1_v10' | 'f1_classic';
+/** Core garage + the expansion pack in vehiclesExtra.ts. */
+export type VehicleModelId = CoreVehicleId | ExtraVehicleId;
 
 export interface VehicleDef {
   id: VehicleModelId;
@@ -115,6 +118,7 @@ export const VEHICLES: VehicleDef[] = [
     engine: { type: 'v8', cyl: 8, idle: 3000, redline: 11000, gears: 5, crackle: 0.8, lope: 0.1 },
     f1: { mass: 650, power: 370, ers: 0, cda: 1.1, cla: 1.6, mu: 1.45, muLong: 0.85, muBrake: 1.5, aero: 'none' },
     spec: { power: '~480 hp (3.0 V8)', weight: '575 kg', layout: 'MR · 3.0 V8' } },
+  ...EXTRA_VEHICLES, // 45 more (one per class era/archetype), see vehiclesExtra.ts
 ];
 
 export const vehicleById = (id: string) => VEHICLES.find((v) => v.id === id) ?? VEHICLES[0];

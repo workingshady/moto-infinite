@@ -7,24 +7,10 @@ import { fmt } from '../systems/Race';
 import { escapeHtml, hex } from '../utils/math';
 import { STORY } from '../data/story';
 import { CharacterPreview, LobbyShowcase, drawMapPreview } from './Preview';
-import { VEHICLES, vehicleById, type VehicleKind } from '../data/vehicles';
+import { VEHICLES, vehicleById } from '../data/vehicles';
+import { garagePicker, isGarageSort, keepGarageScroll, tabFor, type GarageSort } from './garagePicker';
 import { DRIFT_TRACKS } from '../world/DriftTrack';
 import { F1_TRACKS } from '../world/F1Track';
-import { clamp } from '../utils/math';
-
-const bar = (v: number) => `<i style="width:${Math.round(clamp(v, 0.05, 1) * 100)}%"></i>`;
-/** Garage card grid: bikes or cars, stat bars, the selected one highlighted. */
-function garageCards(sel: string, attr: string, kind: VehicleKind) {
-  return VEHICLES.filter((v) => v.kind === kind).map((v) => `
-    <button class="veh ${v.id === sel ? 'on' : ''}" data-${attr}="${v.id}">
-      <div class="veh-head"><b>${escapeHtml(v.name)}</b><span>${v.cls} · ${v.era}</span></div>
-      <div class="stat"><span>Speed</span><div class="sbar">${bar(v.top / 46)}</div></div>
-      <div class="stat"><span>Accel</span><div class="sbar">${bar(v.accel / 25)}</div></div>
-      <div class="stat"><span>Handling</span><div class="sbar">${bar(v.grip / 2.3)}</div></div>
-      <div class="stat"><span>Drift</span><div class="sbar drift">${bar(1 - v.traction / 13)}</div></div>
-      <div class="veh-spec">${v.spec.power} · ${v.spec.weight} · ${v.spec.layout}</div>
-    </button>`).join('');
-}
 
 import { prefs, savePrefs } from '../core/prefs';
 import { CAM_LABEL, CAM_VIEWS, isCamView } from '../core/cameraViews';
@@ -163,7 +149,8 @@ export class Menu {
   private joinCode = '';
   private garageBack: Screen = 'home';
   private garageFor: 1 | 2 = 1;
-  private garageKind: VehicleKind = 'bike';
+  private garageTab = 'bike';
+  private garageSort: GarageSort = 'default';
   private preview = new CharacterPreview();
   private lineup: LobbyShowcase | null | false = null; // created on first lobby view; false = WebGL failed
   /** Settings → keyboard tester: shows live which game keys the browser actually receives (ghosting check). */
@@ -302,7 +289,7 @@ export class Menu {
         <div class="opt"><span>Laps</span><div class="chips">${chips('laps', [1, 3, 5, 10], LAPS.includes(s.laps) ? s.laps : -1, (n) => `${n}`)}</div></div>
         ${s.session === 'race' ? `<div class="opt"><span>AI grid</span><div class="chips">${chips('ai', [0, 3, 5, 9, 15], s.ai, (n) => (n ? `${n} rivals` : 'None'))}</div></div>` : ''}
         <div class="opt"><span>Tyres</span><div class="chips">${chips('tyre', ['soft', 'medium', 'hard'] as const, s.tyre, (x) => ({ soft: '🔴 Soft (fast, short)', medium: '🟡 Medium', hard: '⚪ Hard (lasts long)' })[x])}</div></div>
-        <div class="opt"><span>Car</span><div class="chips">${(['f1_2026', 'f1_v10', 'f1_classic'] as const).map((id) => `<button class="chip ${(this.profile.f1car ?? 'f1_2026') === id ? 'on' : ''}" data-f1car="${id}">${vehicleById(id).name} · ${vehicleById(id).era}</button>`).join('')}</div></div>
+        <div class="opt"><span>Car</span><div class="chips">${VEHICLES.filter((x) => x.f1).map((x) => x.id).map((id) => `<button class="chip ${(this.profile.f1car ?? 'f1_2026') === id ? 'on' : ''}" data-f1car="${id}">${vehicleById(id).name} · ${vehicleById(id).era}</button>`).join('')}</div></div>
         <p class="hint"><b>Keys:</b> C = DRS / straight mode in DRS zones · Space = ERS deploy (recharges under braking) · stop in the pit box for fresh tyres (80 km/h limiter). Five red lights, then lights out: moving early = +5 s.</p>` : ''}
         ${s.mode === 'drift' ? `
         <div class="opt"><span>Venue</span><div class="chips">${chips('trackId', DRIFT_TRACKS.map((t) => t.id), s.trackId, (id) => DRIFT_TRACKS.find((t) => t.id === id)!.name)}</div></div>
@@ -338,7 +325,7 @@ export class Menu {
     const P = this.profile;
     switch (s) {
       case 'garage': {
-        const sel = (this.garageFor === 2 ? P.vehicle2 : P.vehicle) ?? 'street', v = vehicleById(sel), k = this.garageKind;
+        const sel = (this.garageFor === 2 ? P.vehicle2 : P.vehicle) ?? 'street', v = vehicleById(sel);
         return `
         <h2>🏁 Garage${this.garageFor === 2 ? ' · Player 2' : ''}</h2>
         <div class="garage">
@@ -351,8 +338,7 @@ export class Menu {
             <div class="spec-grid"><span>Top speed</span><b>${Math.round(v.top * 3.6)} km/h (${Math.round(v.top * 3.6 * 1.6)} with nitro)</b><span>Power</span><b>${v.spec.power}</b><span>Weight</span><b>${v.spec.weight}</b><span>Off-road</span><b>${Math.round(v.offroad * 100)}%</b><span>Wheelies</span><b>${v.wheelie ? 'Yes (C)' : 'No'}</b></div>
           </div>
           <div class="garage-list">
-            <div class="tabs"><button class="chip ${k === 'bike' ? 'on' : ''}" data-gkind="bike">🏍 Motorcycles (5)</button><button class="chip ${k === 'car' ? 'on' : ''}" data-gkind="car">🏎 Cars (10)</button></div>
-            <div class="veh-grid">${garageCards(sel, 'veh', k)}</div>
+            ${garagePicker(sel, this.garageTab, this.garageSort)}
           </div>
         </div>
         <div class="row-buttons"><span></span><button class="btn primary" data-go="garageDone">Ride this →</button></div>`;
@@ -388,7 +374,7 @@ export class Menu {
               <label>Rider name <input id="pname" maxlength="16" value="${escapeHtml(P.name)}"></label>
               <div class="dots">${colorDots(P.color, 'color')}</div>
             </div>
-            <div class="ride-line">Your ride: <b>${escapeHtml(vehicleById(P.vehicle ?? 'street').name)}</b> <span>${vehicleById(P.vehicle ?? 'street').cls}</span> <button class="chip hot" data-go="garage">🏁 Garage · 15 vehicles</button></div>
+            <div class="ride-line">Your ride: <b>${escapeHtml(vehicleById(P.vehicle ?? 'street').name)}</b> <span>${vehicleById(P.vehicle ?? 'street').cls}</span> <button class="chip hot" data-go="garage">🏁 Garage · ${VEHICLES.length} vehicles</button></div>
             <div class="big-buttons">
               <button class="btn primary" data-go="solo">▶ Play solo</button>
               <button class="btn" data-go="split">👥 2 players · split screen</button>
@@ -702,12 +688,13 @@ export class Menu {
     }
     if (d.kick) return this.a.kick(d.kick);
     if (d.f1car) { P.f1car = d.f1car; this.a.saveProfile(P); return this.show(this.screen); }
-    if (d.gkind) { this.garageKind = d.gkind as VehicleKind; return this.show('garage'); }
+    if (d.gtab) { this.garageTab = d.gtab; return this.show('garage'); }
+    if (d.gsort && isGarageSort(d.gsort)) { this.garageSort = d.gsort; return keepGarageScroll(this.root, () => this.show('garage')); }
     if (d.veh) {
       if (this.garageFor === 2) P.vehicle2 = d.veh;
       else P.vehicle = d.veh;
       this.a.saveProfile(P);
-      return this.show('garage');
+      return keepGarageScroll(this.root, () => this.show('garage'));
     }
     if (d.lcolor) {
       const name = this.root.querySelector<HTMLInputElement>('#lname')?.value.trim().slice(0, 16) || 'Rider';
@@ -752,7 +739,7 @@ export class Menu {
         this.readNames();
         this.garageFor = d.go === 'garage2' ? 2 : 1;
         this.garageBack = this.screen;
-        this.garageKind = vehicleById((this.garageFor === 2 ? P.vehicle2 : P.vehicle) ?? 'street').kind;
+        this.garageTab = tabFor(vehicleById((this.garageFor === 2 ? P.vehicle2 : P.vehicle) ?? 'street'));
         return this.show('garage');
       case 'hearEngine': return this.a.hearEngine((this.garageFor === 2 ? P.vehicle2 : P.vehicle) ?? 'street');
       case 'garageDone':

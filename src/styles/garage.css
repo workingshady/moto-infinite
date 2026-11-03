@@ -1,0 +1,18 @@
+/* Garage picker (src/ui/garagePicker.ts): class tabs, sort chips, card grid. */
+.garage-list { min-width: 0; }
+.gp-tabs { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 6px; scrollbar-width: thin; -webkit-overflow-scrolling: touch; }
+.gp-tabs .chip { flex: none; white-space: nowrap; }
+.gp-tabs .chip small { opacity: 0.65; font-weight: 700; margin-left: 2px; }
+.gp-sort { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin-bottom: 8px; }
+.gp-sort > span { font-size: 11px; color: var(--dim); margin-right: 2px; text-transform: uppercase; letter-spacing: 0.06em; }
+.gp-sort .chip { padding: 3px 9px; font-size: 12px; }
+@media (max-width: 820px) {
+  .gp-sort { flex-wrap: nowrap; overflow-x: auto; }
+  .gp-sort .chip { flex: none; }
+  .garage .veh-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); max-height: 52vh; }
+}
+@media (max-width: 420px) {
+  .garage .veh-grid { grid-template-columns: 1fr 1fr; gap: 6px; }
+  .garage .veh { padding: 8px; }
+  .garage .veh-spec { display: none; }
+}

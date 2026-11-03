@@ -3,7 +3,8 @@
 import * as THREE from 'three';
 import { Basic, M, canvasTex, mesh } from './assets';
 import { PI, TAU } from '../utils/math';
-import type { VehicleKind, VehicleModelId } from '../data/vehicles';
+import type { CoreVehicleId, VehicleKind, VehicleModelId } from '../data/vehicles';
+import { SPEC_BUILDERS } from './vehicleBuilders';
 
 export interface VehicleModel {
   kind: VehicleKind;
@@ -952,7 +953,7 @@ function f1_classic(color: number) {
   return f1Done(k, rig, band, [0.22, 0.48, -2.3, 0.07], [0, 0.82, 0.2], {}, [-0.44, 0]);
 }
 
-const BUILDERS: Record<VehicleModelId, (color: number) => VehicleModel> = {
+const BUILDERS: Record<CoreVehicleId, (color: number) => VehicleModel> = {
   street, superbike, dirt, cafe, cruiser,
   drift_coupe: driftCoupe, hatch, gt, muscle, rally,
   rotary, hyper, touring, trophy, roadster,
@@ -960,5 +961,15 @@ const BUILDERS: Record<VehicleModelId, (color: number) => VehicleModel> = {
 };
 
 export function buildVehicleModel(id: VehicleModelId, color: number): VehicleModel {
-  return (BUILDERS[id] ?? BUILDERS.street)(color);
+  const extra = SPEC_BUILDERS[id];
+  if (extra) return extra(color);
+  return (BUILDERS[id as keyof typeof BUILDERS] ?? BUILDERS.street)(color);
 }
+
+/** Builder kit shared with the spec-driven builders in vehicleBuilders.ts (used at call time only). */
+export const parts = {
+  memo, box, cyl, sph, tor, cone, prism, knobTyre, star, numMat, kit, sym, finish, bikeWheel, bikeRig, bikeDone, bars,
+  carWheel, rigWith, carRig, buildDriver, carDone, cabin, mirrors, arch, f1Wheel, flap, f1Driver, f1Done, bandMat,
+  mat: { tyre, chrome, carbon, dark, white, engineMat, leather, visor, suit, lampMat, winMat, rimGold, rimGrey, rimDark, redNut, spring, cage, wireMat, titanium },
+};
+export type { Kit, Rig, CarRim, BikeRim, F1Wheel };
