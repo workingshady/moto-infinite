@@ -9,6 +9,7 @@ export default tseslint.config(
   { files: ['src/**'], languageOptions: { globals: globals.browser } },
   { files: ['worker/**'], languageOptions: { globals: globals.serviceworker } },
   { files: ['*.config.*'], languageOptions: { globals: globals.node } },
+  { files: ['scripts/**'], ignores: ['scripts/sw.template.js'], languageOptions: { globals: globals.node } },
   {
     // Legacy single-file game: only catch real breakage (undeclared vars break in strict ES modules).
     files: ['src/legacy/**'],
