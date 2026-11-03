@@ -6,6 +6,7 @@
 index.html               Shell only; everything is built by src/main.ts
 public/                  Static files served as-is (favicon)
 shared/protocol.ts       Online message types + lobby settings, used by client AND worker
+shared/leaderboard.ts    Daily/weekly seed challenges, board ids + plausibility rules, leaderboard API shapes
 src/
   main.ts                Entry: new App()
   App.ts                 Flow: menu ⇄ game sessions ⇄ online rooms
@@ -40,6 +41,7 @@ src/
     Race.ts              Countdown, checkpoints, laps, positions, best-lap ghost
     Challenges.ts        Timed challenges per player with streaks
     Tutorial.ts          Guided training ride checklist
+    LbSession.ts         Posts solo laps (+ghost) and timed drift runs to the leaderboards
     AiRacers.ts          Computer opponents: curvature/grip speed profile with braking pass, racing line, overtakes
     Particles.ts         GPU particle pools
     Effects.ts           Shockwave rings, debris, beams, skid marks (pooled/instanced)
@@ -52,17 +54,20 @@ src/
   net/
     NetClient.ts         WebSocket to a room
     RemotePlayers.ts     Other online riders, interpolated
+    leaderboard.ts       /api/lb fetch wrapper (offline-safe, local bests, retry queue, anonymous player id)
   ui/
     Menu.ts              Landing page, setup panel (solo/split/lobby share it), settings, pause, results
     Preview.ts           3D character preview + top-down map preview
     Hud.ts               Per-player HUD (stats, minimap, reticle, story, race panel)
     Touch.ts             Phone/tablet buttons
+    LeaderboardPanel.ts  Daily challenge card, leaderboard overlay (daily/weekly/all-time), run result card
     Gauges.ts            Canvas speedometer, tachometer, nitro ring
   styles/main.css
   utils/                 math helpers, seeded noise
 worker/
   index.ts               Cloudflare Worker: /api/health, /api/room/:code
   Room.ts                Durable Object per room (WebSocket Hibernation): lobby + relay
+  Leaderboard.ts         SQLite Durable Object per board: best per player, ranks, top ghosts, rate limits, sanity checks
 ```
 
 ## Rules that keep it easy to change
@@ -87,4 +92,4 @@ worker/
 
 ## Hosting
 
-One Cloudflare Worker (`wrangler.jsonc`): static build from the edge, `/api/*` to Worker code, one Durable Object (`Room`) per room code.
+One Cloudflare Worker (`wrangler.jsonc`): static build from the edge, `/api/*` to Worker code, one Durable Object (`Room`) per room code, one (`Leaderboard`, migration v2) per leaderboard board id (`/api/lb/top|ghost|submit`).

@@ -31,6 +31,7 @@ function garageCards(sel: string, attr: string, kind: VehicleKind, ownedOnly = f
 
 import { prefs, savePrefs } from '../core/prefs';
 import { CAM_LABEL, CAM_VIEWS, isCamView } from '../core/cameraViews';
+import { mountLeaderboardHosts } from './LeaderboardPanel';
 
 const K = (k: string) => `<kbd class="key">${k}</kbd>`;
 /** Keys shown by the Settings keyboard tester. */
@@ -252,6 +253,7 @@ export class Menu {
 
   private afterRender() {
     this.paintKeyTest();
+    mountLeaderboardHosts(this.root);
     const host = this.root.querySelector<HTMLElement>('#charHost');
     if (host) {
       const p2 = this.screen === 'garage' && this.garageFor === 2;
@@ -406,6 +408,7 @@ export class Menu {
             </div>
             ${careerHomeHtml()}
             <div class="row-buttons"><button class="btn ghost" data-go="howto">Controls</button><button class="btn ghost" data-go="settings">Settings</button></div>
+            <div id="lbDaily"></div>
           </div>
           <div class="hero-right">
             <div id="charHost" class="char-host"></div>
@@ -607,6 +610,7 @@ export class Menu {
         <h2>🏁 Race results</h2>
         <table class="results">${rows.map((r, i) => `<tr><td>${['🥇', '🥈', '🥉'][i] ?? i + 1}</td><td><i style="background:${hex(r.color)}"></i>${escapeHtml(r.name)}</td><td>${r.note ? escapeHtml(r.note) : r.time !== null ? fmt(r.time) : 'racing…'}</td></tr>`).join('')}</table>
         ${sessionSummaryHtml()}
+        <div id="lbResult"></div>
         <div class="row-buttons"><button class="btn ghost" data-go="quit">Menu</button><button class="btn primary" data-go="again">Race again</button></div>`;
       }
       case 'loading':

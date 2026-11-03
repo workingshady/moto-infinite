@@ -61,10 +61,14 @@ export interface SessionOptions {
   /** Race format and open-world traffic (src/modes). */
   variant?: RaceVariant;
   traffic?: number;
+  /** Ghost lap to race instead of your own best (leaderboard "race the #1 ghost"). */
+  ghost?: { time: number; s: number[] };
 }
 
 export interface GameHooks {
   onRaceResults(rows: Standing[]): void;
+  /** A recorded flying lap of the solo player (time + ghost samples), for the leaderboards. */
+  onLap?(time: number, samples: number[]): void;
 }
 
 export interface GameEvents {

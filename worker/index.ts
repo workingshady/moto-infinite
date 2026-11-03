@@ -1,7 +1,9 @@
 // Cloudflare Worker: serves /api/* routes. Static game files are served by the assets layer.
 import { ROOM_CODE_RE } from '../shared/protocol';
+import { handleLeaderboard } from './Leaderboard';
 
 export { Room } from './Room';
+export { Leaderboard } from './Leaderboard';
 
 export default {
   async fetch(request, env) {
@@ -10,6 +12,8 @@ export default {
     if (url.pathname === '/api/health') {
       return Response.json({ ok: true, version: env.APP_VERSION ?? 'dev' });
     }
+
+    if (url.pathname.startsWith('/api/lb/')) return handleLeaderboard(request, env, url);
 
     // /api/room/ABCDE -> WebSocket into that room's Durable Object
     const m = url.pathname.match(/^\/api\/room\/([A-Za-z0-9]+)$/);

@@ -4,11 +4,12 @@
 interface __BaseEnv_Env {
 	APP_VERSION: string;
 	ROOMS: DurableObjectNamespace<import("./worker/index").Room>;
+	LEADERBOARDS: DurableObjectNamespace<import("./worker/index").Leaderboard>;
 }
 declare namespace Cloudflare {
 	interface GlobalProps {
 		mainModule: typeof import("./worker/index");
-		durableNamespaces: "Room";
+		durableNamespaces: "Room" | "Leaderboard";
 	}
 	interface Env extends __BaseEnv_Env {}
 }
