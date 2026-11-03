@@ -145,13 +145,30 @@ export function drawMapPreview(canvas: HTMLCanvasElement, s: LobbySettings): Map
   ctx.putImageData(img, 0, 0);
   const toC = (x: number, z: number): [number, number] => [((x - cx) / span + 0.5) * W, ((z - cz) / span + 0.5) * H];
   ctx.lineCap = ctx.lineJoin = 'round';
-  if (layout instanceof Circuit || layout instanceof DriftTrack) {
+  if (layout instanceof Circuit || layout instanceof DriftTrack || layout instanceof F1Track) {
     ctx.strokeStyle = 'rgba(0,0,0,.55)';
     ctx.lineWidth = 7;
     layout.drawRoads(ctx, toC);
     ctx.strokeStyle = '#e8e8e8';
     ctx.lineWidth = 4;
     layout.drawRoads(ctx, toC);
+    if (layout instanceof F1Track) {
+      // DRS / straight-mode zones in green, the pit lane in yellow beside the main straight
+      const seg = (i0: number, i1: number, off: number) => {
+        ctx.beginPath();
+        for (let k = 0, n = (i1 - i0 + layout.n) % layout.n; k <= n; k += 3) {
+          const i = (i0 + k) % layout.n, [a, b] = toC(layout.px[i] + layout.tz[i] * off, layout.pz[i] - layout.tx[i] * off);
+          if (k) ctx.lineTo(a, b); else ctx.moveTo(a, b);
+        }
+        ctx.stroke();
+      };
+      ctx.strokeStyle = '#39e07a';
+      ctx.lineWidth = 3;
+      for (const z of layout.drsZones) seg(z.i0, z.i1, 0);
+      ctx.strokeStyle = '#ffd23f';
+      ctx.lineWidth = 2;
+      seg(layout.pit.i0, layout.pit.i1, layout.pit.side * (layout.halfWidth + 12));
+    }
     for (let c = 0; c < RACE.checkpoints; c++) {
       const i = Math.round((c / RACE.checkpoints) * layout.n) % layout.n, [a, b] = toC(layout.px[i], layout.pz[i]);
       ctx.fillStyle = c === 0 ? '#ffd23f' : '#3cc8ff';

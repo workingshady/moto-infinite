@@ -5,6 +5,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import { DEFAULT_GEN, DEFAULT_SETTINGS, FIXED_WEATHERS, GEN_MAX, MAX_PLAYERS, THEMES, TIMES, WEATHERS, type ChatLine, type ClientMsg, type LobbySettings, type NetState, type Phase, type PlayerInfo, type ServerMsg, type Vec3 } from '../shared/protocol';
 import { Bucket, CHAT, NET_LIMITS, QUICK_CHAT, cleanChat } from '../shared/social';
+import { roomTrackId } from '../shared/leaderboard';
 
 interface Attachment {
   id: string; name: string; color: number; vehicle?: string; joined: number; hello: boolean; ready?: boolean;
@@ -310,7 +311,7 @@ export class Room extends DurableObject<Env> {
         if (!s || typeof s !== 'object') return;
         this.settings = {
           mode: s.mode === 'race' || s.mode === 'drift' || s.mode === 'f1' ? s.mode : 'open',
-          trackId: clean(s.trackId).toLowerCase(),
+          trackId: roomTrackId(s.mode, clean(s.trackId).toLowerCase()),
           laps: Math.max(1, Math.min(50, Math.round(Number(s.laps) || 3))),
           pvp: !!s.pvp,
           seed: Math.floor(Number(s.seed) || 1),

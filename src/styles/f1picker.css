@@ -1,0 +1,26 @@
+/* F1 circuit picker (src/ui/f1Picker.ts): difficulty filter, sort chips, scrollable card row. */
+/* width 0 + min-width 100%: the long card row must not widen the setup panel (it scrolls inside instead) */
+.f1pick { width: 0; min-width: 100%; margin: 8px 0 4px; }
+.f1p-bar { display: flex; align-items: center; gap: 5px; margin-bottom: 6px; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.f1p-bar > span { flex: none; font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.06em; margin-right: 2px; min-width: 34px; }
+.f1p-bar .chip { flex: none; white-space: nowrap; padding: 4px 10px; font-size: 12px; }
+.f1p-bar .chip small { opacity: 0.65; font-weight: 700; margin-left: 2px; }
+.f1p-row { display: flex; gap: 8px; overflow-x: auto; padding: 2px 2px 8px; scroll-snap-type: x proximity; scrollbar-width: thin; -webkit-overflow-scrolling: touch; }
+.f1c {
+  flex: none; width: 150px; min-height: 44px; scroll-snap-align: start; display: flex; flex-direction: column; align-items: flex-start; gap: 3px;
+  padding: 7px 8px 8px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.14); background: rgba(255, 255, 255, 0.05); color: inherit; text-align: left; cursor: pointer;
+}
+.f1c:hover { border-color: rgba(255, 255, 255, 0.35); }
+.f1c.on { border-color: var(--accent2); background: rgba(60, 200, 255, 0.14); box-shadow: 0 0 0 1px var(--accent2) inset; }
+.f1c canvas { width: 132px; height: 76px; border-radius: 8px; background: rgba(0, 0, 0, 0.28); align-self: center; }
+.f1c b { font-size: 13px; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.f1c-meta { display: flex; gap: 6px; flex-wrap: wrap; font-size: 11px; color: var(--dim); }
+.f1c-meta i { font-style: normal; }
+.f1c.d-easy .f1c-diff { color: #6be08a; }
+.f1c.d-medium .f1c-diff { color: #ffd23f; }
+.f1c.d-hard .f1c-diff { color: #ff7a6b; }
+.f1c-fic { padding: 0 5px; border-radius: 6px; background: rgba(255, 122, 217, 0.22); color: #ffb3ea; }
+@media (max-width: 420px) {
+  .f1c { width: 128px; padding: 6px; }
+  .f1c canvas { width: 112px; height: 64px; }
+}

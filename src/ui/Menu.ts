@@ -9,6 +9,7 @@ import { STORY } from '../data/story';
 import { CharacterPreview, LobbyShowcase, drawMapPreview } from './Preview';
 import { VEHICLES, vehicleById } from '../data/vehicles';
 import { garagePicker, isGarageSort, keepGarageScroll, tabFor, type GarageSort } from './garagePicker';
+import { f1InfoHtml, f1PickerHtml, isF1Filter, isF1Sort, paintF1Picker, type F1Filter, type F1Sort } from './f1Picker';
 import { DRIFT_TRACKS } from '../world/DriftTrack';
 import { F1_TRACKS } from '../world/F1Track';
 import { buyVehicle, isUnlocked } from '../core/career';
@@ -164,6 +165,8 @@ export class Menu {
   private garageFor: 1 | 2 = 1;
   private garageTab = 'bike';
   private garageSort: GarageSort = 'default';
+  private f1Filter: F1Filter = 'all';
+  private f1Sort: F1Sort = 'calendar';
   /** Locked vehicle being looked at in the garage (the ride itself stays unchanged). */
   private peek: string | null = null;
   private preview = new CharacterPreview();
@@ -272,6 +275,7 @@ export class Menu {
         lineHost.classList.add('no3d');
       }
     }
+    paintF1Picker(this.root);
     const map = this.root.querySelector<HTMLCanvasElement>('#mapCanvas');
     if (map) {
       const s = this.screen === 'lobby' && this.lobby ? this.lobby.settings : this.setup;
@@ -297,12 +301,12 @@ export class Menu {
         <div class="modes">
           <button class="mode ${s.mode === 'open' ? 'on' : ''}" data-opt="mode" data-val="open"><b>🌄 Open world</b><span>Endless roads, story chapters, drones, challenges, level-ups</span></button>
           <button class="mode ${s.mode === 'race' ? 'on' : ''}" data-opt="mode" data-val="race"><b>🏁 Circuit race</b><span>Closed loop, checkpoint gates, laps, positions, best-lap ghost</span></button>
-          <button class="mode ${s.mode === 'f1' ? 'on' : ''}" data-opt="mode" data-val="f1"><b>🏎 Formula 1</b><span>Real circuits: Monza, Silverstone, Spa, Monaco, Suzuka, Bahrain. Downforce, DRS, tyres, pit stops, AI grid</span></button>
+          <button class="mode ${s.mode === 'f1' ? 'on' : ''}" data-opt="mode" data-val="f1"><b>🏎 Formula 1</b><span>${F1_TRACKS.length} circuits: Monza, Spa, Monaco, Suzuka, Interlagos, COTA, Baku, Las Vegas and more, plus a rookie track. Downforce, DRS, tyres, pit stops, AI grid</span></button>
           <button class="mode ${s.mode === 'drift' ? 'on' : ''}" data-opt="mode" data-val="drift"><b>🌀 Drift</b><span>8 venues: port, mountain pass, skidpad, gymkhana, airfield, harbor, car park, street. Score angle × speed, chain combos</span></button>
         </div>
         ${s.mode === 'f1' ? `
-        <div class="opt"><span>Circuit</span><div class="chips">${chips('trackId', F1_TRACKS.map((t) => t.id), s.trackId, (id) => { const t = F1_TRACKS.find((x) => x.id === id)!; return `${t.name}`; })}</div></div>
-        <p class="hint">${escapeHtml(F1_TRACKS.find((t) => t.id === s.trackId)?.blurb ?? '')} · ${F1_TRACKS.find((t) => t.id === s.trackId)?.lengthKm ?? ''} km · real layout</p>
+        <div class="opt"><span>Circuit</span></div>${f1PickerHtml(s.trackId, this.f1Filter, this.f1Sort)}
+        <p class="hint">${f1InfoHtml(s.trackId)}</p>
         <div class="opt"><span>Session</span><div class="chips">${chips('session', ['race', 'quali'] as const, s.session, (x) => (x === 'race' ? '🏁 Grand Prix' : '⏱ Time trial'))}</div></div>
         <div class="opt"><span>Laps</span><div class="chips">${chips('laps', [1, 3, 5, 10], LAPS.includes(s.laps) ? s.laps : -1, (n) => `${n}`)}</div></div>
         ${s.session === 'race' ? `<div class="opt"><span>AI grid</span><div class="chips">${chips('ai', [0, 3, 5, 9, 15], s.ai, (n) => (n ? `${n} rivals` : 'None'))}</div></div>` : ''}
@@ -725,6 +729,8 @@ export class Menu {
     }
     if (d.kick) return this.a.kick(d.kick);
     if (d.f1car) { P.f1car = d.f1car; this.a.saveProfile(P); return this.show(this.screen); }
+    if (d.f1f && isF1Filter(d.f1f)) { this.f1Filter = d.f1f; return this.show(this.screen); }
+    if (d.f1s && isF1Sort(d.f1s)) { this.f1Sort = d.f1s; return this.show(this.screen); }
     if (d.gtab) { this.garageTab = d.gtab; return this.show('garage'); }
     if (d.gsort && isGarageSort(d.gsort)) { this.garageSort = d.gsort; return keepGarageScroll(this.root, () => this.show('garage')); }
     if (d.buy) {

@@ -2,9 +2,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CAREER } from '../config';
 
-// achievements.ts only needs the F1 circuit count; the real F1Track builds canvas textures (no DOM in Node)
-vi.mock('../world/F1Track', () => ({ F1_TRACKS: [{ id: 'monza' }, { id: 'spa' }] }));
-
 function storage(career?: unknown) {
   const data = new Map<string, string>();
   if (career !== undefined) data.set('moto:career', typeof career === 'string' ? career : JSON.stringify(career));
