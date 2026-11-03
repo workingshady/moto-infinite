@@ -55,6 +55,7 @@ src/
     Traffic.ts           Open-world civilian cars in the right lane; near-miss chains (XP + nitro), slipstream nitro, crashes
     pace.ts              Lap-time estimate from track curvature + vehicle speed/grip/accel
     menu.ts              Setup rows (Format, Traffic) and their option handling
+    Replay.ts            60 s ring buffer (typed arrays) of every vehicle + key moments; poses puppet copies for playback
   net/
     NetClient.ts         WebSocket to a room
     RemotePlayers.ts     Other online riders, interpolated
@@ -69,6 +70,10 @@ src/
     menuNav.ts           Keyboard / gamepad menu navigation (focus ring, arrows/D-pad, Enter/A, Esc/B)
     toast.ts             Small notifications
     Gauges.ts            Canvas speedometer, tachometer, nitro ring
+    ReplayStudio.ts      Opens replay / photo mode (pause, results, I key, instant-replay prompt) via Game.view
+    ReplayPanel.ts       Replay playback: TV/chase/orbit/onboard/heli cameras, timeline, events, WebM clips
+    PhotoMode.ts         Free camera, FOV/roll/exposure, filters, frames, watermark, PNG download/share
+    mediaShare.ts        Download/share, clip recorder, orbit drag/pinch input, gamepad edges
   styles/main.css
   utils/                 math helpers, seeded noise
 worker/

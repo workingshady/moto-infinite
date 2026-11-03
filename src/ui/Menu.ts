@@ -116,6 +116,9 @@ export interface MenuActions {
   lobbyStart(): void;
   resume(): void;
   respawn(): void;
+  /** Replay of the last minute / photo mode (pause and results screens). */
+  replay(): void;
+  photo(): void;
   quit(): void;
   raceAgain(): void;
   setQuality(q: QualityName): void;
@@ -591,6 +594,8 @@ export class Menu {
         <div class="big-buttons">
           <button class="btn primary" data-go="resume">Resume</button>
           <button class="btn" data-go="respawn">Respawn on road</button>
+          <button class="btn" data-go="replay">🎬 Replay</button>
+          <button class="btn" data-go="photo">📷 Photo mode</button>
           <button class="btn" data-go="settings">Settings</button>
           <button class="btn" data-go="howto">Controls</button>
           <button class="btn ghost" data-go="quit">Quit to menu</button>
@@ -603,7 +608,7 @@ export class Menu {
         <table class="results">${rows.map((r, i) => `<tr><td>${['🥇', '🥈', '🥉'][i] ?? i + 1}</td><td><i style="background:${hex(r.color)}"></i>${escapeHtml(r.name)}</td><td>${r.note ? escapeHtml(r.note) : r.time !== null ? fmt(r.time) : 'racing…'}</td></tr>`).join('')}</table>
         ${sessionSummaryHtml()}
         <div id="lbResult"></div>
-        <div class="row-buttons"><button class="btn ghost" data-go="quit">Menu</button><button class="btn primary" data-go="again">Race again</button></div>`;
+        <div class="row-buttons"><button class="btn ghost" data-go="quit">Menu</button><button class="btn" data-go="replay">🎬 Replay</button><button class="btn primary" data-go="again">Race again</button></div>`;
       }
       case 'loading':
         return `<div class="logo small">MOTO<span>INFINITE</span></div><p class="loading">${escapeHtml(String(data ?? 'Generating world…'))}</p><div class="spinner"></div>`;
@@ -803,6 +808,8 @@ export class Menu {
       case 'mute': this.a.toggleMute(); return this.show('settings');
       case 'resume': return this.a.resume();
       case 'respawn': return this.a.respawn();
+      case 'replay': return this.a.replay();
+      case 'photo': return this.a.photo();
       case 'quit': return this.a.quit();
       case 'again': return this.a.raceAgain();
     }
