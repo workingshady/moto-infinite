@@ -260,10 +260,7 @@ export class Combat {
             }
           if (!hit && s.owner && g.remotes) g.remotes.forEach((r) => { if (!hit && (s.p.x - r.x) ** 2 + (s.p.y - r.y - 1.2) ** 2 + (s.p.z - r.z) ** 2 < 1.7) hit = true; });
           if (!hit && s.p.y < g.terrain.groundAt(s.p.x, s.p.z)) hit = true;
-          if (!hit) {
-            const c = g.chunks.at(s.p.x, s.p.z);
-            if (c) for (const o of c.obs) if ((s.p.x - o.x) ** 2 + (s.p.z - o.z) ** 2 < o.r * o.r + 0.3 && s.p.y < o.top) { hit = true; break; }
-          }
+          if (!hit && g.chunks.solidAt(s.p.x, s.p.z, 0.15, s.p.y)) hit = true;
         }
         if (s.w.id === 'rocket' || s.w.homing) {
           g.fx.emit(s.p.x, s.p.y, s.p.z, rnd(0.5), rnd(0.5) + 0.5, rnd(0.5), 0.9, 0.4, 1.6, 0xbbbbbb, 0.5, -0.5, 1, true);

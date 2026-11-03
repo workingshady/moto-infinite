@@ -8,6 +8,9 @@ import { buildVehicleModel, type VehicleModel } from '../entities/vehicleModels'
 import type { VehicleModelId } from '../data/vehicles';
 import { clamp, lerp, lerpAngle, wrapPi } from '../utils/math';
 import type { ModeFeature, ReplayVisit } from './index';
+import type { ContactOwner, Contacts } from '../systems/Contacts';
+import type { Body } from '../world/collide';
+import { CONTACT } from '../config';
 
 export const TRAFFIC = {
   /** Cars per local player for density 1 (light) and 2 (heavy). */
@@ -39,12 +42,14 @@ interface Car {
 
 interface Chain { n: number; t: number; pts: number; el: HTMLDivElement; text: HTMLDivElement; draft: HTMLDivElement; hitCd: number; drafting: boolean; hideT: number }
 
-export class Traffic implements ModeFeature {
+export class Traffic implements ModeFeature, ContactOwner {
   private cars: Car[] = [];
   private chains: Chain[] = [];
   private spawnT = 0;
+  private offBump: () => void;
 
   constructor(private game: Game, density: number) {
+    this.offBump = game.events.on('bump', (e) => { if (e.kind === 'traffic') this.bumped(e.player, e.ref as Car, e.impact); });
     const n = TRAFFIC.perPlayer[clamp(Math.round(density), 0, 2)] * game.players.length;
     for (let i = 0; i < n; i++) {
       const model = buildVehicleModel(MODELS[i % MODELS.length], PAINT[(i * 7) % PAINT.length]);
@@ -158,17 +163,8 @@ export class Traffic implements ModeFeature {
       if (!c.active) continue;
       const dx = c.x - B.x, dz = c.z - B.z, dist = Math.hypot(dx, dz);
       if (dist > 30) { c.along[i] = NaN; continue; }
-      // contact
-      const R = T.carRadius + (p.isCar ? 0.9 : 0.4);
-      if (riding && dist < R && Math.abs(B.y - c.y) < 2) {
-        const nxv = dist > 0.01 ? dx / dist : 1, nzv = dist > 0.01 ? dz / dist : 0;
-        B.x -= nxv * (R - dist);
-        B.z -= nzv * (R - dist);
-        const rvx = Math.sin(B.moveH) * B.v - Math.sin(c.h) * c.v, rvz = Math.cos(B.moveH) * B.v - Math.cos(c.h) * c.v, rel = Math.hypot(rvx, rvz);
-        if (rel > 7 && ch.hitCd <= 0) this.crash(p, c, rel, ch);
-        else B.v *= 0.97;
-        c.hit[i] = true;
-      } else if (!p.riding && !p.s.dead && dist < T.carRadius + 0.5) {
+      // contact with a riding player is physical (systems/Contacts → applyContact / bumped); walkers are shoved aside
+      if (!p.riding && !p.s.dead && dist < T.carRadius + 0.5) {
         p.W.x -= (dx / Math.max(dist, 0.01)) * (T.carRadius + 0.5 - dist); // shove pedestrians aside
         p.W.z -= (dz / Math.max(dist, 0.01)) * (T.carRadius + 0.5 - dist);
       }
@@ -213,7 +209,37 @@ export class Traffic implements ModeFeature {
     ch.pts = 0;
   }
 
-  private crash(p: Player, c: Car, rel: number, ch: Chain) {
+  /** Contact pass: active cars near a rider (traffic never touches traffic; it keeps its own gaps). */
+  contactBodies(cs: Contacts) {
+    const ps = this.game.players;
+    for (const c of this.cars) {
+      if (!c.active) continue;
+      let near = false;
+      for (const p of ps) if ((p.B.x - c.x) ** 2 + (p.B.z - c.z) ** 2 < 900) near = true;
+      if (near) cs.add('traffic', c, this, 'traffic', null, c.x, c.z, c.y, c.h, Math.sin(c.h) * c.v, Math.cos(c.h) * c.v);
+    }
+  }
+
+  /** A car got hit: it is shoved, keeps only its forward speed and stops for a moment after a real hit. */
+  applyContact(ref: object, b: Body) {
+    const c = ref as Car, fx = Math.sin(c.h), fz = Math.cos(c.h);
+    c.x += b.px;
+    c.z += b.pz;
+    c.v = clamp(c.v + b.dvx * fx + b.dvz * fz, 0, c.cruise * 1.5);
+    c.h += clamp(b.spin * 0.12, -0.35, 0.35);
+    if (b.impact > CONTACT.stunTraffic) c.stun = Math.max(c.stun, 2.5);
+    c.model.root.position.set(c.x, c.y, c.z);
+  }
+
+  /** A rider hit a car (physics already applied by Contacts): the pass counts as a hit; hard ones end the chain. */
+  private bumped(p: Player, c: Car, rel: number) {
+    const i = this.game.players.indexOf(p), ch = this.chains[i];
+    if (i < 0 || !ch) return;
+    c.hit[i] = true;
+    if (rel > 7 && ch.hitCd <= 0) this.crash(p, c, ch);
+  }
+
+  private crash(p: Player, c: Car, ch: Chain) {
     const g = this.game;
     ch.hitCd = 1.2;
     if (ch.n) { ch.text.innerHTML = '<b class="bad">CHAIN LOST</b><span>hit traffic</span>'; ch.n = 0; ch.pts = 0; ch.t = 0; ch.hideT = 1.2; }
@@ -223,15 +249,13 @@ export class Traffic implements ModeFeature {
     g.audio.play('clank');
     p.cam.shake = 0.9;
     p.hud.flash('#ff3040', 0.25);
-    p.B.v *= 0.35;
-    p.s.combo = 0;
-    p.hurt(clamp(rel * 1.1, 8, 40), 'traffic', true);
+    p.s.combo = 0; // speed loss, damage and the car's reaction come from the contact physics (systems/Contacts)
     c.stun = 3;
-    c.v *= 0.2;
     g.fx.burst((p.B.x + c.x) / 2, c.y + 0.8, (p.B.z + c.z) / 2, { n: 26, speed: 7, life: 0.9, size: [0.5, 0.1], colors: [0xffd27a, 0xffffff, 0x888888], gravity: 6, drag: 1.5 });
   }
 
   dispose() {
+    this.offBump();
     for (const c of this.cars) this.game.scene.remove(c.model.root);
     this.chains.forEach((c) => c.el.remove());
   }
