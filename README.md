@@ -3,6 +3,7 @@
 Low-poly motorbike game in the browser: endless open world with a story, circuit races, 2-player split screen and online rooms.
 
 - **Modes:** open world (story chapters, challenges, drones, level-ups) · circuit race (5 tracks + random, 1-50 laps, ghost) · Formula 1 (19 real circuits at 1:1 scale + a rookie track, Easy/Medium/Hard)
+- **Computer racers:** up to 7 in races, 19 in F1, driving the same physics as you · Rookie / Amateur / Pro / Legend or Adaptive (matches your Racecraft rating) · named personalities (Late Braker, Smooth Operator, Defender, Wet-weather Ace…) · they learn racing lines from your best ghost and the leaderboard #1 · F1 tyre strategy, pit stops, DRS, ERS
 - **Players:** solo · 2 players split screen (keyboard or gamepads) · online rooms up to 8, joined by link
 - **World:** 5 themes, random seeds, day/dawn/sunset/night or live cycle, clear/cloudy/rain/fog/snow/storm or changing weather
 - **Combat:** 6 weapons with lead-aim assist, 3 drone types, power-ups, optional PvP

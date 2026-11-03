@@ -86,8 +86,8 @@ export async function fetchLeaderGhost(o: Pick<SessionOptions, 'mode' | 'trackId
   try {
     const tKey = lbGhostKey(board) + ':t', last = Number(localStorage.getItem(tKey) ?? 0);
     if (Date.now() - last < FETCH_EVERY) return false;
-    localStorage.setItem(tKey, String(Date.now()));
     const g = await fetchGhost(board, 1);
+    if (g) localStorage.setItem(tKey, String(Date.now())); // offline / server error: try again next race
     if (!g || !Array.isArray(g.s) || g.s.length > LB.ghostMax || !(g.value > 0)) return false;
     const prev = JSON.parse(localStorage.getItem(lbGhostKey(board)) ?? 'null') as { time?: number } | null;
     if (prev?.time === g.value) return false;
