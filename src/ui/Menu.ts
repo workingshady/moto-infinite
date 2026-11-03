@@ -11,6 +11,7 @@ import { VEHICLES, vehicleById, type VehicleKind } from '../data/vehicles';
 import { DRIFT_TRACKS } from '../world/DriftTrack';
 import { F1_TRACKS } from '../world/F1Track';
 import { clamp } from '../utils/math';
+import { setModeOpt, trafficRow, variantRow } from '../modes/menu';
 
 const bar = (v: number) => `<i style="width:${Math.round(clamp(v, 0.05, 1) * 100)}%"></i>`;
 /** Garage card grid: bikes or cars, stat bars, the selected one highlighted. */
@@ -312,6 +313,7 @@ export class Menu {
         <p class="hint">${THEME_DEFS[s.theme].blurb}</p>
         <div class="opt"><span>Drones</span><div class="chips">${chips('drones', [0, 1, 2, 3], s.drones ?? 2, (i) => (i === 0 ? '🚫 ' : '🛸 ') + DRONE_LEVELS[i].label)}</div></div>
         <p class="hint">${(s.drones ?? 2) === 0 ? 'Peaceful ride: no drone attacks, no drone outposts guards, no drone challenges.' : 'Drones attack in the open world; further from the start = tougher types.'}</p>
+        ${trafficRow(s, this.screen === 'lobby')}
         <details class="gen" open><summary>🛠 World generator</summary>
           ${genRow('terrain', 'Terrain')}${genRow('water', 'Water')}${genRow('flora', 'Nature')}${genRow('roads', 'Roads')}${genRow('poi', 'Landmarks')}
         </details>
@@ -321,6 +323,7 @@ export class Menu {
         <div class="opt"><span>Laps</span><div class="chips">${chips('laps', LAPS, customLaps ? -1 : s.laps, (n) => `${n}`)}
           <label class="custom ${customLaps ? 'on' : ''}">Custom <input type="number" min="1" max="50" value="${s.laps}" data-opt="lapsCustom" ${dis}></label></div></div>
         <div class="opt"><span>AI rivals</span><div class="chips">${chips('ai', [0, 3, 5, 7], s.ai, (n) => (n ? `${n}` : 'None'))}</div></div>
+        ${variantRow(s, this.screen === 'lobby')}
         ${s.trackId === 'random' ? `<details class="gen"><summary>🛠 Scenery generator</summary>${genRow('terrain', 'Terrain')}${genRow('water', 'Water')}${genRow('flora', 'Nature')}</details>` : ''}`}
         <div class="opt"><span>Time</span><div class="chips">${chips('time', TIMES, s.time, (t) => TIME_LABEL[t])}</div></div>
         <div class="opt"><span>Weather</span><div class="chips">${FIXED_WEATHERS.map((w) => `<button class="chip ${activeWeathers(s).includes(w) ? 'on' : ''}" data-opt="weather" data-val="${w}" title="${WEATHER_DEFS[w].blurb}">${WEATHER_DEFS[w].icon} ${WEATHER_DEFS[w].label}</button>`).join('')}<button class="chip ${s.weather === 'dynamic' ? 'on' : ''}" data-opt="weather" data-val="dynamic" title="Rolls through every weather, sometimes two at once">🎲 Changing</button></div></div>
@@ -571,6 +574,8 @@ export class Menu {
           <section><h3>🗺 Modes</h3><p class="hint">
             <b>Open world:</b> story chapters, timed challenges, drones, gas stations (refuel), villages, stunt zones.<br>
             <b>Race:</b> pass every blue gate in order; checkered gate = start/finish; beat your ghost.<br>
+            <b>Race formats:</b> ⏱ Time attack = beat 🥉🥈🥇💎 medal lap times · 🪓 Elimination = last place is knocked out every few seconds.<br>
+            <b>Traffic:</b> pass cars close and fast for NEAR MISS chains (XP + nitro, oncoming ×2); ride in a car's slipstream to charge nitro.<br>
             <b>Drift:</b> 8 venues with zones (×1.5–2.3). Points bank when you straighten.<br>
             <b>Power-ups:</b> green repair · blue shield · yellow magnet · pink double XP.<br>
             <b>Esc / Start:</b> pause (resume, settings, controls, respawn, quit) · <b>M</b> mute · <b>H</b> show/hide the key card.
@@ -592,7 +597,7 @@ export class Menu {
         const rows = data as Standing[];
         return `
         <h2>🏁 Race results</h2>
-        <table class="results">${rows.map((r, i) => `<tr><td>${['🥇', '🥈', '🥉'][i] ?? i + 1}</td><td><i style="background:${hex(r.color)}"></i>${escapeHtml(r.name)}</td><td>${r.time !== null ? fmt(r.time) : 'racing…'}</td></tr>`).join('')}</table>
+        <table class="results">${rows.map((r, i) => `<tr><td>${['🥇', '🥈', '🥉'][i] ?? i + 1}</td><td><i style="background:${hex(r.color)}"></i>${escapeHtml(r.name)}</td><td>${r.note ? escapeHtml(r.note) : r.time !== null ? fmt(r.time) : 'racing…'}</td></tr>`).join('')}</table>
         <div class="row-buttons"><button class="btn ghost" data-go="quit">Menu</button><button class="btn primary" data-go="again">Race again</button></div>`;
       }
       case 'loading':
@@ -680,6 +685,7 @@ export class Menu {
         break;
       }
     }
+    setModeOpt(s, key, String(val)); // race format / traffic (src/modes)
     if (key !== 'weather' && key !== 'surprise' && s.weather !== weatherBefore) s.weathers = undefined;
     if (editingLobby) this.a.lobbySettings(s);
     else this.show('mode');

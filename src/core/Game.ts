@@ -26,6 +26,8 @@ import { RemotePlayers } from '../net/RemotePlayers';
 import { Tutorial } from '../systems/Tutorial';
 import { GEN, LEVELING, NET, PHYS, QUALITY, TRACKS, WORLD, type QualityName } from '../config';
 import { STORY } from '../data/story';
+import { createModes, type ModeFeature } from '../modes';
+import type { RaceVariant } from '../../shared/protocol';
 
 export interface LocalPlayerSpec { name: string; color: number; controller: Controller; vehicle: string }
 
@@ -55,6 +57,9 @@ export interface SessionOptions {
   net: NetClient | null;
   /** Menu background: world only, orbiting camera, no players. */
   attract?: boolean;
+  /** Race format and open-world traffic (src/modes). */
+  variant?: RaceVariant;
+  traffic?: number;
 }
 
 export interface GameHooks {
@@ -84,6 +89,8 @@ export class Game {
   race: Race | null = null;
   ai: AiRacers | null = null;
   tutorial: Tutorial | null = null;
+  /** Extra game modes / systems from src/modes (time attack, elimination, traffic). */
+  modes: ModeFeature[] = [];
   remotes: RemotePlayers | null = null;
   time = 0;
   frame = 0;
@@ -143,6 +150,7 @@ export class Game {
       if ((opts.mode === 'race' && this.layout instanceof Circuit) || (opts.mode === 'f1' && this.layout instanceof F1Track)) this.race = new Race(this, this.layout, opts.laps, opts.trackId);
       if (this.net) this.wireNet(this.net);
       if (opts.tutorial) this.tutorial = new Tutorial(this);
+      this.modes = createModes(this);
     }
     addEventListener('resize', this.onResize);
     this.resize();
@@ -249,6 +257,7 @@ export class Game {
     if (!this.tutorial || this.tutorial.complete) for (const p of this.players) p.challenges?.update(dt);
     this.tutorial?.update(dt);
     this.race?.update(dt);
+    for (const m of this.modes) m.update(dt);
     this.remotes?.update(dt);
     this.updateMusic();
     const focus = this.players.length ? this.players.map((p) => p.P) : [this.attractFocus()];
@@ -310,6 +319,7 @@ export class Game {
     this.players.forEach((p) => p.dispose());
     this.remotes?.dispose();
     this.ai?.dispose();
+    this.modes.forEach((m) => m.dispose());
     this.events.clear();
     this.renderer.dispose();
     this.hudLayer.remove();

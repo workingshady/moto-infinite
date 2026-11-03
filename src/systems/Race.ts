@@ -10,7 +10,7 @@ import { RACE, WEATHER_DEFS } from '../config';
 import { activeWeathers } from '../../shared/protocol';
 import { lerp, lerpAngle } from '../utils/math';
 
-export interface Standing { id: string; name: string; color: number; local: boolean; prog: number; time: number | null; lap: number }
+export interface Standing { id: string; name: string; color: number; local: boolean; prog: number; time: number | null; lap: number; note?: string }
 
 interface GhostData { time: number; s: number[] } // samples: x,y,z,h,pitch per tick
 

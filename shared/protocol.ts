@@ -35,7 +35,12 @@ export interface LobbySettings {
   session: 'race' | 'quali';
   /** Starting tyre compound. */
   tyre: 'soft' | 'medium' | 'hard';
+  /** Circuit race format (local games only, see src/modes): classic, time attack with medals, elimination. */
+  variant?: RaceVariant;
+  /** Open-world traffic density, 0 off .. 2 heavy (local games only). */
+  traffic?: number;
 }
+export type RaceVariant = 'classic' | 'attack' | 'elim';
 
 export interface PlayerInfo {
   id: string;
