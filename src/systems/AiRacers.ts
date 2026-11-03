@@ -32,7 +32,7 @@ const COMPOUNDS = ['soft', 'medium', 'hard'] as const;
 export class AiRacers {
   readonly list: AiRacer[] = [];
 
-  constructor(private game: Game, private track: TrackLine, count: number, f1: boolean, private halfWidth: number, private laps: number, firstSlot: number) {
+  constructor(private game: Game, private track: TrackLine, count: number, f1: boolean, private halfWidth: number, private laps: number, firstSlot: number, private widthAt?: (i: number) => number) {
     const me = game.players[0]?.def, kindPool = VEHICLES.filter((v) => !v.f1 && v.kind === (me?.kind ?? 'car'));
     // same class as the player first (a muscle car races muscle cars), then the rest of its kind
     const pool = f1 ? VEHICLES.filter((v) => v.f1 && v.id === me?.id) : [...kindPool.filter((v) => v.cls === me?.cls), ...kindPool.filter((v) => v.cls !== me?.cls)];
@@ -110,7 +110,9 @@ export class AiRacers {
       } else if (r.finished) r.v *= 1 - 0.6 * dt;
       // racing line: inside of the next corner, unless someone is in the way
       const ahead = (idx + Math.round(40 / t.spacing)) % n, curve = t.curvature(ahead);
-      let offTarget = clamp(-Math.sign(curve) * Math.min(1, Math.abs(curve) * 6) * this.halfWidth * 0.55, -this.halfWidth * 0.7, this.halfWidth * 0.7);
+      // per-sample width (street circuits narrow in places): plan for the narrower of here and just ahead
+      const hw = this.widthAt ? Math.min(this.widthAt(idx), this.widthAt(ahead)) : this.halfWidth;
+      let offTarget = clamp(-Math.sign(curve) * Math.min(1, Math.abs(curve) * 6) * hw * 0.55, -hw * 0.7, hw * 0.7);
       const blockers = [...this.list.filter((o) => o !== r).map((o) => ({ s: o.s, off: o.off })), ...players];
       for (const b of blockers) {
         const gap = b.s - r.s;
@@ -119,7 +121,7 @@ export class AiRacers {
           r.v = Math.min(r.v, Math.max(0, r.v - 2 * dt)); // lift slightly while side by side
         }
       }
-      r.off = lerp(r.off, clamp(offTarget, -this.halfWidth + 1.2, this.halfWidth - 1.2), Math.min(1, dt * 0.9));
+      r.off = lerp(r.off, clamp(offTarget, -hw + 1.2, hw - 1.2), Math.min(1, dt * 0.9));
       r.s += r.v * dt;
       if (!r.finished && r.s >= this.laps * t.length) { r.finished = true; r.finishTime = raceTime; }
       // world pose, interpolated between samples

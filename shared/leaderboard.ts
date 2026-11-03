@@ -41,7 +41,7 @@ export const LB_CIRCUITS: Record<string, { name: string; seed: number }> = {
   forest: { name: 'Midnight Forest', seed: 9090 },
   storm: { name: 'Storm Valley', seed: 3355 },
 };
-/** Real F1 circuits (world/F1Track.ts) at 1:1 scale. */
+/** F1 circuits (world/f1Circuits.ts F1_TRACKS) at 1:1 scale, official lap length. Kept in sync by a test. */
 export const LB_F1: Record<string, { name: string; km: number }> = {
   monza: { name: 'Monza', km: 5.793 },
   silverstone: { name: 'Silverstone', km: 5.891 },
@@ -49,7 +49,26 @@ export const LB_F1: Record<string, { name: string; km: number }> = {
   monaco: { name: 'Monaco', km: 3.337 },
   suzuka: { name: 'Suzuka', km: 5.807 },
   bahrain: { name: 'Bahrain', km: 5.412 },
+  interlagos: { name: 'Interlagos', km: 4.309 },
+  cota: { name: 'Circuit of the Americas', km: 5.513 },
+  redbullring: { name: 'Red Bull Ring', km: 4.318 },
+  hungaroring: { name: 'Hungaroring', km: 4.381 },
+  zandvoort: { name: 'Zandvoort', km: 4.259 },
+  imola: { name: 'Imola', km: 4.909 },
+  barcelona: { name: 'Barcelona-Catalunya', km: 4.657 },
+  montreal: { name: 'Gilles Villeneuve', km: 4.361 },
+  singapore: { name: 'Marina Bay', km: 4.94 },
+  baku: { name: 'Baku City', km: 6.003 },
+  melbourne: { name: 'Albert Park', km: 5.278 },
+  lasvegas: { name: 'Las Vegas', km: 6.201 },
+  jeddah: { name: 'Jeddah Corniche', km: 6.174 },
+  academy: { name: 'Rookie Ring', km: 3.335 },
 };
+/** Online room settings: an F1 room must name a known circuit (older clients / typos fall back to Monza). */
+export const roomTrackId = (mode: unknown, id: string) => (mode === 'f1' && !Object.hasOwn(LB_F1, id) ? 'monza' : id);
+/** F1 circuits the daily/weekly challenges pick from: the original six; from POOL_V2_FROM every real circuit. */
+export const F1_POOL = ['monza', 'silverstone', 'spa', 'monaco', 'suzuka', 'bahrain'];
+export const F1_POOL_V2 = Object.keys(LB_F1).filter((id) => id !== 'academy');
 /** Drift venues (world/DriftTrack.ts), without the random one. */
 export const LB_DRIFT: Record<string, string> = {
   docks: 'Container Port', touge: 'Mountain Pass', skidpad: 'Figure-8 Skidpad', gymkhana: 'Gymkhana Arena',
@@ -60,7 +79,7 @@ const RACE_VEHICLES = ['street', 'superbike', 'dirt', 'cafe', 'cruiser', 'gt', '
 const DRIFT_VEHICLES = ['drift_coupe', 'hatch', 'rotary', 'muscle', 'roadster'];
 const F1_CARS = ['f1_2026', 'f1_v10', 'f1_classic'];
 /**
- * Expansion-pack vehicles join the pools for challenges that START on/after POOL_V2_FROM (a Monday, 00:00 UTC), so
+ * Expansion-pack vehicles (and the newer F1 circuits, F1_POOL_V2) join the pools for challenges that START on/after POOL_V2_FROM (a Monday, 00:00 UTC), so
  * a running daily/weekly never changes its vehicle when this ships. Picked for fair ranked runs: no Tesla Roadster
  * (flight), no monster truck / rock crawler / 1910s board-track bike / kei car (too slow to be fun over 3 laps).
  */
@@ -161,10 +180,10 @@ export function challengeFor(kind: 'daily' | 'weekly', t = Date.now()): Challeng
     trackName = `${kind === 'daily' ? 'Daily' : 'Weekly'} circuit #${seed % 10000}`;
     vehicle = pick(rng, v2 ? RACE_VEHICLES_V2 : RACE_VEHICLES);
   } else if (mode === 'f1') {
-    trackId = pick(rng, Object.keys(LB_F1));
+    trackId = pick(rng, v2 ? F1_POOL_V2 : F1_POOL);
     trackName = LB_F1[trackId].name;
     vehicle = pick(rng, v2 ? F1_CARS_V2 : F1_CARS);
-    laps = trackId === 'spa' ? 2 : 3;
+    laps = LB_F1[trackId].km > 6 ? 2 : 3; // Spa; from v2 also Baku, Las Vegas, Jeddah
   } else {
     trackId = pick(rng, Object.keys(LB_DRIFT));
     trackName = LB_DRIFT[trackId];

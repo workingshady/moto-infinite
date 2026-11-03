@@ -338,6 +338,25 @@ export const F1 = {
 };
 export type TyreCompound = keyof typeof F1.tyres;
 
+/**
+ * F1 circuit geometry (world/f1Circuits.ts). Real-world references: FIA Grade 1 tracks are at least 12 m wide (most
+ * 12-15 m; street circuits narrower in places), pit lanes ~12 m wide, grid slots 8 m apart and staggered.
+ */
+export const F1_TRACK = {
+  spacing: 2, // m between centre-line samples
+  fiaMinWidth: 12, fiaMaxWidth: 16, // m, the range normal circuits are checked against (Monaco etc. are documented exceptions)
+  minRadius: 12, // m, default tightest centre-line radius a corner is relaxed to (per circuit override)
+  radiusWindow: 3, // samples either side for the 3-point radius (±6 m)
+  lengthTolerance: 0.03, // the traced line is scaled to the official length if within ±3%
+  elevSmooth: 60, // m, moving average over the elevation keyframes
+  minGround: 4, // m, the lowest point of a lap sits at least this high (water is at 0)
+  crossBlend: 110, // m, both levels of a figure-8 crossover ease to one height over this distance
+  pitWidth: 13, // m, pit lane strip beside the track (fast lane + working lane)
+  gridFirst: 8, gridGap: 8, // m behind the line to pole, then between consecutive (staggered) grid slots
+  gridSide: 2.6, // m, lateral offset of each grid column (capped by the track width)
+  drsMinStraight: 250, // m, straights at least this long can hold a DRS / straight-mode zone
+};
+
 /** Persistent career (src/core/career.ts): credits and career XP earned across sessions. */
 export const CAREER = {
   xpBase: 600, xpExp: 1.45, // career XP for level n → n+1 = base × n^exp
