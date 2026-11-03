@@ -171,6 +171,7 @@ export class AiRacers implements ContactOwner {
         if (far) { b.lodAcc += h; if (b.lodAcc < h * 2 - 1e-6) continue; }
         const step = far ? b.lodAcc : h;
         b.lodAcc = 0;
+        b.y = this.game.terrain.groundAt(b.x, b.z); // every step: the wall step-height test needs the current ground
         this.yAt = b.y;
         stepBot(b, w, step, raceTime, started);
         this.pitStop(b, step);
@@ -318,7 +319,7 @@ export class AiRacers implements ContactOwner {
       b.moveH = o.moveH;
     }
     if (c.spin) { b.yawV += c.spin; b.h += c.spin * CONTACT.heading; }
-    if (c.impact > CONTACT.damageMin && b.wallCd <= 0) { damage(b, (c.impact - CONTACT.damageMin) * CONTACT.damage); b.wallCd = CONTACT.cooldown; }
+    if (c.impact > CONTACT.damageMin && b.wallCd <= 0) { damage(b, (c.impact - CONTACT.damageMin) * CONTACT.damage); b.wallCd = CONTACT.cooldown; b.carHits++; }
   }
   private readonly _sh = { v: 0, moveH: 0 };
 

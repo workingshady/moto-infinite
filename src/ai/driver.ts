@@ -76,6 +76,8 @@ export interface Bot extends DriveBody {
   stuckT: number; recover: number; recT: number;
   hp: number; wallCd: number; damage: number;
   started: boolean; finished: boolean; finishTime: number; mistakes: number; spins: number;
+  /** Hard wall hits and car contacts that cost health (diagnostics, results). */
+  wallHits: number; carHits: number;
   f1: BotF1 | null;
   /** Seconds the bot has been far from every player (LOD) and step accumulator. */
   lodAcc: number;
@@ -92,7 +94,7 @@ export function makeBot(id: string, def: VehicleDef, prof: BotProfile, vmax: Flo
     thr: 0, brk: 0, integ: 0, noise: 0, paceLap: prof.pace, lapSeen: -99, adj: 0,
     tact: 0, tactCur: 0, tactT: 0, defended: false, defending: false, yieldT: 0, cap: Infinity, gapAhead: Infinity, gapBehind: Infinity, inZone: false,
     mistake: 0, mistakeT: 0, mistakeSide: 0, stuckT: 0, recover: 0, recT: 0,
-    hp: AI.hp, wallCd: 0, damage: 0, started: false, finished: false, finishTime: 0, mistakes: 0, spins: 0,
+    hp: AI.hp, wallCd: 0, damage: 0, started: false, finished: false, finishTime: 0, mistakes: 0, spins: 0, wallHits: 0, carHits: 0,
     f1: compound ? {
       compound, startCompound: compound, wear: 0, gripMul: tyreGrip(compound, 0), ers: 100, aeroOpen: false, slip: false, overtake: false,
       stops: 0, drsOk: false, wing: 0, surface: 0, pit: 0, pitT: 0, box: 0, next: compound, wantPit: false, pitWear: AI.f1.pitWear, lastPitLap: -1,
@@ -194,7 +196,7 @@ export function stepBot(b: Bot, w: BotWorld, dt: number, t: number, started: boo
     // ---- speed target: profile a short preview ahead, minus following / yielding caps
     const prevI = (b.idx + Math.max(1, Math.round((av * AI.speed.preview + 2) / T.spacing))) % n;
     let target = Math.min(targetAt(b, w, prevI, pace), targetAt(b, w, b.idx, pace) + 4);
-    if (b.mistake === 1 && b.mistakeT > 0) target *= 1.06; // carried too much speed in
+    if (b.mistake === 1 && b.mistakeT > 0) target *= 1.04; // carried too much speed in
     target = Math.min(target, b.cap);
     if (f1 && f1.pit) target = Math.min(target, pitSpeed(b, w));
     if (b.finished) target = Math.min(target, 22);
@@ -336,7 +338,7 @@ function hitWall(b: Bot, w: BotWorld, kind: WallKind, nx: number, nz: number, ra
   const r = wallBounce(mx, mz, cnx, cnz, 0.85, LANDING.wallDamageSpeed, wallOut);
   if (r.vn < 0 && b.wallCd <= 0 && -r.vn > 4) {
     b.wallCd = WALL.fxCooldown;
-    if (r.hard) damage(b, Math.max(0, -r.vn - WALL.damageMin) * WALL.damage * 2);
+    if (r.hard) { damage(b, Math.max(0, -r.vn - WALL.damageMin) * WALL.damage); b.wallHits++; } // same health cost as the player's
     if (b.f1 && -r.vn > WALL.wingSpeed && -r.vn > spd * WALL.wingAngle) b.f1.wing = 1;
   }
   const res = toSpeedHeading(r.vx, r.vz, b.h, b.moveH, sh), sp = Math.min(Math.abs(res.v), spd);
