@@ -226,7 +226,7 @@ export class Player {
         if (g.env.grip < 1 && Math.abs(B.steer) > 0.6 && Math.abs(B.v) > 20) B.v *= 1 - (1 - g.env.grip) * dt; // wet roads scrub speed in corners
         B.v = Math.max(B.v, -BIKE.maxReverse);
         // steering eases in and re-centres smoothly instead of snapping
-        const want = (left ? 1 : 0) - (right ? 1 : 0);
+        const want = c.steer(left, right);
         B.steer = lerp(B.steer, want, damp(dt, want ? CONTROL.steerIn : CONTROL.steerOut));
         const handbrake = active && c.is('drift') && Math.abs(B.v) > 6;
         const wheelie = this.updateWheelie(dt, active && c.is('trick'), up, down);
@@ -310,7 +310,7 @@ export class Player {
         // small hops and the start of a jump: ←/→ keeps steering the bike's direction (air control)
         const airSteer = this.isCar || !B.fromRamp || B.airT < CONTROL.airSteerTime;
         if (airSteer) {
-          const want = (left ? 1 : 0) - (right ? 1 : 0);
+          const want = c.steer(left, right);
           B.steer = lerp(B.steer, want, damp(dt, want ? CONTROL.steerIn : CONTROL.steerOut));
           const turn = B.steer * st.grip * CONTROL.airSteer * (boosting ? CONTROL.boostSteer : 1) * dt * Math.sign(B.v || 1);
           B.h += turn;

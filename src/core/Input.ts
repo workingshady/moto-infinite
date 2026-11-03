@@ -40,6 +40,8 @@ export class Controller {
   gamepad: number;
   lookDelta = 0;
   zoom = 1;
+  /** Analog steering -1 (right) .. 1 (left) from a touch joystick or tilt; 0 = digital only. */
+  steerAxis = 0;
 
   constructor(bindings: Bindings, gamepad: number) {
     this.bindings = bindings;
@@ -51,11 +53,18 @@ export class Controller {
   hit(a: Action) {
     return this.pressed.has(a);
   }
+  /** Steering amount for the held left/right: the analog value when one drives it, else full lock. */
+  steer(left: boolean, right: boolean) {
+    const d = (left ? 1 : 0) - (right ? 1 : 0);
+    return d && Math.sign(this.steerAxis) === d ? this.steerAxis : d;
+  }
 }
 
 export class Input {
   readonly controllers = [new Controller(BINDINGS.solo, 0), new Controller(BINDINGS.p2, 1)];
   readonly touch = new Set<Action>();
+  /** Analog steer from the touch joystick / tilt (player 1), -1..1, positive = left. */
+  touchSteer = 0;
   enabled = false;
   onPause: (() => void) | null = null;
   onToggleHelp: (() => void) | null = null;
@@ -151,6 +160,9 @@ export class Input {
       if (i === 0) {
         if (this.mouseFire) c.held.add('fire');
         this.touch.forEach((a) => c.held.add(a));
+        c.steerAxis = this.touchSteer;
+        if (this.touchSteer > 0.1) c.held.add('left');
+        if (this.touchSteer < -0.1) c.held.add('right');
       }
       c.pressed.clear();
       c.held.forEach((a) => {
@@ -166,6 +178,7 @@ export class Input {
     this.keys.clear();
     this.tapped.clear();
     this.touch.clear();
+    this.touchSteer = 0;
     this.mouseFire = false;
     this.controllers.forEach((c) => {
       c.held.clear();

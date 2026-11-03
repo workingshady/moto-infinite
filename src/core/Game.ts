@@ -1,6 +1,7 @@
 // Owns one play session: builds the world for the chosen mode, runs the loop and renders 1 or 2 viewports.
 import * as THREE from 'three';
 import { Renderer } from './Renderer';
+import { DynamicResolution } from './DynamicRes';
 import { Events } from './Events';
 import type { Audio } from './Audio';
 import type { Controller, Input } from './Input';
@@ -68,6 +69,7 @@ export interface GameEvents {
 export class Game {
   readonly scene = new THREE.Scene();
   readonly renderer: Renderer;
+  readonly dynRes: DynamicResolution;
   readonly env: Environment;
   readonly layout: RoadLayout;
   readonly terrain: Terrain;
@@ -105,6 +107,7 @@ export class Game {
       : new GridRoads(noise, opts.seed, opts.gen.roads, GEN.poi[opts.gen.poi].chance);
     this.terrain = new Terrain(noise, this.layout, opts.theme, opts.gen);
     this.renderer = new Renderer(opts.quality, document.body);
+    this.dynRes = new DynamicResolution(this.renderer);
     input.attachCanvas(this.renderer.gl.domElement);
     this.hudLayer = document.createElement('div');
     this.hudLayer.id = 'hud-layer';
@@ -221,6 +224,8 @@ export class Game {
 
   private loop = (now: number) => {
     this.raf = requestAnimationFrame(this.loop);
+    if (document.hidden) { this.last = now; return; } // background tab: no simulation, no rendering
+    this.dynRes.frame(now - this.last);
     const dt = Math.min(Math.max((now - this.last) / 1000, 0.001), PHYS.maxDt);
     this.last = now;
     this.frame++;

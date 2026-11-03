@@ -20,6 +20,8 @@ src/
     Events.ts            Typed event bus (challenge progress etc.)
     cameraViews.ts       Chase, far, hood, first person, cinematic, top-down
     prefs.ts             Saved player preferences (riding assist, nitro toggle, onboarding seen)
+    device.ts            Touch/coarse detection, first-run quality guess, fullscreen + orientation lock, screen wake lock
+    DynamicRes.ts        Lowers/raises the render pixel ratio to hold the frame rate (detects 30 fps caps)
   data/                  Pure data tables: weapons, upgrades, challenges, story, vehicles (garage stats)
   world/
     layout.ts            RoadLayout interface: GridRoads (open world) and Circuit (race loop)
@@ -50,9 +52,12 @@ src/
     Menu.ts              Landing page, setup panel (solo/split/lobby share it), settings, pause, results
     Preview.ts           3D character preview + top-down map preview
     Hud.ts               Per-player HUD (stats, minimap, reticle, story, race panel)
-    Touch.ts             Phone/tablet buttons
+    Touch.ts             Phone/tablet controls: mode-aware buttons, joystick or tilt steering, drag-to-edit layout, settings sheet, rotate hint
+    TouchLayout.ts       Touch settings (saved per device) and the button table: which buttons each mode/vehicle shows, default slots
     Gauges.ts            Canvas speedometer, tachometer, nitro ring
   styles/main.css
+  styles/hud-layout.css  HUD zones scale with the viewport, respect safe areas and make room for touch buttons
+  styles/mobile.css      Touch controls, rotate hint, settings sheet, phone menus (bottom sheets, 44 px targets)
   utils/                 math helpers, seeded noise
 worker/
   index.ts               Cloudflare Worker: /api/health, /api/room/:code

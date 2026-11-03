@@ -1,4 +1,6 @@
 import './styles/main.css';
+import './styles/hud-layout.css';
+import './styles/mobile.css';
 import { App } from './App';
 
 function showFatal(err: unknown) {
