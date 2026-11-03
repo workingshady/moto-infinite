@@ -24,6 +24,7 @@ import { Combat } from '../systems/Combat';
 import { Race, type Standing } from '../systems/Race';
 import { RemotePlayers } from '../net/RemotePlayers';
 import { Tutorial } from '../systems/Tutorial';
+import { Replay } from '../systems/Replay';
 import { GEN, LEVELING, NET, PHYS, QUALITY, TRACKS, WORLD, type QualityName } from '../config';
 import { STORY } from '../data/story';
 
@@ -57,6 +58,9 @@ export interface SessionOptions {
   attract?: boolean;
 }
 
+/** Replay / photo mode: takes over rendering (one full-screen view) while set. */
+export interface ViewOverride { render(dt: number): void }
+
 export interface GameHooks {
   onRaceResults(rows: Standing[]): void;
 }
@@ -85,6 +89,8 @@ export class Game {
   ai: AiRacers | null = null;
   tutorial: Tutorial | null = null;
   remotes: RemotePlayers | null = null;
+  replay: Replay | null = null;
+  view: ViewOverride | null = null;
   time = 0;
   frame = 0;
   paused = false;
@@ -143,6 +149,7 @@ export class Game {
       if ((opts.mode === 'race' && this.layout instanceof Circuit) || (opts.mode === 'f1' && this.layout instanceof F1Track)) this.race = new Race(this, this.layout, opts.laps, opts.trackId);
       if (this.net) this.wireNet(this.net);
       if (opts.tutorial) this.tutorial = new Tutorial(this);
+      this.replay = new Replay(this);
     }
     addEventListener('resize', this.onResize);
     this.resize();
@@ -224,7 +231,7 @@ export class Game {
     const dt = Math.min(Math.max((now - this.last) / 1000, 0.001), PHYS.maxDt);
     this.last = now;
     this.frame++;
-    if (!this.opts.attract) {
+    if (!this.opts.attract && !this.view) {
       this.input.poll();
       for (const p of this.players) p.handleInput();
     }
@@ -251,6 +258,7 @@ export class Game {
     this.race?.update(dt);
     this.remotes?.update(dt);
     this.updateMusic();
+    this.replay?.record(dt);
     const focus = this.players.length ? this.players.map((p) => p.P) : [this.attractFocus()];
     this.chunks.stream(focus, this.opts.mode === 'f1' ? 2 : WORLD.buildsPerFrame); // F1 speeds need chunks ready sooner
     this.env.update(dt, this.time, focus[0].x, focus[0].z);
@@ -279,6 +287,7 @@ export class Game {
 
   private render(dt: number) {
     const r = this.renderer;
+    if (this.view) return this.view.render(dt);
     if (this.attractCam) {
       const f = this.attractFocus(), a = this.time * 0.08, cam = this.attractCam, vp = r.viewports[0];
       const gy = this.terrain.groundAt(f.x, f.z);

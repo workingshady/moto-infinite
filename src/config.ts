@@ -322,3 +322,15 @@ export const F1 = {
   aiNames: ['M. Verstappo', 'L. Hamiltone', 'C. Leclair', 'L. Norrison', 'O. Piastro', 'G. Russo', 'F. Alonzo', 'C. Sainte', 'P. Gaslee', 'Y. Tsunami', 'A. Albone', 'E. Ocone'],
 };
 export type TyreCompound = keyof typeof F1.tyres;
+
+// Replay, photo mode and clips (systems/Replay.ts, ui/ReplayPanel.ts, ui/PhotoMode.ts)
+export const REPLAY = {
+  seconds: 60, hz: 30, // ring buffer length and sample rate (~60 B per vehicle per sample)
+  maxActors: 24, maxEvents: 64,
+  nitroGap: 3, // s between two nitro markers of one rider
+  instantBack: 10, // s an instant replay rewinds
+  promptSecs: 4.5, promptTrickPts: 400, // instant replay prompt after a crash or a trick worth this many points
+  clipMax: 20, clipFps: 30, // clip length cap (s of playback) and capture rate
+  speeds: [0.25, 0.5, 1, 2],
+  photoMaxDist: 40, photoMinDist: 1.5, photoOrbitMax: 30, // photo camera: how far from the rider it may fly / orbit
+};

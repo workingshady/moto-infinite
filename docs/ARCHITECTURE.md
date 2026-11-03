@@ -43,6 +43,7 @@ src/
     AiRacers.ts          Computer opponents: curvature/grip speed profile with braking pass, racing line, overtakes
     Particles.ts         GPU particle pools
     Effects.ts           Shockwave rings, debris, beams, skid marks (pooled/instanced)
+    Replay.ts            60 s ring buffer (typed arrays) of every vehicle + key moments; poses puppet copies for playback
   net/
     NetClient.ts         WebSocket to a room
     RemotePlayers.ts     Other online riders, interpolated
@@ -52,6 +53,10 @@ src/
     Hud.ts               Per-player HUD (stats, minimap, reticle, story, race panel)
     Touch.ts             Phone/tablet buttons
     Gauges.ts            Canvas speedometer, tachometer, nitro ring
+    ReplayStudio.ts      Opens replay / photo mode (pause, results, I key, instant-replay prompt) via Game.view
+    ReplayPanel.ts       Replay playback: TV/chase/orbit/onboard/heli cameras, timeline, events, WebM clips
+    PhotoMode.ts         Free camera, FOV/roll/exposure, filters, frames, watermark, PNG download/share
+    mediaShare.ts        Download/share, clip recorder, orbit drag/pinch input, gamepad edges
   styles/main.css
   utils/                 math helpers, seeded noise
 worker/

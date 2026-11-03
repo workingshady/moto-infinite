@@ -13,6 +13,7 @@ import { DRIFT_TRACKS } from './world/DriftTrack';
 import { F1_TRACKS } from './world/F1Track';
 import { vehicleById } from './data/vehicles';
 import { driftSeed } from './ui/Preview';
+import { ReplayStudio, type StudioFrom } from './ui/ReplayStudio';
 
 const store = {
   get<T>(k: string, fallback: T): T {
@@ -42,6 +43,8 @@ export class App {
   private net: NetClient | null = null;
   private lastLocal: Setup | null = null;
   private touch: HTMLDivElement | null = null;
+  private studio: ReplayStudio | null = null;
+  private lastRows: Standing[] = [];
   private quality: QualityName = store.get<QualityName>('quality', isMobile ? 'low' : 'medium');
 
   constructor() {
@@ -81,6 +84,8 @@ export class App {
       resume: () => this.resume(),
       respawn: () => { this.game?.players.forEach((p) => p.respawn()); this.resume(); },
       quit: () => this.quit(),
+      replay: () => this.openStudio('replay'),
+      photo: () => this.openStudio('photo'),
       raceAgain: () => this.raceAgain(),
       setQuality: (q: QualityName) => { this.quality = q; store.set('quality', q); this.game?.setQuality(q); },
       toggleMute: () => this.audio.toggleMute(),
@@ -92,6 +97,8 @@ export class App {
 
   // ------------------------------------------------------------------ sessions
   private replaceGame(opts: SessionOptions | null) {
+    this.studio?.dispose();
+    this.studio = null;
     this.game?.dispose();
     this.game = null;
     this.touch?.remove();
@@ -99,6 +106,7 @@ export class App {
     if (!opts) return;
     this.game = new Game(opts, this.input, this.audio, { onRaceResults: (rows) => this.results(rows) });
     this.game.start();
+    if (!opts.attract) this.studio = new ReplayStudio(this.game, (from) => this.closeStudio(from));
   }
 
   private attract() {
@@ -217,7 +225,7 @@ export class App {
 
   // ------------------------------------------------------------------ pause / results
   private togglePause() {
-    if (!this.game || !this.menu.inGame) return;
+    if (!this.game || !this.menu.inGame || this.studio?.active) return;
     if (this.menu.visible && (this.menu.current === 'pause' || this.menu.current === 'settings' || this.menu.current === 'howto')) this.resume();
     else if (!this.menu.visible) {
       this.game.setMenuPaused(true);
@@ -232,8 +240,22 @@ export class App {
   }
 
   private results(rows: Standing[]) {
+    this.lastRows = rows;
     this.game?.setMenuPaused(true);
     this.menu.show('results', rows);
+  }
+
+  /** Replay / photo mode from the pause or results screen; closing goes back there. */
+  private openStudio(kind: 'replay' | 'photo') {
+    const from: StudioFrom = this.menu.current === 'results' ? 'results' : 'pause';
+    this.menu.hide();
+    if (!(kind === 'replay' ? this.studio?.openReplay(from) : this.studio?.openPhoto(from))) this.closeStudio(from);
+  }
+
+  private closeStudio(from: StudioFrom) {
+    if (from === 'play') this.resume();
+    else if (from === 'results') this.menu.show('results', this.lastRows);
+    else this.menu.show('pause');
   }
 
   private raceAgain() {

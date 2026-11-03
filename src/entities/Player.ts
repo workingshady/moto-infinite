@@ -688,6 +688,7 @@ export class Player {
         g.audio.play('trick');
         this.hud.banner(tricks.join(' + '), `+${Math.round(pts * this.stats.xpMul * (this.buffs.xp2 > 0 ? 2 : 1))} XP${s.combo > 1 ? ` · COMBO x${s.combo}` : ''}`, flips ? '#ff7ad9' : '#ffd23f');
         this.addXP(pts);
+        g.replay?.mark(this, 'trick', tricks[0], pts);
         s.nitro = Math.min(this.stats.nitroMax, s.nitro + 20 * tricks.length * this.stats.trickMul);
         g.fx.burst(B.x, B.y + 1, B.z, { n: 50, speed: 14, life: 1, size: [0.6, 0.1], colors: [0xffd23f, 0xff7ad9, 0xffffff], gravity: 6 });
       }
@@ -881,6 +882,7 @@ export class Player {
     B.wheeliePerfect = 0;
     B.wheelieD = 0;
     this.hud.banner('CRASH!', reason, '#ff4d5e');
+    g.replay?.mark(this, 'crash', 'CRASH');
     g.audio.play('crash');
     if (this.isCar) g.audio.play('clank');
     this.cam.shake = 0.9;
