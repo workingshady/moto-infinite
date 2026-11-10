@@ -4,6 +4,7 @@
 //  - /assets/*  cache-first (file names are content-hashed, so a cached copy is always correct)
 //  - pages      network-first, falling back to the cached shell (offline single-player)
 //  - /api/*     never cached (rooms, logs)
+//  - /.well-known/*  never touched (Android Digital Asset Links must always come from the network)
 //  - other      stale-while-revalidate (icons, manifest, favicon)
 const VERSION = '__SW_VERSION__';
 const PRECACHE = __SW_PRECACHE__;
@@ -43,7 +44,7 @@ self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
-  if (url.origin !== self.location.origin || url.pathname.startsWith('/api/')) return;
+  if (url.origin !== self.location.origin || url.pathname.startsWith('/api/') || url.pathname.startsWith('/.well-known/')) return;
   if (req.mode === 'navigate') event.respondWith(networkFirst(req));
   else if (url.pathname.startsWith('/assets/')) event.respondWith(cacheFirst(req));
   else event.respondWith(staleWhileRevalidate(req, event));

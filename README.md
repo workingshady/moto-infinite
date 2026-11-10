@@ -70,3 +70,41 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 Pushing to `main` deploys via Cloudflare Workers Builds (Git integration), or run `npm run deploy` manually.
 Secrets go in `.dev.vars` locally (git-ignored, see `.dev.vars.example`) and `npx wrangler secret put NAME` in production.
+
+## Android app (APK)
+
+`android/` is a [Trusted Web Activity](https://developer.chrome.com/docs/android/trusted-web-activity) generated with
+[Bubblewrap](https://github.com/GoogleChromeLabs/bubblewrap): package `dev.workers.workingshady.motoinfinite`, full screen,
+landscape. It is not on the Play Store; the signed APK is attached to the GitHub Releases.
+
+**Install (sideload):** download `MotoInfinite-<version>.apk` from the Releases page on the phone, open it and allow
+"Install unknown apps" for the browser or file manager when Android asks. Needs Android 7.0+ and Chrome (or another
+browser that supports TWAs); without one it falls back to a Custom Tab.
+
+**It loads the live site.** The app opens https://moto-infinite.workingshady.workers.dev in Chrome without the browser
+bar, so every web deploy reaches the app at once: no new APK is needed for game changes. Google sign-in works because
+the page runs in Chrome, not a WebView. The bar stays hidden only while the site serves `/.well-known/assetlinks.json`
+(`public/.well-known/assetlinks.json`) with the release key's SHA-256 fingerprint; if it is missing or wrong, the app
+still works but shows a URL bar.
+
+**Build a new version** (only for app-side changes: name, icon, colours, orientation, Android/library updates):
+
+1. Bump `appVersionCode` (+1, must always increase) and `appVersionName` in `android/twa-manifest.json`, and the same
+   values as `versionCode` / `versionName` in `android/app/build.gradle`. For bigger changes (icon, colours, a newer
+   Bubblewrap template) regenerate the project from `twa-manifest.json` with `bubblewrap update --skipVersionUpgrade`
+   (Bubblewrap CLI, run inside `android/`).
+2. Put the passwords from `C:\Users\worki\moto-infinite-signing\KEEP-SAFE.txt` in the environment and build (git bash,
+   JDK 17 + Android SDK build-tools 36.1.0):
+   ```bash
+   export BUBBLEWRAP_KEYSTORE_PASSWORD='…'     # BUBBLEWRAP_KEY_PASSWORD defaults to the same value
+   bash android/build-apk.sh                    # -> android/app-release-signed.apk (+ app-release-bundle.aab)
+   ```
+   The script runs Gradle, zipalign, apksigner and jarsigner (what `bubblewrap build` does, without prompts) and prints the
+   certificate's SHA-256, which must match `public/.well-known/assetlinks.json`.
+3. Rename the APK to `MotoInfinite-<version>.apk` and attach it to a new GitHub Release.
+
+**Keep the signing key safe.** The keystore (`keystore.jks`, alias `motoinfinite`) and its passwords live outside the
+repo in `C:\Users\worki\moto-infinite-signing\` and must never be committed (`*.jks`, `*.keystore`, `*.apk`, `*.aab`
+are git-ignored). Back that folder up: Android only accepts an update signed with the same key, so if it is lost the
+app can never be updated in place (everyone would have to uninstall and reinstall) and assetlinks.json would need the
+new fingerprint.

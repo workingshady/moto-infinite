@@ -3,7 +3,7 @@ import tseslint from 'typescript-eslint';
 import globals from 'globals';
 
 export default tseslint.config(
-  { ignores: ['dist', '.wrangler', '.claude', 'worker-configuration.d.ts'] },
+  { ignores: ['dist', '.wrangler', '.claude', 'android', 'worker-configuration.d.ts'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   { files: ['src/**'], languageOptions: { globals: globals.browser } },

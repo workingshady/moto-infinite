@@ -1,0 +1,55 @@
+{
+  "packageId": "dev.workers.workingshady.motoinfinite",
+  "host": "moto-infinite.workingshady.workers.dev",
+  "name": "Moto Infinite",
+  "launcherName": "Moto Infinite",
+  "display": "fullscreen",
+  "themeColor": "#0C101C",
+  "themeColorDark": "#0C101C",
+  "navigationColor": "#0C101C",
+  "navigationColorDark": "#0C101C",
+  "navigationDividerColor": "#0C101C",
+  "navigationDividerColorDark": "#0C101C",
+  "backgroundColor": "#0C101C",
+  "enableNotifications": false,
+  "startUrl": "/",
+  "iconUrl": "https://moto-infinite.workingshady.workers.dev/icons/icon-512.png",
+  "maskableIconUrl": "https://moto-infinite.workingshady.workers.dev/icons/maskable-512.png",
+  "splashScreenFadeOutDuration": 300,
+  "signingKey": {
+    "path": "C:\\Users\\worki\\moto-infinite-signing\\keystore.jks",
+    "alias": "motoinfinite"
+  },
+  "appVersionName": "1.0.0",
+  "appVersionCode": 1,
+  "shortcuts": [],
+  "generatorApp": "bubblewrap-core",
+  "webManifestUrl": "https://moto-infinite.workingshady.workers.dev/manifest.webmanifest",
+  "fallbackType": "customtabs",
+  "features": {},
+  "alphaDependencies": {
+    "enabled": false
+  },
+  "enableSiteSettingsShortcut": true,
+  "isChromeOSOnly": false,
+  "isMetaQuest": false,
+  "fullScopeUrl": "https://moto-infinite.workingshady.workers.dev/",
+  "minSdkVersion": 24,
+  "orientation": "landscape",
+  "fingerprints": [
+    {
+      "name": "release",
+      "value": "CA:45:39:ED:A9:0C:73:36:15:0B:24:F5:F2:41:71:07:DB:47:1F:3D:49:88:8B:2D:9F:61:6F:F0:2A:8B:EA:DA"
+    }
+  ],
+  "additionalTrustedOrigins": [],
+  "retainedBundles": [],
+  "protocolHandlers": [],
+  "fileHandlers": [],
+  "launchHandlerClientMode": "",
+  "displayOverride": [
+    "fullscreen",
+    "standalone"
+  ],
+  "appVersion": "1.0.0"
+}

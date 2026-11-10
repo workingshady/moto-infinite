@@ -23,3 +23,16 @@ Thumbs.db
 .vscode/*
 !.vscode/extensions.json
 .claude/worktrees/
+
+# Android (TWA) build outputs + signing material — the release key lives outside the repo
+*.jks
+*.keystore
+android/*.jks
+android/*.keystore
+android/app/build/
+android/build/
+android/.gradle/
+android/local.properties
+*.apk
+*.aab
+*.idsig

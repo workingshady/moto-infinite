@@ -30,7 +30,7 @@ export function pwa(): Plugin {
     configResolved(c) { publicDir = c.publicDir; },
     generateBundle(_opts, bundle) {
       const built = Object.keys(bundle).filter((f) => !f.endsWith('.map') && f !== 'index.html' && f !== 'sw.js' && !f.startsWith('.'));
-      const pub = listFiles(publicDir).filter((f) => !SKIP_PUBLIC.has(f));
+      const pub = listFiles(publicDir).filter((f) => !SKIP_PUBLIC.has(f) && !f.startsWith('.well-known/'));
       const precache = ['/', ...[...built, ...pub].sort().map((f) => '/' + f)];
       const html = bundle['index.html'];
       const hash = createHash('sha256').update(precache.join('\n'));

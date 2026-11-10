@@ -1,0 +1,10 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "dev.workers.workingshady.motoinfinite",
+      "sha256_cert_fingerprints": ["CA:45:39:ED:A9:0C:73:36:15:0B:24:F5:F2:41:71:07:DB:47:1F:3D:49:88:8B:2D:9F:61:6F:F0:2A:8B:EA:DA"]
+    }
+  }
+]
