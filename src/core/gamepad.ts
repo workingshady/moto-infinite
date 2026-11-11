@@ -56,7 +56,8 @@ export function readPad(c: Controller, pad: Gamepad, map: Record<Action, number[
     if (a === 'down') brake = v;
   }
   const dpadSteer = (map.left.some((b) => B[b]?.pressed)) || (map.right.some((b) => B[b]?.pressed));
-  const ax = pad.axes[0] ?? 0, ay = (pad.axes[1] ?? 0) * (settings.invertY ? -1 : 1);
+  const sw = settings.padSticks === 'swapped' ? 2 : 0; // southpaw: steer with the right stick, look with the left
+  const ax = pad.axes[sw] ?? 0, ay = (pad.axes[sw + 1] ?? 0) * (settings.invertY ? -1 : 1);
   const steer = shapeAxis(ax);
   if (steer < -0.02) c.held.add('left');
   if (steer > 0.02) c.held.add('right');
@@ -66,9 +67,9 @@ export function readPad(c: Controller, pad: Gamepad, map: Record<Action, number[
   const curve = (v: number) => (settings.analogTriggers ? Math.min(1, Math.max(0.15, (v - 0.05) / 0.9)) : 1);
   if (!kbUp && throttle > 0.08) c.throttle = curve(throttle);
   if (!kbDown && brake > 0.08) c.brake = curve(brake);
-  const rx = shapeAxis(pad.axes[2] ?? 0) * (settings.invertLook ? -1 : 1);
+  const lk = 2 - sw, rx = shapeAxis(pad.axes[lk] ?? 0) * (settings.invertLook ? -1 : 1);
   if (rx) c.lookDelta -= rx * 0.05;
-  if ((pad.axes[3] ?? 0) < -0.7) c.held.add('camera');
+  if ((pad.axes[lk + 1] ?? 0) < -0.7) c.held.add('camera');
 }
 
 /** Hot-plug toasts: "🎮 PlayStation controller connected · P1". */

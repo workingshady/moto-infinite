@@ -3,20 +3,26 @@
    bl key help · bc prompts/meters/F1 dash · br gauges. Each zone scales by --hs (viewport x split factor) from its own
    corner, keeps clear of the notch (safe-area insets) and, with touch controls on, of the thumb clusters.
    Prefixed with #hud-layer so these win over the older per-size rules in main.css. */
-#hud-layer { --vs: 1; --sl: env(safe-area-inset-left, 0px); --sr: env(safe-area-inset-right, 0px); --st: env(safe-area-inset-top, 0px); --sb: env(safe-area-inset-bottom, 0px); }
+/* --edge: Settings → Display → Edge padding (for WebViews that report no insets around a notch) */
+#hud-layer { --vs: 1; --sl: calc(env(safe-area-inset-left, 0px) + var(--edge, 0px)); --sr: calc(env(safe-area-inset-right, 0px) + var(--edge, 0px));
+  --st: calc(env(safe-area-inset-top, 0px) + var(--edge, 0px) * 0.5); --sb: calc(env(safe-area-inset-bottom, 0px) + var(--edge, 0px) * 0.5); }
 @media (min-width: 2200px) and (min-height: 1200px) { #hud-layer { --vs: 1.2; } }
 @media (max-width: 1100px), (max-height: 760px) { #hud-layer { --vs: 0.9; } }
 @media (max-width: 760px), (max-height: 560px) { #hud-layer { --vs: 0.76; } }
-@media (max-height: 430px), (max-width: 420px) { #hud-layer { --vs: 0.64; } }
+@media (max-width: 420px) { #hud-layer { --vs: 0.64; } }
+/* short landscape phones (6.5 inch 20:9 at ~412 px tall): full size here; the UI size (auto = Compact, --ui) shrinks it
+   and display.css trims rows, so text stays readable (labels >= 11 px) instead of shrinking to 7-8 px */
+@media (max-height: 430px) and (orientation: landscape) { #hud-layer { --vs: 1; } }
 
-#hud-layer .hud { --hs: var(--vs); --hm: 16px; --map: 1; }
-#hud-layer .hud.split { --hs: calc(var(--vs) * 0.82); --hm: 10px; --map: 0.9; }
+/* --ui: Settings → Display → UI size (menus and HUD together) */
+#hud-layer .hud { --hs: calc(var(--vs) * var(--ui, 1)); --hm: 16px; --map: 1; }
+#hud-layer .hud.split { --hs: calc(var(--vs) * 0.82 * var(--ui, 1)); --hm: 10px; --map: 0.9; }
 @media (max-width: 760px), (max-height: 560px) { #hud-layer .hud { --map: 0.85; } }
 
 #hud-layer .hud .z-tl { left: calc(var(--hm) + var(--sl)); top: calc(var(--hm) + var(--st)); transform: scale(var(--hs)); transform-origin: top left;
   max-height: calc((100% - 2 * var(--hm)) / var(--hs) - 150px); }
 #hud-layer .hud .z-tc { top: calc(var(--hm) + var(--st)); transform: translateX(-50%) scale(var(--hs)); transform-origin: top center; }
-#hud-layer .hud .z-tr { right: calc(var(--hm) + var(--sr)); top: calc(var(--hm) + var(--st)); transform: scale(calc(var(--hs) * var(--map))); transform-origin: top right; }
+#hud-layer .hud .z-tr { right: calc(var(--hm) + var(--sr)); top: calc(var(--hm) + var(--st)); transform: scale(calc(var(--hs) * var(--map) * var(--map-user, 1))); transform-origin: top right; }
 #hud-layer .hud .z-bl { left: calc(var(--hm) + var(--sl)); bottom: calc(var(--hm) + var(--sb)); transform: scale(var(--hs)); transform-origin: bottom left; }
 #hud-layer .hud .z-bc { bottom: calc(var(--hm) + var(--sb)); transform: translateX(-50%) scale(var(--hs)); transform-origin: bottom center; }
 #hud-layer .hud .z-br { right: calc(var(--hm) - 4px + var(--sr)); bottom: calc(var(--hm) - 6px + var(--sb)); transform: scale(var(--hs)); transform-origin: bottom right; }

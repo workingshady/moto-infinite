@@ -1,0 +1,135 @@
+/* Settings → Display (UI size, HUD parts, minimap, gauges), the touch layout editor extras, and the layout for short
+   landscape phones (a 6.5 inch 20:9 such as a Galaxy A24 is ~915 x 412 CSS px in the app). Loaded last (main.ts).
+   --ui (UI size) and --edge (edge padding) are set on <html> by core/settings.ts applySettings(). */
+
+/* ================================================================ HUD parts the player switched off */
+body.hudx-stats #hud-layer .hud .z-tl .stats, body.hudx-minimap #hud-layer .hud .mapwrap, body.hudx-gauges #hud-layer .hud .z-br,
+body.hudx-nitro #hud-layer .hud .nitro-row, body.hudx-tower #hud-layer .hud .tower, body.hudx-keycard #hud-layer .hud .keycard,
+body.hudx-objective #hud-layer .hud .objective, body.hudx-chat #social .soc-feed { display: none !important; }
+
+/* compact digital gauge instead of the dials */
+#hud-layer .hud .gdig { display: none; min-width: 150px; padding: 8px 12px; }
+body.gauge-digital #hud-layer .hud .gauges { display: none !important; }
+body.gauge-digital #hud-layer .hud.gauges-on .gdig { display: block; }
+.gdig .gd-top { display: flex; align-items: baseline; gap: 6px; }
+.gdig .gd-top b { font-size: 34px; font-weight: 900; line-height: 1; font-variant-numeric: tabular-nums; min-width: 2.2ch; text-align: right; }
+.gdig .gd-top span { font-size: 13px; opacity: 0.75; }
+.gdig .gd-top i { margin-left: auto; font-style: normal; font-size: 30px; font-weight: 900; color: var(--accent); }
+.gdig .bar { margin: 6px 0 0; }
+body.touch-on.gauge-digital #hud-layer .hud .z-bc { bottom: calc(14px + var(--sb) + 80px * var(--g)); }
+
+/* ================================================================ touch: system row, controller, layout editor */
+/* the online dock follows the system buttons (Touch.ts measures them: tilt adds a button) */
+body.touch-on #social[data-view="play"] .soc-dock { left: calc(var(--tc-sys-r, 272px) + 6px); }
+/* race box / challenge / drift score sit below the button row instead of under the chat buttons */
+body.touch-on:not(.touch-portrait) #hud-layer .hud .z-tc { top: calc(var(--hm) + var(--st) + 50px); }
+/* a gamepad is driving: hide the on-screen driving controls (pause / camera stay) */
+#touch.pad-on .tc-btn, #touch.pad-on .tc-stick, #touch.pad-on .tc-chip { display: none; }
+body.touch-editing #social .soc-dock { display: none; }
+#touch .tc-sel { display: none; }
+#touch.editing .tc-sel:not([hidden]) { position: absolute; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 64px); transform: translateX(-50%); display: flex; gap: 6px;
+  align-items: center; padding: 4px 4px 4px 14px; border-radius: 999px; background: var(--panel-solid); pointer-events: auto; font-size: 14px; white-space: nowrap; }
+#touch.editing .tc-sel button { min-width: 44px; min-height: 40px; border: 0; border-radius: 999px; background: rgba(255, 255, 255, 0.12); font-weight: 900; font-size: 18px; }
+#touch.editing .tc-sel span { min-width: 48px; text-align: center; font-variant-numeric: tabular-nums; }
+#touch.editing .tc-edit button.on { background: rgba(60, 200, 255, 0.35); }
+#touch.editing .tc-btn.sel, #touch.editing .tc-stick.sel { outline: 3px solid var(--accent2); outline-offset: 4px; }
+#touch .tc-guide { position: absolute; pointer-events: none; background: var(--accent2); opacity: 0.8; z-index: 1; }
+#touch .tc-guide.v { top: 0; bottom: 0; width: 1px; }
+#touch .tc-guide.h { left: 0; right: 0; height: 1px; }
+.touch-sheet .ts-card { zoom: var(--ui, 1); }
+.ts-card .opt > span { width: 120px; }
+.tslots { display: grid; gap: 6px; }
+.tslot { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.tslot > span { flex: 1; min-width: 140px; font-size: 13px; }
+.tslot em { color: var(--dim); }
+.tslot small { color: var(--dim); margin-left: 4px; }
+.chip:disabled { opacity: 0.4; cursor: default; }
+
+/* ================================================================ settings: sub pages, HUD toggles, controller */
+.set-subtabs { margin: -4px 0 10px; }
+.hud-toggles { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.pad-status { margin: 0 0 8px; padding: 8px 12px; border-radius: 10px; background: rgba(255, 255, 255, 0.06); font-size: 14px; }
+.pad-status.on { background: rgba(124, 255, 178, 0.12); color: var(--good); }
+/* thumbs: every settings control is at least 40-44 px tall on touch screens */
+@media (pointer: coarse) {
+  .scr-settings .chip, .ts-card .chip { min-height: 40px; padding: 8px 14px; }
+  .scr-settings .set-tab { min-height: 44px; }
+  .bkey { min-width: 48px; height: 44px; font-size: 14px; }
+  .bind-row { padding: 4px 0; }
+  .srange input[type=range], .ts-card .srange input[type=range] { height: 32px; }
+}
+
+/* ================================================================ short landscape phones (height <= 500 px) */
+@media (orientation: landscape) and (max-height: 500px) {
+  /* the UI size (--ui, auto = Compact) does the shrinking here, not the old height steps */
+  #menu.overlay { --mz: 1; padding-top: max(6px, env(safe-area-inset-top, 0px)); padding-bottom: 0; align-items: safe flex-start; }
+  #menu .card-wrap { padding: 12px 18px 0; border-radius: 16px 16px 0 0; }
+  #menu h2 { font-size: 20px; margin-bottom: 8px; }
+  /* the action row (Back / Ride / Resume ...) stays on screen while the page scrolls */
+  #menu.overlay:not(.lobby-screen) > .card-wrap > .row-buttons { position: sticky; bottom: 0; z-index: 3; margin: 10px -18px 0; padding: 8px 18px calc(8px + env(safe-area-inset-bottom, 0px));
+    background: rgba(14, 18, 30, 0.97); backdrop-filter: blur(10px); border-top: 1px solid rgba(255, 255, 255, 0.08); }
+  #menu .btn { padding: 10px 16px; }
+  /* home: two columns, small logo, story in two lines, the play buttons in a 2 x 2 grid */
+  #menu .hero { grid-template-columns: 1.25fr 1fr; gap: 16px; align-items: start; }
+  #menu .hero-right { order: 0; position: sticky; top: 0; }
+  #menu .hero .logo-img { width: auto; max-width: 100%; height: 58px; margin-bottom: 2px; }
+  #menu .story-intro { margin: 4px 0 8px; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  #menu .profile { margin-bottom: 6px; gap: 10px; }
+  #menu .ride-line { margin: 4px 0 8px; }
+  #menu .big-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  #menu .big-buttons .btn { padding: 11px 10px; font-size: 15px; }
+  #menu .char-host { aspect-ratio: 4 / 3; max-height: 58vh; }
+  #menu .features { display: none; }
+  /* solo / split setup: options left, map right, mode cards in one row without their blurbs */
+  .scr-mode .setup { grid-template-columns: 1fr minmax(200px, 30%); gap: 14px; }
+  .scr-mode .setup-map { position: sticky; top: 0; }
+  .scr-mode .setup-map canvas { max-width: none; }
+  #menu .modes { grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 8px; }
+  #menu .mode { padding: 8px 10px; }
+  #menu .mode span { display: none; }
+  #menu .opt { margin: 6px 0; }
+  /* settings: tabs in one scrolling row, the page scrolls instead of a nested box */
+  .set-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .set-tab { flex: none; }
+  .set-body { max-height: none; overflow: visible; }
+  /* garage / career / how-to: no nested scroll boxes on a short screen */
+  #menu .veh-grid { max-height: none; }
+  #menu .howto { max-height: none; }
+  /* readable floor: tiny labels go up so they stay >= 11 px after the Compact size */
+  #menu :is(.small, .veh-spec, .stat, .veh-head span, .label, .cr-stat span, .cr-credits small, .cr-ach-tx em, .cr-ach-tx small, .ach-tx small, .veh-lock,
+    .gp-sort > span, .f1p-bar > span, .f1c-meta, .lb-rows .veh, .lb-timer span, .md-chip, .acct-state, .dtags span, .f1c small, .lineup-hint) { font-size: 13px; }
+  #menu .hint, #menu .chip, #menu .opt > span, #menu .ride-line { font-size: 13.5px; }
+  #menu small:not(.cr-badge small), #menu .results td .lvl, #menu .profile label, #menu .acct-why { font-size: 13px; }
+  /* lobby: line-up beside the options instead of above them */
+  #menu.lobby-screen > .card-wrap { padding: 10px 14px 0; }
+  .lobby-grid { grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: 14px; }
+  .lobby-side .lineup-host { height: 46vh; min-height: 140px; }
+  .lobby-main { border-left: 1px solid rgba(255, 255, 255, 0.08); padding-left: 14px; }
+  .lobby-top .roomcode { font-size: 30px; }
+
+  /* HUD: a smaller minimap (it sits above the right thumb cluster), narrower meters between the thumbs */
+  #hud-layer .hud { --map: 0.68; }
+  #hud-layer .hud .flightm, #hud-layer .hud .wmeter { width: 200px; }
+  /* compact rows, readable floor (labels >= 11 px at the Compact size) */
+  #hud-layer .hud .stats { font-size: 13px; line-height: 1.35; padding: 7px 11px; }
+  #hud-layer .hud .stats .xp-row .bar, #hud-layer .hud .stats .bar { height: 6px; margin: 1px 0 3px; }
+  #hud-layer .hud .label, #hud-layer .hud .objective, #hud-layer .hud .tower { font-size: 13px; }
+  #hud-layer .hud .trow { padding: 1px 0; }
+  #hud-layer .hud .trow u, #hud-layer .hud .trow span small { font-size: 13px; }
+  #hud-layer .hud .trow u.tyre { width: 15px; height: 15px; line-height: 11px; }
+  #hud-layer .hud .racebox { font-size: 13px; padding: 6px 12px; }
+  #hud-layer .hud .f1row, #hud-layer .hud .f1top span { font-size: 13px; }
+  #hud-layer .hud .f1flags span { font-size: 13px; }
+  #hud-layer .hud .f1row .tyre { width: 26px; height: 26px; font-size: 13px; }
+  #hud-layer .hud .camtag, #hud-layer .hud .prompt { font-size: 15px; }
+  #hud-layer .hud .dtags span, #hud-layer .hud .md-chip { font-size: 13px; }
+  /* races: the position / timing tower matters more than the start-line objective */
+  #hud-layer .hud.mode-race .objective, #hud-layer .hud.mode-f1 .objective, #hud-layer .hud.mode-race .xp-row { display: none; }
+  /* the left column may reach down to just above the ◀ ▶ / joystick cluster (~150 px), not 190 px */
+  body.touch-on #hud-layer .hud .z-tl { max-height: calc((100% - var(--hm) - var(--st) - 50px - 150px - var(--sb)) / var(--hs)); }
+  /* the instant-replay offer sits under the race box, not on top of it */
+  body.touch-on .rp-prompt { top: auto; bottom: calc(40% + env(safe-area-inset-bottom, 0px)); zoom: var(--ui, 1); }
+  /* system buttons a little smaller so they and the online dock fit beside the race box */
+  #touch .tc-sys button { width: 40px; height: 40px; font-size: 16px; }
+  body.touch-on #social[data-view="play"] .soc-dock button { width: 40px; height: 40px; }
+}

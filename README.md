@@ -7,6 +7,7 @@ Low-poly motorbike game in the browser: endless open world with a story, circuit
 - **Players:** solo · 2 players split screen (keyboard or gamepads) · online rooms up to 8, joined by link
 - **World:** 5 themes, random seeds, day/dawn/sunset/night or live cycle, clear/cloudy/rain/fog/snow/storm or changing weather
 - **Combat:** 6 weapons with lead-aim assist, 3 drone types, power-ups, optional PvP
+- **Phones and controllers:** touch layouts (Classic, Joystick, Tilt, Racing pedals, One-thumb) with a drag-and-resize editor (snap grid, per-button size, 3 saved layouts), steering sensitivity / dead zone / smoothing, haptics; Bluetooth / USB gamepads with presets (Default, Racing triggers, Classic, Southpaw) and full rebinding, touch buttons hide while a pad is connected. Settings → Display: UI size (auto Compact on short landscape phones), edge padding for notches, HUD parts / minimap / gauge style, camera distance, height and field of view.
 - **Accounts (optional):** Sign in with Google to sync career, garage, settings, touch layout and Time Attack bests across devices; signed-in leaderboard rows get a ✓. Playing without an account works as before (local saves).
 
 **Stack:** Vite · TypeScript · Three.js · Cloudflare Workers (static assets, later Durable Objects for online rooms)

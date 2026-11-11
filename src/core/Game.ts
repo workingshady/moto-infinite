@@ -275,7 +275,7 @@ export class Game {
   private loop = (now: number) => {
     this.raf = requestAnimationFrame(this.loop);
     if (document.hidden) { this.last = now; return; } // background tab: no simulation, no rendering
-    if (skipFrame(now, this.last)) return; // frame-rate cap (Settings)
+    if (skipFrame(now)) return; // frame-rate cap (Settings)
     this.dynRes.frame(now - this.last);
     const dt = Math.min(Math.max((now - this.last) / 1000, 0.001), PHYS.maxDt);
     this.last = now;

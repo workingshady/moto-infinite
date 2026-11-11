@@ -1,7 +1,7 @@
 // Rebindable keys and gamepad buttons. Defaults live in Input.ts; user overrides (settings.keys / settings.pad)
 // are written into those same tables in place, so controllers and gameplay pick them up without changes.
 import { BINDINGS, PAD, type Action, type Controller } from './Input';
-import { settings, saveSettings, type Layout } from './settings';
+import { settings, saveSettings, type Layout, type PadPreset, type Settings } from './settings';
 import { buttonName, currentPadType, padConnected } from './gamepad';
 
 /** Every action in the order the Controls tab lists them. */
@@ -109,6 +109,7 @@ export function bindPad(a: Action, slot: number, btn: number) {
   if (RESERVED_PAD.includes(btn)) return `${buttonName(btn)} is reserved (pause)`;
   const msg = rebind(PAD, a, slot, btn, (b) => buttonName(b));
   storePad();
+  settings.padPreset = 'custom';
   saveSettings();
   return msg;
 }
@@ -119,8 +120,27 @@ export function clearSlot(l: Layout | 'pad', a: Action, slot: number) {
   saveSettings();
 }
 
+/** Controller presets (standard mapping: 0 A · 1 B · 2 X · 3 Y · 4 LB · 5 RB · 6 LT · 7 RT · 12-15 D-pad). Overrides on top of the defaults. */
+export const PAD_PRESETS: { id: Exclude<PadPreset, 'custom'>; label: string; hint: string; pad: Partial<Record<Action, number[]>>; sticks: 'normal' | 'swapped' }[] = [
+  { id: 'default', label: 'Default', hint: 'RT or A throttle · LT brake · RB / B nitro · LB drift', pad: {}, sticks: 'normal' },
+  { id: 'racing', label: 'Racing', hint: 'Triggers only: RT throttle, LT brake · A / RB nitro · X fire', pad: { up: [7, 12], down: [6, 13], nitro: [0, 5] }, sticks: 'normal' },
+  { id: 'classic', label: 'Classic', hint: 'Arcade: A throttle, X brake · B / RB nitro · RT fire', pad: { up: [0, 12], down: [2, 13], fire: [7], nitro: [1, 5] }, sticks: 'normal' },
+  { id: 'southpaw', label: 'Southpaw', hint: 'Steer with the right stick, look with the left · default buttons', pad: {}, sticks: 'swapped' },
+];
+
+/** Apply a controller preset (replaces the gamepad button overrides). */
+export function applyPadPreset(id: PadPreset) {
+  const p = PAD_PRESETS.find((x) => x.id === id);
+  if (!p) return;
+  settings.pad = JSON.parse(JSON.stringify(p.pad)) as Settings['pad'];
+  settings.padSticks = p.sticks;
+  settings.padPreset = p.id;
+  applyBindings();
+  saveSettings();
+}
+
 export function resetBindings(l: Layout | 'pad') {
-  if (l === 'pad') settings.pad = {};
+  if (l === 'pad') { settings.pad = {}; settings.padPreset = 'default'; settings.padSticks = 'normal'; }
   else settings.keys[l] = {};
   applyBindings();
   saveSettings();

@@ -457,7 +457,7 @@ kbd.key { display: inline-flex; align-items: center; justify-content: center; mi
 /* ---------------------------------------------------------------- menu sizing + full-screen lobby */
 /* Menus shrink a little on short screens so whole pages fit without browser zoom. */
 #menu.overlay { --mz: 1; align-items: safe center; overscroll-behavior: contain; }
-#menu > .card-wrap { zoom: var(--mz); }
+#menu > .card-wrap { zoom: calc(var(--mz) * var(--ui, 1)); } /* --ui: Settings → Display → UI size */
 @media (max-height: 900px) { #menu.overlay { --mz: 0.92; } }
 @media (max-height: 760px) { #menu.overlay { --mz: 0.84; } }
 .card-wrap.wide { width: min(1240px, 100%); }
