@@ -28,7 +28,8 @@ src/
     cameraViews.ts       Chase, far, hood, first person, cinematic, top-down
     prefs.ts             Saved player preferences (riding assist, nitro toggle, onboarding seen)
     syncBus.ts           Local-save change feed + per-section edit times for cloud save (no imports)
-    settings.ts          Extra saved settings (FOV, units, shake, HUD scale/opacity, colourblind, frame cap, pad feel) + helpers
+    settings.ts          Extra saved settings (UI size, edge padding, camera FOV/distance/height, HUD parts/minimap/gauges, units, shake,
+                         colourblind, frame cap + pacing, pad feel/preset) with phone defaults, cleanSettings() validation + helpers
     bindings.ts          Key / gamepad rebinding (overrides written into Input's tables), key + button labels
     gamepad.ts           Pad dead zone / curve / analog triggers, Xbox/PlayStation detection and glyphs, hot-plug
     rumble.ts            Controller rumble + phone vibration, derived from player state each frame
@@ -106,10 +107,14 @@ src/
     garagePicker.ts      Garage tabs (bikes + each car class), sort chips, card grid (styles/garage.css)
     f1Picker.ts          F1 circuit cards (mini map, flag, difficulty, length, turns), difficulty filter + sort (styles/f1picker.css)
     Hud.ts               Per-player HUD (stats, minimap, reticle, story, race panel)
-    Touch.ts             Phone/tablet controls: mode-aware buttons, joystick or tilt steering, drag-to-edit layout, settings sheet, rotate hint
-    TouchLayout.ts       Touch settings (saved per device) and the button table: which buttons each mode/vehicle shows, default slots
+    Touch.ts             Phone/tablet controls: mode-aware buttons, joystick or tilt steering (sensitivity, dead zone, smoothing),
+                         layout editor (drag, per-button size, snap + guides, keep-out), settings sheet, auto-hide with a gamepad, rotate hint
+    TouchLayout.ts       Touch settings (saved per device, cleanTouch() validation, presets, 3 layout slots) and the button table;
+                         pure layout maths: per-button sizes on a grid, racing pedals, one-thumb, keep-on-screen / keep-out, snapping
+    touchSettingsUi.ts   The touch options HTML + events shared by Settings → Controls → Touch and the in-game ⚙ sheet
     LeaderboardPanel.ts  Daily challenge card, leaderboard overlay (daily/weekly/all-time), run result card
-    SettingsPanel.ts     Tabbed Settings screen (Graphics, Audio, Controls, Gameplay, Accessibility) and rebinding UI
+    SettingsPanel.ts     Tabbed Settings screen: Display (UI size · HUD · Camera), Graphics, Audio, Controls (Touch · Controller ·
+                         Keyboard), Gameplay, Accessibility, Account; rebinding UI and controller presets
     menuNav.ts           Keyboard / gamepad menu navigation (focus ring, arrows/D-pad, Enter/A, Esc/B)
     toast.ts             Small notifications
     CareerPanel.ts       Career screen, home strip, session summary, garage lock badges / buy box
@@ -127,6 +132,8 @@ src/
   styles/main.css
   styles/hud-layout.css  HUD zones scale with the viewport, respect safe areas and make room for touch buttons
   styles/mobile.css      Touch controls, rotate hint, settings sheet, phone menus (bottom sheets, 44 px targets)
+  styles/display.css     Loaded last: HUD parts on/off, digital gauge, layout editor extras, short-landscape phones (compact
+                         two-column menus, sticky action rows, readable font floors); --ui (UI size) and --edge (edge padding)
   utils/                 math helpers, seeded noise
 worker/
   index.ts               Cloudflare Worker: /api/health, /api/room/:code, /api/lb/*, /api/log, account routes (auth.ts)
@@ -142,6 +149,7 @@ worker/
 
 ## How the features fit together
 
+- **Screen size / phones**: `applySettings` puts `--ui` (UI size: Auto = Compact 0.85 on landscape screens ≤ 430 px tall, e.g. a Galaxy A24 at ~915 × 412 in the app; times the fine slider) and `--edge` (manual edge padding) on `<html>`. Menus zoom by `--mz × --ui`, HUD zones scale by `--vs × --ui` (short landscape uses `--vs: 1`, so text stays ≥ 11 px), and display.css switches short landscape screens to two-column menus with a sticky action row. Safe-area insets (`viewport-fit=cover`) plus `--edge` pad the HUD, touch layer and menus. Phones default to a 60 fps cap (paced, so a 90 Hz panel renders 60, not 45) and a wider, further chase camera (`CAMERA.phone`). Settings → Controls → Touch → Edit layout from the pause menu resumes into Touch's editor (`TouchControls.startEditing`).
 - **Pause / overlays**: Esc / Start toggles the pause menu (App.togglePause). Replay and photo mode (ReplayStudio) pause the game themselves when opened from play and return to where they were opened from; while one is open Esc/Start belong to it, and the online social layer treats it as a menu. Touch's rotate hint and settings sheet hold the game paused but never resume it behind a menu or the studio. Online games never pause (Game.setMenuPaused only disables input), so instant replay is off online; replay/photo from the pause menu still work (the recorder freezes while watching).
 - **Fixed keys** next to the rebindable ones (core/bindings.ts `SYSTEM_KEYS`): I instant replay (local), Enter/T chat, Tab player list, 5–0 quick chat, [ ] spectate (online). Rebinding a game action onto one of them works but shows a note. Typing in any input never reaches the game.
 - **Career feats** (core/career.ts `recordFeat`): Time Attack medal steps (once per track x vehicle), Elimination wins, traffic near misses, daily/weekly challenge runs (once per challenge), leaderboard ranks, first replay/photo, chat, online races. Nothing counts while a replay or photo mode is open. A daily/weekly or ghost run in a vehicle you don't own lends it for that run only (shown as 🔑 loaner); it stays locked in the garage.
@@ -183,7 +191,7 @@ One Cloudflare Worker (`wrangler.jsonc`): static build from the edge, `/api/*` t
 
 **Endpoints.** `GET /api/me` → `{user, admin?}` (renews the cookie) · `POST /api/logout` · `GET /api/save` → `{rev, updatedAt, save, wids}` · `PUT /api/save {rev, wid, save}` → 200 `{rev}` / 409 / 401 / 413 / 422 / 429 · `DELETE /api/account` (wipes the DO) · `POST /api/admin/unpin` · `POST /api/auth/dev` (tests, see README).
 
-**Save contents** (`shared/cloudSave.ts`): career blob, sections `settings` (minus device-only renderScale / fpsCap / showFps), `prefs`, `touch`, `profile` each with the time it was last edited on its device, and Time Attack bests. `sanitizeSave` runs on the server for every write and on the client for every read: known shapes only, numbers clamped (level ≤ 999, credits ≤ 1e8, top speed ≤ 2000 km/h, medals ≤ 4, …), ids/lists/sections size-capped, timestamps bounded.
+**Save contents** (`shared/cloudSave.ts`): career blob, sections `settings` (minus device-only renderScale / fpsCap / showFps / uiSize / uiScale / edgePad; applied through cleanSettings / cleanTouch), `prefs`, `touch`, `profile` each with the time it was last edited on its device, and Time Attack bests. `sanitizeSave` runs on the server for every write and on the client for every read: known shapes only, numbers clamped (level ≤ 999, credits ≤ 1e8, top speed ≤ 2000 km/h, medals ≤ 4, …), ids/lists/sections size-capped, timestamps bounded.
 
 **Sync** (`net/cloudSave.ts`). Sign-in / page load with a session: GET → merge → apply locally (quietly, not echoed) → PUT with the revision it was based on. Local saves schedule a PUT 15 s later; leaving the page (pagehide / hidden) sends a keepalive PUT. 409 → refetch, merge, retry. Offline → `dirty` flag, retried on `online` or the next load. Every PUT has a write id; the server keeps the last 32, so a write whose answer was lost (keepalive, dropped connection) is recognised on the next sync instead of being merged twice.
 

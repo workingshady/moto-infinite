@@ -24,7 +24,7 @@ import { STORY } from '../data/story';
 import { prefs, savePrefs } from '../core/prefs';
 import { crashFx, godPlay } from '../admin/state';
 import { CAM_LABEL, CAM_VIEWS, isCamView, type CamView } from '../core/cameraViews';
-import { fmtSpeed, fovOffset, motionScale, shakeScale } from '../core/settings';
+import { fmtSpeed, fovOffset, motionScale, settings, shakeScale } from '../core/settings';
 
 type Style = 'NO-HANDER' | 'SUPERMAN' | 'HEEL CLICKER';
 
@@ -1399,13 +1399,13 @@ export class Player {
       speedFov = 0;
       shakeMul = 0.3;
     } else {
-      const far = view === 'far' ? 1.75 : 1, a = P.h + cam.yaw;
-      let dist = (this.riding ? 9 + Math.abs(B.v) * 0.06 - cam.boost * 1.2 : 7) * zoom * far, ht = (this.riding ? 3.8 : 3.2) * zoom * (view === 'far' ? 1.6 : 1);
+      const far = view === 'far' ? 1.75 : 1, a = P.h + cam.yaw, cd = settings.camDist, ch = settings.camHeight; // Settings → Camera
+      let dist = (this.riding ? 9 + Math.abs(B.v) * 0.06 - cam.boost * 1.2 : 7) * zoom * far * cd, ht = (this.riding ? 3.8 : 3.2) * zoom * (view === 'far' ? 1.6 : 1) * ch;
       const fly = this.riding && this.ev?.flying ? clamp(this.ev.alt / 12, 0.35, 1) : 0; // thruster flight: pull back a little
       this.camFly = lerp(this.camFly, fly, damp(dt, 2));
       dist += EV.flight.camBack * this.camFly * zoom;
       ht += EV.flight.camUp * this.camFly * zoom;
-      if (view === 'top') { dist = 5 * zoom; ht = (34 + Math.abs(B.v) * 0.25) * zoom; }
+      if (view === 'top') { dist = 5 * zoom; ht = (34 + Math.abs(B.v) * 0.25) * zoom * cd; }
       cam.pos.set(P.x - Math.sin(a) * dist, P.y + ht, P.z - Math.cos(a) * dist);
       cam.pos.y = Math.max(cam.pos.y, g.terrain.groundAt(cam.pos.x, cam.pos.z) + 1.2);
       if (view !== 'top') this.unclip(P, cam.pos);

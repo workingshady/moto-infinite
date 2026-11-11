@@ -6,6 +6,7 @@ import { installErrorReporting, sendReport } from './core/errorReport';
 import { installPwa } from './core/pwa';
 import { installMenuExtras } from './ui/menuExtras';
 import { installAccountUi } from './ui/AccountPanel';
+import './styles/display.css'; // last: UI size, HUD options and short-landscape rules win over the per-panel sheets
 
 installErrorReporting();
 installPwa();

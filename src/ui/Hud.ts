@@ -16,7 +16,7 @@ import { fmt } from '../systems/Race';
 import { Gauges } from './Gauges';
 import { CAM_LABEL } from '../core/cameraViews';
 import { displayBindings, keyLabel } from '../core/bindings';
-import { pal, spd, speedUnit } from '../core/settings';
+import { pal, settings, spd, speedUnit } from '../core/settings';
 
 const TEMPLATE = `
 <canvas class="lines"></canvas>
@@ -64,7 +64,8 @@ const TEMPLATE = `
   <div class="panel f1dash" data-k="f1dash"><div class="f1top"><b data-k="f1speed">0</b><span data-k="f1unit">km/h</span><i data-k="f1gear">N</i></div><div class="rpm"><i data-k="f1rpm"></i></div><div class="f1row"><span class="tyre" data-k="f1tyre">M</span><span data-k="f1wear">0%</span><span class="lbl">ERS</span><div class="bar ers"><i data-k="f1ers"></i></div></div><div class="f1flags"><span data-k="f1drs">DRS</span><span data-k="f1slip">SLIP</span><span data-k="f1pit">PIT 80</span></div></div>
 </div>
 <!-- bottom-right: speedometer + tachometer -->
-<div class="zone z-br"><div class="gauges" data-k="gauges"></div></div>
+<div class="zone z-br"><div class="gauges" data-k="gauges"></div>
+  <div class="panel gdig" data-k="gdig"><div class="gd-top"><b data-k="gdSpd">0</b><span data-k="gdUnit">km/h</span><i data-k="gdGear">N</i></div><div class="bar"><i class="nitro" data-k="gdN"></i></div></div></div>
 <!-- centre overlays -->
 <div class="banner" data-k="banner"></div>
 <div class="story" data-k="story"><b data-k="storyT"></b><span data-k="storyX"></span></div>
@@ -365,7 +366,13 @@ export class Hud {
       e.gauges.style.display = showG ? 'block' : 'none';
       this.root.classList.toggle('gauges-on', showG);
     }
-    if (showG && !(this.root.classList.contains('split') && frame % 2)) {
+    if (showG && settings.gaugeStyle === 'digital') {
+      // compact digital readout (Settings → Display → HUD → Gauges): speed, gear, nitro
+      e.gdSpd.textContent = String(Math.round(p.s.dead ? 0 : spd(speedKmh)));
+      e.gdUnit.textContent = speedUnit();
+      e.gdGear.textContent = B.v < -0.5 ? 'R' : Math.abs(B.v) < 0.5 ? 'N' : String(p.dash.gear);
+      e.gdN.style.width = (s.nitro / p.stats.nitroMax) * 100 + '%';
+    } else if (showG && !(this.root.classList.contains('split') && frame % 2)) {
       const d = p.dash, raw = spd(p.stats.top * 3.6 * 1.6), step = raw <= 200 ? 20 : raw <= 360 ? 40 : 60;
       this.gauges.draw({
         kmh: p.s.dead ? 0 : spd(speedKmh), maxKmh: Math.ceil(raw / step) * step, rpm: d.rpm, redline: d.redline,

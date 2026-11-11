@@ -15,9 +15,9 @@ import { sanitizeSave, stableJson, type CareerData, type SaveData, type SaveEnve
 import { career, careerXpNeed, replaceCareer, saveCareer } from '../core/career';
 import { applyBindings } from '../core/bindings';
 import { prefs, savePrefs } from '../core/prefs';
-import { settings, saveSettings } from '../core/settings';
+import { cleanSettings, settings, saveSettings } from '../core/settings';
 import { onLocalChange, quietly, sectionTime, setSectionTime } from '../core/syncBus';
-import { saveTouchSettings, touchSettings } from '../ui/TouchLayout';
+import { cleanTouch, saveTouchSettings, touchSettings } from '../ui/TouchLayout';
 import { mergeSaved } from '../utils/store';
 import { api, deleteAccount, devSignIn, fetchMe, gsiSignedOut, logout, setCredentialHandler, signInWithGoogle } from './auth';
 import { mergeSave } from './saveMerge';
@@ -26,8 +26,8 @@ import { setAdminAccount } from '../admin/state';
 export type SyncState = 'off' | 'syncing' | 'synced' | 'offline' | 'error';
 export interface CloudStatus { user: PublicUser | null; state: SyncState; msg: string }
 
-/** Graphics settings that depend on the device (a phone and a desktop want different ones): never synced. */
-const DEVICE_SETTINGS = ['renderScale', 'fpsCap', 'showFps'] as const;
+/** Graphics / screen settings that depend on the device (a phone and a desktop want different ones): never synced. */
+const DEVICE_SETTINGS = ['renderScale', 'fpsCap', 'showFps', 'uiSize', 'uiScale', 'edgePad'] as const;
 const PUSH_DELAY = 15_000;
 const KEEPALIVE_MAX = 60_000;
 
@@ -112,12 +112,12 @@ function applyLocal(save: SaveData, replaceTa = false) {
     const sec = save.sections;
     if (sec.settings) {
       const keep = Object.fromEntries(DEVICE_SETTINGS.map((k) => [k, settings[k]]));
-      Object.assign(settings, mergeSaved(settings, sec.settings.data), keep);
+      Object.assign(settings, cleanSettings(sec.settings.data, settings), keep); // clamped + validated like a local load
       applyBindings();
       saveSettings();
     }
     if (sec.prefs) { Object.assign(prefs, mergeSaved(prefs, sec.prefs.data)); savePrefs(); }
-    if (sec.touch) { Object.assign(touchSettings, mergeSaved(touchSettings, sec.touch.data)); saveTouchSettings(); }
+    if (sec.touch) { Object.assign(touchSettings, cleanTouch(sec.touch.data, touchSettings)); saveTouchSettings(); }
     if (sec.profile) hooks.set(sec.profile.data);
     for (const [n, s] of Object.entries(sec)) setSectionTime(n as SectionName, s.at);
     if (replaceTa) for (const k of Object.keys(readTa())) set('moto:' + k, null);

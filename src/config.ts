@@ -8,6 +8,30 @@ export const QUALITY = {
 } as const;
 export type QualityName = keyof typeof QUALITY;
 
+/** Settings → Display: global UI size (menus + HUD), edge padding and the phone defaults. */
+export const UI_SIZE = {
+  presets: { compact: 0.85, normal: 1, large: 1.15 }, // compact: 13 px text stays >= 11 px
+  /** Fine slider multiplier on top of the preset. */
+  fine: [0.7, 1.3] as const,
+  /** "Auto" picks Compact on landscape screens at most this tall (CSS px), e.g. a 6.5" 20:9 phone at ~412 px. */
+  compactMaxH: 430,
+  /** Manual edge padding (px, each side) for WebViews that report no safe-area insets. */
+  edgePad: [0, 48] as const,
+  /** A phone: coarse pointer and a short screen side at most this many CSS px (orientation independent). */
+  phoneShortSide: 500,
+};
+
+/** Settings → Display → Camera: chase camera distance / height multipliers and the phone defaults. */
+export const CAMERA = {
+  /** Default chase FOV (vertical degrees); the Settings FOV is an offset from this. */
+  baseFov: 62,
+  fov: [50, 95] as const,
+  dist: [0.7, 1.6] as const,
+  height: [0.7, 1.6] as const,
+  /** Phones (wide 20:9 landscape, small screen): a little wider and further back, so more road ahead is visible. */
+  phone: { fov: 66, dist: 1.15, height: 1.08 },
+};
+
 export const WORLD = {
   grid: 260, // distance between parallel roads in open world
   chunk: 64, // chunk size in metres

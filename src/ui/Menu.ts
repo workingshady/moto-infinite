@@ -21,6 +21,7 @@ import { prefs, savePrefs } from '../core/prefs';
 import { mountLeaderboardHosts } from './LeaderboardPanel';
 import { isCamView } from '../core/cameraViews';
 import { SettingsPanel } from './SettingsPanel';
+import { TouchControls } from './Touch';
 import { keysText, padText } from '../core/bindings';
 import { buttonName, currentPadType, padFamily } from '../core/gamepad';
 import { fmtSpeed } from '../core/settings';
@@ -193,7 +194,15 @@ export class Menu {
     addEventListener('keydown', (e) => track(e, true), true);
     addEventListener('keyup', (e) => track(e, false), true);
     addEventListener('blur', () => { this.keysDown.clear(); this.paintKeyTest(); });
-    this.settingsUi = new SettingsPanel(this.root, { rerender: () => this.show('settings'), setQuality: (q) => { this.quality = q; this.a.setQuality(q); }, volumes: () => this.a.volumes() });
+    this.settingsUi = new SettingsPanel(this.root, {
+      rerender: () => this.show('settings'), setQuality: (q) => { this.quality = q; this.a.setQuality(q); }, volumes: () => this.a.volumes(),
+      editTouch: () => {
+        if (!this.inGame || !TouchControls.current) return false;
+        this.a.resume();
+        TouchControls.current.startEditing();
+        return true;
+      },
+    });
   }
 
   /** Redraws the key tester if it is on screen; returns whether it is. */
