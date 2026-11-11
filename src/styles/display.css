@@ -127,6 +127,8 @@ body.touch-editing #social .soc-dock { display: none; }
   #hud-layer .hud.mode-race .objective, #hud-layer .hud.mode-f1 .objective, #hud-layer .hud.mode-race .xp-row { display: none; }
   /* the left column may reach down to just above the ◀ ▶ / joystick cluster (~150 px), not 190 px */
   body.touch-on #hud-layer .hud .z-tl { max-height: calc((100% - var(--hm) - var(--st) - 50px - 150px - var(--sb)) / var(--hs)); }
+  /* the instant-replay offer sits under the race box, not on top of it */
+  body.touch-on .rp-prompt { top: auto; bottom: calc(40% + env(safe-area-inset-bottom, 0px)); zoom: var(--ui, 1); }
   /* system buttons a little smaller so they and the online dock fit beside the race box */
   #touch .tc-sys button { width: 40px; height: 40px; font-size: 16px; }
   body.touch-on #social[data-view="play"] .soc-dock button { width: 40px; height: 40px; }
